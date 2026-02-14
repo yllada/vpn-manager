@@ -1,0 +1,9 @@
+vpn-manager (1.0.0-1) stable; urgency=medium
+
+  * Initial release
+  * GTK4/libadwaita modern interface
+  * System tray integration
+  * Secure credential storage
+  * Split tunneling support
+
+ -- VPN Manager Team <vpn-manager@example.com>  Fri, 14 Feb 2026 12:00:00 +0000

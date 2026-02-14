@@ -1,0 +1,25 @@
+# Code Owners
+# These owners will be requested for review when someone opens a pull request
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @yllada
+
+# UI components
+/ui/ @yllada
+
+# VPN connection management
+/vpn/ @yllada
+
+# Configuration
+/config/ @yllada
+/configs/ @yllada
+
+# Build and deployment
+/.github/ @yllada
+/scripts/ @yllada
+/debian/ @yllada
+/snap/ @yllada
+
+# Security-sensitive code
+/keyring/ @yllada

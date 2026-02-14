@@ -1,0 +1,18 @@
+# VPN Manager - Example Configuration
+# Rename this file to config.yaml and edit it according to your needs
+
+# Start automatically with the system
+auto_start: false
+
+# Minimize to system tray when closing
+minimize_to_tray: true
+
+# Show notifications
+show_notifications: true
+
+# Automatically attempt to reconnect if connection is lost
+auto_reconnect: true
+
+# Application theme: "light", "dark", "auto"
+# auto = follows system theme
+theme: "auto"
