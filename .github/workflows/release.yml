@@ -49,6 +49,7 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             libayatana-appindicator3-dev \
+            libgirepository1.0-dev \
             pkg-config \
             gcc \
             dpkg-dev
