@@ -24,10 +24,9 @@ linters:
   default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
-    - staticcheck
+    - staticcheck      # Includes gosimple and stylecheck in v2
     - unused
     - misspell
     - revive
