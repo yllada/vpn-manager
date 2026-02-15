@@ -1,0 +1,183 @@
+# VPN Manager - Continuous Integration Workflow
+# Runs on every push and pull request to ensure code quality
+# Following GitHub Actions best practices: https://docs.github.com/en/actions
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+# Prevent duplicate runs on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.24'
+  GOLANGCI_LINT_VERSION: 'v2.1'
+
+# Principle of least privilege for GITHUB_TOKEN
+permissions:
+  contents: read
+
+jobs:
+  # =============================================================================
+  # Lint - Static code analysis
+  # =============================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read  # Required for only-new-issues
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Required for only-new-issues to work
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libayatana-appindicator3-dev \
+            libgirepository1.0-dev \
+            pkg-config
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          only-new-issues: true
+          args: --timeout=5m
+
+  # =============================================================================
+  # Test - Unit and integration tests
+  # =============================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libayatana-appindicator3-dev \
+            libgirepository1.0-dev \
+            pkg-config \
+            xvfb  # Virtual framebuffer for GTK tests
+
+      - name: Run tests
+        run: |
+          xvfb-run -a go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        if: github.event_name == 'pull_request'
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+          verbose: true
+
+  # =============================================================================
+  # Build - Verify the project compiles
+  # =============================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libayatana-appindicator3-dev \
+            libgirepository1.0-dev \
+            pkg-config
+
+      - name: Verify dependencies
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Build
+        run: |
+          CGO_ENABLED=1 go build -v -o vpn-manager .
+
+      - name: Verify binary
+        run: |
+          file vpn-manager
+          ./vpn-manager --version || true
+
+  # =============================================================================
+  # Dependency Review - Check for vulnerable dependencies in PRs
+  # =============================================================================
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0

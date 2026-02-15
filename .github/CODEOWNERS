@@ -1,25 +1,58 @@
-# Code Owners
-# These owners will be requested for review when someone opens a pull request
-# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# CODEOWNERS - Automatic Review Assignment
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Each line is a file pattern followed by one or more owners.
+# Order matters - later patterns override earlier ones.
 
+# =============================================================================
 # Default owner for everything
+# =============================================================================
 * @yllada
 
-# UI components
+# =============================================================================
+# Core application
+# =============================================================================
+/main.go @yllada
+/go.mod @yllada
+/go.sum @yllada
+
+# =============================================================================
+# UI components (GTK/Adwaita)
+# =============================================================================
 /ui/ @yllada
 
+# =============================================================================
 # VPN connection management
+# =============================================================================
 /vpn/ @yllada
 
-# Configuration
+# =============================================================================
+# Configuration and utilities
+# =============================================================================
 /config/ @yllada
-/configs/ @yllada
+/common/ @yllada
 
-# Build and deployment
+# =============================================================================
+# Security-sensitive code
+# =============================================================================
+/keyring/ @yllada
+
+# =============================================================================
+# CI/CD and DevOps
+# =============================================================================
 /.github/ @yllada
+/.github/workflows/ @yllada
 /scripts/ @yllada
+
+# =============================================================================
+# Packaging and Distribution
+# =============================================================================
 /debian/ @yllada
 /snap/ @yllada
+/assets/ @yllada
 
-# Security-sensitive code
-/keyring/ @yllada
+# =============================================================================
+# Documentation
+# =============================================================================
+*.md @yllada
+LICENSE @yllada

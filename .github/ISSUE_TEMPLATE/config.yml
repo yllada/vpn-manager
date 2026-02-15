@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/Y3LCorp/vpn-manager/discussions
+    about: Ask questions and discuss VPN Manager
+  - name: 📖 Documentation
+    url: https://github.com/Y3LCorp/vpn-manager#readme
+    about: Check the README for installation and usage

@@ -1,5 +1,8 @@
-# golangci-lint configuration
+# golangci-lint configuration v2
 # https://golangci-lint.run/usage/configuration/
+# Migration guide: https://github.com/golangci/golangci-lint/blob/main/docs/content/docs/product/migration-guide.md
+
+version: "2"
 
 run:
   timeout: 5m
@@ -9,72 +12,16 @@ run:
 
 output:
   formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-
-  gocyclo:
-    min-complexity: 15
-
-  dupl:
-    threshold: 100
-
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
-  misspell:
-    locale: US
-
-  goimports:
-    local-prefixes: github.com/yllada/vpn-manager
-
-  revive:
-    severity: warning
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: if-return
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-
-  staticcheck:
-    checks: ["all"]
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - hugeParam
-
+# =============================================================================
+# Linters Configuration
+# =============================================================================
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - gosimple
@@ -82,8 +29,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
     - gocritic
@@ -91,32 +36,114 @@ linters:
     - unconvert
     - unparam
     - prealloc
+    - dupl
+    - gocyclo
+    - goconst
 
-issues:
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - errcheck
-        - dupl
-        - gosec
-        - gocritic
+  exclusions:
+    # Exclude some linters from running on test files
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - dupl
+          - gosec
+          - gocritic
 
-    # Exclude known issues in generated files
-    - path: ".*\\.pb\\.go"
-      linters:
+      # Exclude known issues in generated files
+      - path: ".*\\.pb\\.go"
+        linters:
+          - all
+
+      # Allow shadowing of err variable
+      - linters:
+          - govet
+        text: 'shadow: declaration of "err"'
+
+      # Allow long lines in comments
+      - linters:
+          - lll
+        source: "^// "
+
+    # Paths to exclude from linting
+    paths:
+      - third_party
+      - vendor
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    gocyclo:
+      min-complexity: 15
+
+    dupl:
+      threshold: 100
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    misspell:
+      locale: US
+
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+
+    staticcheck:
+      checks:
         - all
 
-    # Allow shadowing of err variable
-    - linters:
-        - govet
-      text: 'shadow: declaration of "err"'
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam
 
-    # Allow long lines in comments
-    - linters:
-        - lll
-      source: "^// "
+# =============================================================================
+# Formatters Configuration
+# =============================================================================
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/yllada/vpn-manager
+
+# =============================================================================
+# Issues Configuration
+# =============================================================================
+issues:
   max-issues-per-linter: 50
   max-same-issues: 10
-  new: false

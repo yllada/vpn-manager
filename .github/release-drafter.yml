@@ -1,0 +1,185 @@
+# Release Drafter Configuration
+# Automatically drafts GitHub releases based on merged PRs
+# Documentation: https://github.com/release-drafter/release-drafter
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+# Categories for organizing release notes
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+      - 'feat'
+    collapse-after: 10
+
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'bug'
+      - 'fix'
+      - 'bugfix'
+    collapse-after: 10
+
+  - title: '🔒 Security'
+    labels:
+      - 'security'
+      - 'vulnerability'
+
+  - title: '🔧 Improvements'
+    labels:
+      - 'improvement'
+      - 'refactor'
+      - 'performance'
+      - 'perf'
+
+  - title: '📚 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+
+  - title: '🧪 Tests'
+    labels:
+      - 'test'
+      - 'testing'
+
+  - title: '📦 Dependencies'
+    labels:
+      - 'dependencies'
+      - 'deps'
+    collapse-after: 5
+
+  - title: '🔄 CI/CD'
+    labels:
+      - 'ci'
+      - 'github-actions'
+      - 'automation'
+    collapse-after: 3
+
+  - title: '🧹 Maintenance'
+    labels:
+      - 'chore'
+      - 'maintenance'
+    collapse-after: 5
+
+# Exclude these labels from release notes
+exclude-labels:
+  - 'skip-changelog'
+  - 'no-changelog'
+  - 'wip'
+  - 'invalid'
+  - 'duplicate'
+
+# Exclude certain contributors
+exclude-contributors:
+  - 'dependabot[bot]'
+  - 'github-actions[bot]'
+
+# Auto-labeling PRs based on file paths and branch names
+autolabeler:
+  - label: 'documentation'
+    files:
+      - '*.md'
+      - 'docs/**/*'
+    branch:
+      - '/docs{0,1}\/.+/'
+      - '/documentation\/.+/'
+
+  - label: 'feature'
+    branch:
+      - '/feat\/.+/'
+      - '/feature\/.+/'
+
+  - label: 'bug'
+    branch:
+      - '/fix\/.+/'
+      - '/bugfix\/.+/'
+      - '/hotfix\/.+/'
+
+  - label: 'ci'
+    files:
+      - '.github/**/*'
+      - '.github/workflows/**/*'
+
+  - label: 'dependencies'
+    files:
+      - 'go.mod'
+      - 'go.sum'
+
+  - label: 'ui'
+    files:
+      - 'ui/**/*'
+
+  - label: 'vpn'
+    files:
+      - 'vpn/**/*'
+
+  - label: 'config'
+    files:
+      - 'config/**/*'
+
+# Version resolver for semantic versioning
+version-resolver:
+  major:
+    labels:
+      - 'breaking'
+      - 'breaking-change'
+      - 'major'
+  minor:
+    labels:
+      - 'feature'
+      - 'enhancement'
+      - 'feat'
+  patch:
+    labels:
+      - 'bug'
+      - 'fix'
+      - 'bugfix'
+      - 'dependencies'
+      - 'documentation'
+      - 'chore'
+  default: patch
+
+# Release notes template
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  ## 📊 Release Statistics
+  
+  - **Contributors**: $CONTRIBUTORS
+  - **PRs Merged**: $PULL_REQUESTS_MERGED
+  
+  ---
+  
+  ## Installation
+  
+  ### Using DEB package (Ubuntu/Debian)
+  ```bash
+  sudo dpkg -i vpn-manager_$RESOLVED_VERSION_amd64.deb
+  sudo apt-get install -f  # Fix dependencies if needed
+  ```
+  
+  ### Using tarball
+  ```bash
+  tar -xzvf vpn-manager-$RESOLVED_VERSION-linux-amd64.tar.gz
+  cd vpn-manager-$RESOLVED_VERSION
+  ./install.sh
+  ```
+  
+  ### Requirements
+  - Ubuntu 22.04+ / Debian 12+
+  - OpenVPN or OpenVPN3
+  - GTK4 and libadwaita
+  
+  ---
+  
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+# Footer for all releases
+footer: |
+  
+  ---
+  
+  🙏 Thank you to all contributors for this release!

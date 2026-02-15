@@ -1,11 +1,13 @@
-# Dependabot configuration
-# Keeps dependencies up to date automatically
-# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+# Dependabot Configuration
+# Automatically creates PRs for dependency updates
+# Documentation: https://docs.github.com/en/code-security/dependabot
 
 version: 2
 
 updates:
-  # Go modules
+  # =============================================================================
+  # Go modules - Weekly updates grouped by type
+  # =============================================================================
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
@@ -13,23 +15,36 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Etc/UTC"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     commit-message:
       prefix: "deps"
       include: "scope"
     labels:
       - "dependencies"
       - "go"
-    reviewers:
-      - "yllada"
+      - "automated"
+    # Group updates to reduce PR noise
     groups:
-      go-dependencies:
+      # GTK/Adwaita dependencies - update together for compatibility
+      gtk-dependencies:
+        patterns:
+          - "github.com/diamondburned/gotk4*"
+        update-types:
+          - "minor"
+          - "patch"
+      # All other Go dependencies
+      go-minor-patch:
         patterns:
           - "*"
         exclude-patterns:
           - "github.com/diamondburned/gotk4*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # GitHub Actions
+  # =============================================================================
+  # GitHub Actions - Keep CI/CD actions secure and up to date
+  # =============================================================================
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -43,6 +58,13 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "ci"
-    reviewers:
-      - "yllada"
+      - "github-actions"
+      - "automated"
+    groups:
+      # Group all GitHub Actions updates
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
