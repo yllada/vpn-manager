@@ -42,13 +42,13 @@ func NewSplitTunnelDialog(mainWindow *MainWindow, profile *vpn.Profile) *SplitTu
 	return std
 }
 
-// build constructs the dialog UI.
+// build constructs the dialog UI with a modern, professional design.
 func (std *SplitTunnelDialog) build() {
 	std.window = gtk.NewWindow()
 	std.window.SetTitle("Profile Settings")
 	std.window.SetTransientFor(&std.mainWindow.window.Window)
 	std.window.SetModal(true)
-	std.window.SetDefaultSize(480, 580)
+	std.window.SetDefaultSize(520, 650)
 	std.window.SetResizable(true)
 
 	rootBox := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -58,117 +58,169 @@ func (std *SplitTunnelDialog) build() {
 	scrolled.SetVExpand(true)
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	contentBox.SetMarginTop(20)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(20)
-	contentBox.SetMarginEnd(20)
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 20)
+	contentBox.SetMarginTop(24)
+	contentBox.SetMarginBottom(16)
+	contentBox.SetMarginStart(24)
+	contentBox.SetMarginEnd(24)
 
-	// Header with icon
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignStart)
+	// ═══════════════════════════════════════════════════════════════════
+	// HEADER CARD
+	// ═══════════════════════════════════════════════════════════════════
+	headerCard := gtk.NewBox(gtk.OrientationHorizontal, 16)
+	headerCard.AddCSSClass("card")
+	headerCard.AddCSSClass("preferences-card")
+	headerCard.SetMarginBottom(4)
+
+	headerInner := gtk.NewBox(gtk.OrientationHorizontal, 14)
+	headerInner.SetMarginTop(16)
+	headerInner.SetMarginBottom(16)
+	headerInner.SetMarginStart(16)
+	headerInner.SetMarginEnd(16)
 
 	headerIcon := gtk.NewImage()
-	headerIcon.SetFromIconName("preferences-system-symbolic")
-	headerIcon.SetPixelSize(32)
-	headerBox.Append(headerIcon)
+	headerIcon.SetFromIconName("network-vpn-symbolic")
+	headerIcon.SetPixelSize(40)
+	headerIcon.AddCSSClass("accent")
+	headerInner.Append(headerIcon)
 
-	headerTextBox := gtk.NewBox(gtk.OrientationVertical, 2)
+	headerTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	headerTextBox.SetVAlign(gtk.AlignCenter)
 
 	titleLabel := gtk.NewLabel(std.profile.Name)
 	titleLabel.AddCSSClass("title-2")
 	titleLabel.SetXAlign(0)
 	headerTextBox.Append(titleLabel)
 
-	// Description
 	descLabel := gtk.NewLabel("Configure authentication and routing options")
 	descLabel.SetXAlign(0)
 	descLabel.AddCSSClass("dim-label")
+	descLabel.AddCSSClass("caption")
 	headerTextBox.Append(descLabel)
 
-	headerBox.Append(headerTextBox)
-	contentBox.Append(headerBox)
+	headerInner.Append(headerTextBox)
+	headerCard.Append(headerInner)
+	contentBox.Append(headerCard)
 
-	// ===== Authentication Section =====
-	authLabel := gtk.NewLabel("Authentication")
-	authLabel.SetXAlign(0)
-	authLabel.SetMarginTop(8)
-	authLabel.AddCSSClass("heading")
-	contentBox.Append(authLabel)
+	// ═══════════════════════════════════════════════════════════════════
+	// AUTHENTICATION SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	authSection := std.createSection("Authentication", "dialog-password-symbolic")
+	authCard := std.createCard()
 
-	// OTP/2FA checkbox
+	// OTP/2FA row with switch
 	std.otpCheck = gtk.NewCheckButton()
-	std.otpCheck.SetLabel("Requires two-factor authentication (OTP)")
 	std.otpCheck.SetActive(std.profile.RequiresOTP)
-	std.otpCheck.SetMarginStart(8)
-	contentBox.Append(std.otpCheck)
 
-	// OTP auto-detection info
+	otpDescText := "Request one-time password on each connection"
 	if std.profile.OTPAutoDetected {
-		otpInfoLabel := gtk.NewLabel("Auto-detected from configuration file")
-		otpInfoLabel.SetXAlign(0)
-		otpInfoLabel.AddCSSClass("dim-label")
-		otpInfoLabel.AddCSSClass("caption")
-		otpInfoLabel.SetMarginStart(32)
-		contentBox.Append(otpInfoLabel)
+		otpDescText = "Auto-detected from configuration file"
 	}
+	otpRow := std.createSettingRowWithCheckbox(
+		"Two-Factor Authentication",
+		otpDescText,
+		std.otpCheck,
+	)
+	authCard.Append(otpRow)
 
-	// Separator before Split Tunneling
-	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
-	sep.SetMarginTop(12)
-	sep.SetMarginBottom(8)
-	contentBox.Append(sep)
+	authSection.Append(authCard)
+	contentBox.Append(authSection)
 
-	// ===== Split Tunneling Section =====
-	splitLabel := gtk.NewLabel("Split Tunneling")
-	splitLabel.SetXAlign(0)
-	splitLabel.AddCSSClass("heading")
-	contentBox.Append(splitLabel)
+	// ═══════════════════════════════════════════════════════════════════
+	// SPLIT TUNNELING SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	splitSection := std.createSection("Split Tunneling", "network-workgroup-symbolic")
+	splitCard := std.createCard()
 
-	// Enable split tunneling
+	// Enable split tunneling row
 	std.enabledCheck = gtk.NewCheckButton()
-	std.enabledCheck.SetLabel("Enable Split Tunneling")
 	std.enabledCheck.SetActive(std.profile.SplitTunnelEnabled)
-	std.enabledCheck.SetMarginStart(8)
-	contentBox.Append(std.enabledCheck)
 
-	// Options container (enabled/disabled based on checkbox)
-	optionsBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	optionsBox.SetMarginStart(24)
-	optionsBox.SetMarginTop(8)
+	enableRow := std.createSettingRowWithCheckbox(
+		"Enable Split Tunneling",
+		"Route only specific traffic through VPN",
+		std.enabledCheck,
+	)
+	splitCard.Append(enableRow)
 
-	// Mode selection
-	modeBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	modeLabel := gtk.NewLabel("Mode:")
-	modeBox.Append(modeLabel)
+	splitSection.Append(splitCard)
+	contentBox.Append(splitSection)
+
+	// ═══════════════════════════════════════════════════════════════════
+	// ROUTING OPTIONS (conditional on split tunnel enabled)
+	// ═══════════════════════════════════════════════════════════════════
+	optionsBox := gtk.NewBox(gtk.OrientationVertical, 20)
+
+	// Mode Section
+	modeSection := std.createSection("Routing Mode", "preferences-system-network-symbolic")
+	modeCard := std.createCard()
+
+	modeRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	modeRow.SetMarginTop(14)
+	modeRow.SetMarginBottom(14)
+	modeRow.SetMarginStart(16)
+	modeRow.SetMarginEnd(16)
+
+	modeTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	modeTextBox.SetHExpand(true)
+
+	modeTitleLabel := gtk.NewLabel("Traffic Mode")
+	modeTitleLabel.SetXAlign(0)
+	modeTitleLabel.AddCSSClass("settings-title")
+	modeTextBox.Append(modeTitleLabel)
+
+	modeDescLabel := gtk.NewLabel("Choose which traffic passes through VPN")
+	modeDescLabel.SetXAlign(0)
+	modeDescLabel.AddCSSClass("dim-label")
+	modeDescLabel.AddCSSClass("caption")
+	modeTextBox.Append(modeDescLabel)
+
+	modeRow.Append(modeTextBox)
 
 	std.modeIDs = []string{"include", "exclude"}
-	modeLabels := []string{"Only these IPs use VPN", "All uses VPN except these IPs"}
+	modeLabels := []string{"Only listed IPs", "All except listed"}
 	modeModel := gtk.NewStringList(modeLabels)
 	std.modeDropDown = gtk.NewDropDown(modeModel, nil)
 	std.modeDropDown.SetSelected(std.findModeIndex(std.profile.SplitTunnelMode))
-	modeBox.Append(std.modeDropDown)
+	std.modeDropDown.SetVAlign(gtk.AlignCenter)
+	std.modeDropDown.AddCSSClass("flat")
+	modeRow.Append(std.modeDropDown)
 
-	optionsBox.Append(modeBox)
+	modeCard.Append(modeRow)
 
-	// DNS option
+	// DNS option row
+	modeCard.Append(std.createSeparator())
+
 	std.dnsCheck = gtk.NewCheckButton()
-	std.dnsCheck.SetLabel("Use VPN DNS")
 	std.dnsCheck.SetActive(std.profile.SplitTunnelDNS)
-	optionsBox.Append(std.dnsCheck)
 
-	// Routes section
-	routesLabel := gtk.NewLabel("IPs and Networks:")
-	routesLabel.SetXAlign(0)
-	routesLabel.SetMarginTop(12)
-	routesLabel.AddCSSClass("heading")
-	optionsBox.Append(routesLabel)
+	dnsRow := std.createSettingRowWithCheckbox(
+		"Use VPN DNS",
+		"Route DNS queries through VPN server",
+		std.dnsCheck,
+	)
+	modeCard.Append(dnsRow)
+
+	modeSection.Append(modeCard)
+	optionsBox.Append(modeSection)
+
+	// ═══════════════════════════════════════════════════════════════════
+	// ROUTES SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	routesSection := std.createSection("IPs and Networks", "network-server-symbolic")
+	routesCard := std.createCard()
+	routesInner := gtk.NewBox(gtk.OrientationVertical, 12)
+	routesInner.SetMarginTop(14)
+	routesInner.SetMarginBottom(14)
+	routesInner.SetMarginStart(16)
+	routesInner.SetMarginEnd(16)
 
 	routesHelpLabel := gtk.NewLabel("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
 	routesHelpLabel.SetXAlign(0)
 	routesHelpLabel.AddCSSClass("dim-label")
 	routesHelpLabel.AddCSSClass("caption")
-	optionsBox.Append(routesHelpLabel)
+	routesHelpLabel.SetWrap(true)
+	routesInner.Append(routesHelpLabel)
 
 	// Add route input
 	addRouteBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
@@ -187,32 +239,34 @@ func (std *SplitTunnelDialog) build() {
 		}
 	})
 	addRouteBox.Append(addBtn)
-	optionsBox.Append(addRouteBox)
+	routesInner.Append(addRouteBox)
 
 	// Routes list
 	routesFrame := gtk.NewFrame("")
-	routesFrame.SetMarginTop(8)
 
 	std.routesList = gtk.NewListBox()
 	std.routesList.AddCSSClass("boxed-list")
 	std.routesList.SetSelectionMode(gtk.SelectionNone)
 	routesFrame.SetChild(std.routesList)
 
-	optionsBox.Append(routesFrame)
+	routesInner.Append(routesFrame)
 
 	// Load existing routes
 	std.refreshRoutesList()
 
 	// Quick add common routes
-	quickAddLabel := gtk.NewLabel("Quick add:")
+	quickAddLabel := gtk.NewLabel("Quick Add")
 	quickAddLabel.SetXAlign(0)
-	quickAddLabel.SetMarginTop(12)
-	optionsBox.Append(quickAddLabel)
+	quickAddLabel.SetMarginTop(8)
+	quickAddLabel.AddCSSClass("dim-label")
+	quickAddLabel.AddCSSClass("caption")
+	routesInner.Append(quickAddLabel)
 
 	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	quickAddBox.SetHomogeneous(true)
 
 	privateBtn := gtk.NewButtonWithLabel("Private Networks")
+	privateBtn.AddCSSClass("flat")
 	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
 	privateBtn.ConnectClicked(func() {
 		std.addRoute("10.0.0.0/8")
@@ -222,13 +276,17 @@ func (std *SplitTunnelDialog) build() {
 	quickAddBox.Append(privateBtn)
 
 	localBtn := gtk.NewButtonWithLabel("Local Network")
+	localBtn.AddCSSClass("flat")
 	localBtn.SetTooltipText("192.168.0.0/16")
 	localBtn.ConnectClicked(func() {
 		std.addRoute("192.168.0.0/16")
 	})
 	quickAddBox.Append(localBtn)
 
-	optionsBox.Append(quickAddBox)
+	routesInner.Append(quickAddBox)
+	routesCard.Append(routesInner)
+	routesSection.Append(routesCard)
+	optionsBox.Append(routesSection)
 
 	contentBox.Append(optionsBox)
 
@@ -241,31 +299,109 @@ func (std *SplitTunnelDialog) build() {
 	scrolled.SetChild(contentBox)
 	rootBox.Append(scrolled)
 
-	// Button bar
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
+	// ═══════════════════════════════════════════════════════════════════
+	// ACTION BUTTONS
+	// ═══════════════════════════════════════════════════════════════════
+	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	buttonBar.SetHAlign(gtk.AlignEnd)
+	buttonBar.SetMarginTop(16)
+	buttonBar.SetMarginBottom(20)
+	buttonBar.SetMarginStart(24)
+	buttonBar.SetMarginEnd(24)
+	buttonBar.AddCSSClass("dialog-action-area")
 
 	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.AddCSSClass("dialog-button")
 	cancelBtn.ConnectClicked(func() {
 		std.window.Close()
 	})
-	buttonBox.Append(cancelBtn)
+	buttonBar.Append(cancelBtn)
 
 	saveBtn := gtk.NewButtonWithLabel("Save")
 	saveBtn.AddCSSClass("suggested-action")
+	saveBtn.AddCSSClass("dialog-button")
 	saveBtn.ConnectClicked(func() {
 		std.saveSettings()
 		std.window.Close()
 	})
-	buttonBox.Append(saveBtn)
+	buttonBar.Append(saveBtn)
 
-	rootBox.Append(buttonBox)
+	rootBox.Append(buttonBar)
 
 	std.window.SetChild(rootBox)
+}
+
+// createSection creates a section with icon and title.
+func (std *SplitTunnelDialog) createSection(title string, iconName string) *gtk.Box {
+	section := gtk.NewBox(gtk.OrientationVertical, 8)
+
+	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+
+	icon := gtk.NewImage()
+	icon.SetFromIconName(iconName)
+	icon.SetPixelSize(18)
+	icon.AddCSSClass("dim-label")
+	headerBox.Append(icon)
+
+	label := gtk.NewLabel(title)
+	label.SetXAlign(0)
+	label.AddCSSClass("heading")
+	label.AddCSSClass("dim-label")
+	headerBox.Append(label)
+
+	section.Append(headerBox)
+
+	return section
+}
+
+// createCard creates a styled card container.
+func (std *SplitTunnelDialog) createCard() *gtk.Box {
+	card := gtk.NewBox(gtk.OrientationVertical, 0)
+	card.AddCSSClass("card")
+	card.AddCSSClass("preferences-card")
+	return card
+}
+
+// createSettingRowWithCheckbox creates a row with title, description, and checkbox.
+func (std *SplitTunnelDialog) createSettingRowWithCheckbox(title string, description string, checkbox *gtk.CheckButton) *gtk.Box {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	row.SetMarginTop(14)
+	row.SetMarginBottom(14)
+	row.SetMarginStart(16)
+	row.SetMarginEnd(16)
+
+	// Checkbox first
+	checkbox.SetVAlign(gtk.AlignCenter)
+	row.Append(checkbox)
+
+	// Text container
+	textBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	textBox.SetHExpand(true)
+
+	titleLabel := gtk.NewLabel(title)
+	titleLabel.SetXAlign(0)
+	titleLabel.AddCSSClass("settings-title")
+	textBox.Append(titleLabel)
+
+	descLabel := gtk.NewLabel(description)
+	descLabel.SetXAlign(0)
+	descLabel.AddCSSClass("dim-label")
+	descLabel.AddCSSClass("caption")
+	descLabel.SetWrap(true)
+	descLabel.SetWrapMode(2)
+	textBox.Append(descLabel)
+
+	row.Append(textBox)
+
+	return row
+}
+
+// createSeparator creates a styled separator.
+func (std *SplitTunnelDialog) createSeparator() *gtk.Separator {
+	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
+	sep.SetMarginStart(16)
+	sep.SetMarginEnd(16)
+	return sep
 }
 
 // validateRoute validates an IP address or CIDR network.
