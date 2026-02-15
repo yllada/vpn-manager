@@ -119,6 +119,7 @@ func (t *TrayIndicator) refreshProfiles() {
 }
 
 // toggleConnection connects or disconnects a VPN profile.
+// Respects RequiresOTP setting for intelligent OTP handling.
 func (t *TrayIndicator) toggleConnection(profile *vpn.Profile) {
 	conn, exists := t.app.vpnManager.GetConnection(profile.ID)
 	if exists && (conn.GetStatus() == vpn.StatusConnected || conn.GetStatus() == vpn.StatusConnecting) {
@@ -137,10 +138,16 @@ func (t *TrayIndicator) toggleConnection(profile *vpn.Profile) {
 		if profile.SavePassword && profile.Username != "" {
 			savedPassword, err := keyring.Get(profile.ID)
 			if err == nil && savedPassword != "" {
-				// Show floating OTP dialog
-				glib.IdleAdd(func() {
-					t.showFloatingOTPDialog(profile, profile.Username, savedPassword)
-				})
+				// Check if OTP is required
+				if profile.RequiresOTP {
+					// Show floating OTP dialog
+					glib.IdleAdd(func() {
+						t.showFloatingOTPDialog(profile, profile.Username, savedPassword)
+					})
+				} else {
+					// No OTP required - connect directly
+					t.connectFromTray(profile, profile.Username, savedPassword)
+				}
 				return
 			}
 		}
@@ -396,8 +403,14 @@ func (t *TrayIndicator) showFloatingPasswordDialog(profile *vpn.Profile) {
 			t.app.vpnManager.ProfileManager().Save()
 		}
 
-		// Show OTP dialog
-		t.showFloatingOTPDialog(profile, username, password)
+		// Check if OTP is required
+		if profile.RequiresOTP {
+			// Show OTP dialog
+			t.showFloatingOTPDialog(profile, username, password)
+		} else {
+			// No OTP required - connect directly
+			t.connectFromTray(profile, username, password)
+		}
 	})
 	buttonBox.Append(nextBtn)
 
@@ -413,6 +426,7 @@ func (t *TrayIndicator) showFloatingPasswordDialog(profile *vpn.Profile) {
 }
 
 // connectFromTray connects to VPN from tray and updates the UI.
+// It sets up an auth failure callback for intelligent OTP fallback.
 func (t *TrayIndicator) connectFromTray(profile *vpn.Profile, username, password string) {
 	t.SetConnecting(profile.Name)
 
@@ -429,6 +443,35 @@ func (t *TrayIndicator) connectFromTray(profile *vpn.Profile, username, password
 			t.app.window.profileList.updateRowStatus(profile.ID, vpn.StatusDisconnected)
 		}
 		return
+	}
+
+	// Get the connection and set up auth failure callback for OTP fallback
+	conn, exists := t.app.vpnManager.GetConnection(profile.ID)
+	if exists && !profile.RequiresOTP {
+		// Capture credentials for potential OTP retry
+		savedUsername := username
+		savedPassword := password
+
+		conn.SetOnAuthFailed(func(failedProfile *vpn.Profile, needsOTP bool) {
+			if needsOTP {
+				// Auto-enable OTP for this profile (learned from server)
+				failedProfile.RequiresOTP = true
+				failedProfile.OTPAutoDetected = false
+				t.app.vpnManager.ProfileManager().Save()
+
+				// Disconnect failed connection first
+				t.app.vpnManager.Disconnect(failedProfile.ID)
+				t.SetDisconnected()
+
+				// Show OTP dialog on GTK main thread
+				glib.IdleAdd(func() {
+					if t.app.window != nil {
+						t.app.window.SetStatus(fmt.Sprintf("%s requires OTP - please enter code", failedProfile.Name))
+					}
+					t.showFloatingOTPDialog(failedProfile, savedUsername, savedPassword)
+				})
+			}
+		})
 	}
 
 	// Monitor connection

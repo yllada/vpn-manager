@@ -45,6 +45,14 @@ type Profile struct {
 	// LastUsed is the timestamp when the profile was last used.
 	LastUsed time.Time `json:"last_used,omitempty" yaml:"last_used,omitempty"`
 
+	// OTP/2FA Configuration
+	// RequiresOTP indicates whether this profile requires two-factor authentication.
+	// This is auto-detected during import but can be manually overridden.
+	RequiresOTP bool `json:"requires_otp" yaml:"requires_otp"`
+	// OTPAutoDetected indicates if RequiresOTP was set by auto-detection.
+	// If false, the user manually configured it.
+	OTPAutoDetected bool `json:"otp_auto_detected,omitempty" yaml:"otp_auto_detected,omitempty"`
+
 	// Split Tunneling Configuration
 	// SplitTunnelEnabled enables split tunneling for this profile.
 	SplitTunnelEnabled bool `json:"split_tunnel_enabled" yaml:"split_tunnel_enabled"`
@@ -149,6 +157,13 @@ func (pm *ProfileManager) Add(profile *Profile) error {
 
 	// Set creation timestamp
 	profile.Created = time.Now()
+
+	// Auto-detect OTP requirement from config file
+	// Only auto-detect if not already manually configured
+	if !profile.RequiresOTP {
+		profile.RequiresOTP = DetectOTPRequirement(profile.ConfigPath)
+		profile.OTPAutoDetected = profile.RequiresOTP
+	}
 
 	// Create configs directory
 	configsDir := filepath.Join(pm.configDir, "configs")
@@ -282,6 +297,54 @@ func validateConfigFile(path string) error {
 	}
 
 	return nil
+}
+
+// DetectOTPRequirement analyzes an OpenVPN config file to determine if it requires OTP/2FA.
+// It looks for common indicators such as static-challenge, auth-user-pass-verify,
+// and other patterns that suggest two-factor authentication.
+func DetectOTPRequirement(configPath string) bool {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return false
+	}
+
+	content := strings.ToLower(string(data))
+
+	// OpenVPN static challenge - definitive indicator
+	// Format: static-challenge "prompt" [echo]
+	if strings.Contains(content, "static-challenge") {
+		return true
+	}
+
+	// Server-side OTP verification script
+	if strings.Contains(content, "auth-user-pass-verify") {
+		return true
+	}
+
+	// Common OTP plugin references
+	otpIndicators := []string{
+		"otp",
+		"totp",
+		"hotp",
+		"2fa",
+		"two-factor",
+		"two_factor",
+		"twofactor",
+		"google-authenticator",
+		"duo",
+		"yubikey",
+		"mfa",
+		"multi-factor",
+	}
+
+	for _, indicator := range otpIndicators {
+		// Look for indicators in comments or plugin configurations
+		if strings.Contains(content, indicator) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // copyFile copies a file from src to dst with secure permissions.

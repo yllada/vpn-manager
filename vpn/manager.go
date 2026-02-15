@@ -78,10 +78,12 @@ type Connection struct {
 	// LastError contains the last error message if Status is StatusError.
 	LastError string
 
-	cmd        *exec.Cmd
-	mu         sync.RWMutex
-	stopChan   chan struct{}
-	logHandler func(string)
+	cmd              *exec.Cmd
+	mu               sync.RWMutex
+	stopChan         chan struct{}
+	logHandler       func(string)
+	onAuthFailed     func(profile *Profile, needsOTP bool)
+	authFailedCalled bool
 }
 
 // Manager orchestrates VPN connections.
@@ -405,7 +407,36 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			conn.mu.Lock()
 			conn.Status = StatusError
 			conn.LastError = "Authentication failed - verify username/password/OTP"
+
+			// Check if we should suggest OTP
+			// If profile doesn't have RequiresOTP enabled, this might be an OTP issue
+			needsOTP := !conn.Profile.RequiresOTP
+			onAuthFailed := conn.onAuthFailed
+			authFailedCalled := conn.authFailedCalled
+			conn.authFailedCalled = true
 			conn.mu.Unlock()
+
+			// Invoke auth failed callback if set and not already called
+			if onAuthFailed != nil && !authFailedCalled && needsOTP {
+				log.Printf("VPN: AUTH_FAILED detected without OTP - suggesting OTP retry")
+				go onAuthFailed(conn.Profile, true)
+			}
+		}
+
+		// Detect CRV1 challenge (dynamic challenge from server)
+		// Format: AUTH:CRV1:R,E:base64:base64:message
+		if strings.Contains(line, "AUTH:CRV1") || strings.Contains(line, "CHALLENGE") {
+			log.Printf("VPN: Server requesting challenge/OTP authentication")
+			conn.mu.Lock()
+			needsOTP := !conn.Profile.RequiresOTP
+			onAuthFailed := conn.onAuthFailed
+			authFailedCalled := conn.authFailedCalled
+			conn.authFailedCalled = true
+			conn.mu.Unlock()
+
+			if onAuthFailed != nil && !authFailedCalled && needsOTP {
+				go onAuthFailed(conn.Profile, true)
+			}
 		}
 
 		// Detect connection errors
@@ -445,6 +476,16 @@ func (c *Connection) SetLogHandler(handler func(string)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logHandler = handler
+}
+
+// SetOnAuthFailed sets a callback for authentication failures.
+// The callback receives the profile and a boolean indicating if OTP might be needed.
+// This is used for intelligent OTP fallback - when auth fails without OTP,
+// the UI can prompt for OTP and retry.
+func (c *Connection) SetOnAuthFailed(handler func(profile *Profile, needsOTP bool)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onAuthFailed = handler
 }
 
 // GetStatus returns the current connection status

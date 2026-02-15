@@ -16,6 +16,7 @@ type SplitTunnelDialog struct {
 	window       *gtk.Window
 	mainWindow   *MainWindow
 	profile      *vpn.Profile
+	otpCheck     *gtk.CheckButton
 	enabledCheck *gtk.CheckButton
 	modeDropDown *gtk.DropDown
 	modeIDs      []string
@@ -44,10 +45,10 @@ func NewSplitTunnelDialog(mainWindow *MainWindow, profile *vpn.Profile) *SplitTu
 // build constructs the dialog UI.
 func (std *SplitTunnelDialog) build() {
 	std.window = gtk.NewWindow()
-	std.window.SetTitle("Split Tunneling")
+	std.window.SetTitle("Profile Settings")
 	std.window.SetTransientFor(&std.mainWindow.window.Window)
 	std.window.SetModal(true)
-	std.window.SetDefaultSize(480, 520)
+	std.window.SetDefaultSize(480, 580)
 	std.window.SetResizable(true)
 
 	rootBox := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -68,19 +69,19 @@ func (std *SplitTunnelDialog) build() {
 	headerBox.SetHAlign(gtk.AlignStart)
 
 	headerIcon := gtk.NewImage()
-	headerIcon.SetFromIconName("network-workgroup-symbolic")
+	headerIcon.SetFromIconName("preferences-system-symbolic")
 	headerIcon.SetPixelSize(32)
 	headerBox.Append(headerIcon)
 
 	headerTextBox := gtk.NewBox(gtk.OrientationVertical, 2)
 
-	titleLabel := gtk.NewLabel("Split Tunneling")
+	titleLabel := gtk.NewLabel(std.profile.Name)
 	titleLabel.AddCSSClass("title-2")
 	titleLabel.SetXAlign(0)
 	headerTextBox.Append(titleLabel)
 
 	// Description
-	descLabel := gtk.NewLabel("Control which traffic uses the VPN")
+	descLabel := gtk.NewLabel("Configure authentication and routing options")
 	descLabel.SetXAlign(0)
 	descLabel.AddCSSClass("dim-label")
 	headerTextBox.Append(descLabel)
@@ -88,16 +89,47 @@ func (std *SplitTunnelDialog) build() {
 	headerBox.Append(headerTextBox)
 	contentBox.Append(headerBox)
 
-	// Separator
+	// ===== Authentication Section =====
+	authLabel := gtk.NewLabel("Authentication")
+	authLabel.SetXAlign(0)
+	authLabel.SetMarginTop(8)
+	authLabel.AddCSSClass("heading")
+	contentBox.Append(authLabel)
+
+	// OTP/2FA checkbox
+	std.otpCheck = gtk.NewCheckButton()
+	std.otpCheck.SetLabel("Requires two-factor authentication (OTP)")
+	std.otpCheck.SetActive(std.profile.RequiresOTP)
+	std.otpCheck.SetMarginStart(8)
+	contentBox.Append(std.otpCheck)
+
+	// OTP auto-detection info
+	if std.profile.OTPAutoDetected {
+		otpInfoLabel := gtk.NewLabel("Auto-detected from configuration file")
+		otpInfoLabel.SetXAlign(0)
+		otpInfoLabel.AddCSSClass("dim-label")
+		otpInfoLabel.AddCSSClass("caption")
+		otpInfoLabel.SetMarginStart(32)
+		contentBox.Append(otpInfoLabel)
+	}
+
+	// Separator before Split Tunneling
 	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
-	sep.SetMarginTop(8)
+	sep.SetMarginTop(12)
 	sep.SetMarginBottom(8)
 	contentBox.Append(sep)
+
+	// ===== Split Tunneling Section =====
+	splitLabel := gtk.NewLabel("Split Tunneling")
+	splitLabel.SetXAlign(0)
+	splitLabel.AddCSSClass("heading")
+	contentBox.Append(splitLabel)
 
 	// Enable split tunneling
 	std.enabledCheck = gtk.NewCheckButton()
 	std.enabledCheck.SetLabel("Enable Split Tunneling")
 	std.enabledCheck.SetActive(std.profile.SplitTunnelEnabled)
+	std.enabledCheck.SetMarginStart(8)
 	contentBox.Append(std.enabledCheck)
 
 	// Options container (enabled/disabled based on checkbox)
@@ -356,8 +388,17 @@ func (std *SplitTunnelDialog) findModeIndex(modeID string) uint {
 	return 0
 }
 
-// saveSettings saves the split tunnel configuration to the profile.
+// saveSettings saves the profile configuration including authentication and split tunnel settings.
 func (std *SplitTunnelDialog) saveSettings() {
+	// Save authentication settings
+	otpChanged := std.profile.RequiresOTP != std.otpCheck.Active()
+	std.profile.RequiresOTP = std.otpCheck.Active()
+	if otpChanged {
+		// If user manually changed OTP setting, mark as not auto-detected
+		std.profile.OTPAutoDetected = false
+	}
+
+	// Save split tunnel settings
 	std.profile.SplitTunnelEnabled = std.enabledCheck.Active()
 
 	modeIdx := std.modeDropDown.Selected()
@@ -374,7 +415,7 @@ func (std *SplitTunnelDialog) saveSettings() {
 		return
 	}
 
-	std.mainWindow.SetStatus("Split Tunneling configuration saved")
+	std.mainWindow.SetStatus("Profile settings saved")
 }
 
 // Show displays the dialog.

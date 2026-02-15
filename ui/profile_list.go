@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
@@ -160,12 +161,27 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 	subtitleLabel.AddCSSClass("caption")
 	infoBox.Append(subtitleLabel)
 
+	// Badges container for OTP and Split Tunnel
+	badgeBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	badgeBox.SetMarginTop(4)
+
+	// OTP/2FA badge if enabled
+	if profile.RequiresOTP {
+		otpBadge := gtk.NewLabel("2FA")
+		otpBadge.AddCSSClass("otp-badge")
+		badgeBox.Append(otpBadge)
+	}
+
 	// Split Tunneling badge if enabled
 	if profile.SplitTunnelEnabled {
 		badgeLabel := gtk.NewLabel("Split Tunnel")
 		badgeLabel.AddCSSClass("split-tunnel-badge")
-		badgeLabel.SetMarginTop(4)
-		infoBox.Append(badgeLabel)
+		badgeBox.Append(badgeLabel)
+	}
+
+	// Only add badge box if there are badges
+	if profile.RequiresOTP || profile.SplitTunnelEnabled {
+		infoBox.Append(badgeBox)
 	}
 
 	mainBox.Append(infoBox)
@@ -207,15 +223,15 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 	})
 	buttonBox.Append(connectBtn)
 
-	// Configuration button (Split Tunneling)
+	// Configuration button (Profile Settings)
 	configBtn := gtk.NewButton()
 	configBtn.SetIconName("emblem-system-symbolic")
-	configBtn.SetTooltipText("Configure Split Tunneling")
+	configBtn.SetTooltipText("Profile Settings")
 	configBtn.AddCSSClass("circular")
 	configBtn.AddCSSClass("flat")
 
-	// Indicador visual si tiene split tunneling habilitado
-	if profile.SplitTunnelEnabled {
+	// Visual indicator if profile has OTP or split tunneling enabled
+	if profile.SplitTunnelEnabled || profile.RequiresOTP {
 		configBtn.RemoveCSSClass("flat")
 		configBtn.AddCSSClass("accent")
 	}
@@ -269,6 +285,7 @@ func (pl *ProfileList) onConfigClicked(profile *vpn.Profile) {
 
 // onConnectClicked handles click on the connect button.
 // Manages both connection and disconnection depending on current state.
+// Implements intelligent OTP detection: only shows OTP dialog when profile.RequiresOTP is true.
 func (pl *ProfileList) onConnectClicked(profile *vpn.Profile) {
 	// Check if already connected
 	if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
@@ -290,8 +307,13 @@ func (pl *ProfileList) onConnectClicked(profile *vpn.Profile) {
 	if profile.SavePassword {
 		savedPassword, err := keyring.Get(profile.ID)
 		if err == nil && savedPassword != "" {
-			// Password saved - show OTP dialog only
-			pl.showOTPDialog(profile, profile.Username, savedPassword, false)
+			// Password saved - check if OTP is required
+			if profile.RequiresOTP {
+				pl.showOTPDialog(profile, profile.Username, savedPassword, false)
+			} else {
+				// No OTP required - connect directly with saved credentials
+				pl.connectWithCredentials(profile, profile.Username, savedPassword)
+			}
 			return
 		}
 	}
@@ -504,8 +526,25 @@ func (pl *ProfileList) showPasswordDialog(profile *vpn.Profile) {
 
 		window.Close()
 
-		// Show OTP dialog
-		pl.showOTPDialog(profile, username, password, saveCredentials)
+		// Save credentials if requested (regardless of OTP requirement)
+		if saveCredentials {
+			profile.Username = username
+			profile.SavePassword = true
+			if err := keyring.Store(profile.ID, password); err != nil {
+				profile.SavePassword = false
+				pl.mainWindow.SetStatus("Warning: Could not save password")
+			}
+			pl.mainWindow.app.vpnManager.ProfileManager().Save()
+		}
+
+		// Check if OTP is required for this profile
+		if profile.RequiresOTP {
+			// Show OTP dialog (don't save credentials again, already saved above)
+			pl.showOTPDialog(profile, username, password, false)
+		} else {
+			// No OTP required - connect directly
+			pl.connectWithCredentials(profile, username, password)
+		}
 	})
 	buttonBox.Append(nextBtn)
 
@@ -527,6 +566,7 @@ func (pl *ProfileList) showPasswordDialog(profile *vpn.Profile) {
 }
 
 // connectWithCredentials initiates VPN connection with specific credentials.
+// It sets up an auth failure callback for intelligent OTP fallback.
 func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, password string) {
 	pl.updateRowStatus(profile.ID, vpn.StatusConnecting)
 	pl.mainWindow.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
@@ -536,6 +576,38 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 		pl.mainWindow.showError("Connection error", err.Error())
 		pl.updateRowStatus(profile.ID, vpn.StatusDisconnected)
 		return
+	}
+
+	// Get the connection and set up auth failure callback for OTP fallback
+	conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID)
+	if exists && !profile.RequiresOTP {
+		// Only set callback if OTP wasn't already requested
+		// Capture credentials for potential OTP retry
+		savedUsername := username
+		savedPassword := password
+
+		conn.SetOnAuthFailed(func(failedProfile *vpn.Profile, needsOTP bool) {
+			if needsOTP {
+				// Auto-enable OTP for this profile (learned from server)
+				// This can be done outside GTK thread
+				failedProfile.RequiresOTP = true
+				failedProfile.OTPAutoDetected = false // Learned from server, not config
+				pl.mainWindow.app.vpnManager.ProfileManager().Save()
+
+				// Disconnect failed connection first (done outside GTK thread)
+				pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID)
+
+				// All GTK operations must be done on the main thread
+				glib.IdleAdd(func() {
+					// Update status
+					pl.mainWindow.SetStatus(fmt.Sprintf("%s requires OTP - please enter code", failedProfile.Name))
+					pl.updateRowStatus(failedProfile.ID, vpn.StatusDisconnected)
+
+					// Show OTP dialog with saved credentials
+					pl.showOTPDialog(failedProfile, savedUsername, savedPassword, false)
+				})
+			}
+		})
 	}
 
 	// Monitor connection status

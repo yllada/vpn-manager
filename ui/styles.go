@@ -127,6 +127,16 @@ button.destructive-action image {
     border-radius: 10px;
 }
 
+/* OTP/2FA Badge */
+.otp-badge {
+    background-color: alpha(#e5a50a, 0.2);
+    color: #e5a50a;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
 /* Connection Timer */
 .connection-timer {
     font-family: monospace;
