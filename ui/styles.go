@@ -187,6 +187,50 @@ button.flat {
 button.flat:hover {
     background-color: alpha(currentColor, 0.1);
 }
+
+/* ============================================
+   Preferences Dialog - Modern Card Design
+   ============================================ */
+
+/* Settings cards with subtle border */
+.preferences-card {
+    border-radius: 12px;
+    border: 1px solid alpha(currentColor, 0.12);
+    background-color: alpha(currentColor, 0.03);
+}
+
+/* Settings row title */
+.settings-title {
+    font-weight: 500;
+    font-size: 14px;
+}
+
+/* Caption text for descriptions */
+.caption {
+    font-size: 12px;
+}
+
+/* Dialog action buttons */
+.dialog-button {
+    min-width: 80px;
+    min-height: 34px;
+    padding: 6px 16px;
+    border-radius: 6px;
+}
+
+/* Dialog action area spacing */
+.dialog-action-area {
+    border-top: 1px solid alpha(currentColor, 0.1);
+    padding-top: 16px;
+}
+
+/* Heading style for section titles */
+.heading {
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.

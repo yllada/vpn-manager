@@ -1,5 +1,6 @@
 // Package ui provides the graphical user interface for VPN Manager.
 // This file contains the PreferencesDialog component for application settings.
+// Designed following GTK4/libadwaita HIG for a professional, modern look.
 package ui
 
 import (
@@ -9,15 +10,15 @@ import (
 
 // PreferencesDialog represents the preferences dialog.
 type PreferencesDialog struct {
-	window         *gtk.Window
-	mainWindow     *MainWindow
-	config         *config.Config
-	autoStartCheck *gtk.CheckButton
-	minimizeCheck  *gtk.CheckButton
-	notifyCheck    *gtk.CheckButton
-	reconnectCheck *gtk.CheckButton
-	themeDropDown  *gtk.DropDown
-	themeIDs       []string
+	window          *gtk.Window
+	mainWindow      *MainWindow
+	config          *config.Config
+	autoStartSwitch *gtk.Switch
+	minimizeSwitch  *gtk.Switch
+	notifySwitch    *gtk.Switch
+	reconnectSwitch *gtk.Switch
+	themeDropDown   *gtk.DropDown
+	themeIDs        []string
 }
 
 // NewPreferencesDialog creates a new preferences dialog.
@@ -31,127 +32,233 @@ func NewPreferencesDialog(mainWindow *MainWindow) *PreferencesDialog {
 	return pd
 }
 
-// build constructs the dialog UI.
+// build constructs the dialog UI with a modern, professional design.
 func (pd *PreferencesDialog) build() {
 	pd.window = gtk.NewWindow()
-	pd.window.SetTitle("Preferences")
+	pd.window.SetTitle("Settings")
 	pd.window.SetTransientFor(&pd.mainWindow.window.Window)
 	pd.window.SetModal(true)
-	pd.window.SetDefaultSize(450, 450)
+	pd.window.SetDefaultSize(500, 580)
 	pd.window.SetResizable(false)
 
+	// Root container
 	rootBox := gtk.NewBox(gtk.OrientationVertical, 0)
 
-	// Main container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 24)
+	// Scrollable content for smaller screens
+	scrolled := gtk.NewScrolledWindow()
+	scrolled.SetVExpand(true)
+	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+
+	// Main content container
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 20)
 	mainBox.SetMarginTop(24)
-	mainBox.SetMarginBottom(12)
+	mainBox.SetMarginBottom(16)
 	mainBox.SetMarginStart(24)
 	mainBox.SetMarginEnd(24)
 
-	// General section
-	generalLabel := gtk.NewLabel("General")
-	generalLabel.SetXAlign(0)
-	generalLabel.AddCSSClass("heading")
-	mainBox.Append(generalLabel)
+	// ═══════════════════════════════════════════════════════════════════
+	// STARTUP SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	startupSection := pd.createSection("Startup", "system-run-symbolic")
+	startupCard := pd.createCard()
 
-	generalBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	generalBox.SetMarginStart(12)
+	// Auto-start row
+	pd.autoStartSwitch = gtk.NewSwitch()
+	pd.autoStartSwitch.SetActive(pd.config.AutoStart)
+	pd.autoStartSwitch.SetVAlign(gtk.AlignCenter)
+	autoStartRow := pd.createSettingRow(
+		"Launch at Login",
+		"Automatically start VPN Manager when you log in",
+		pd.autoStartSwitch,
+	)
+	startupCard.Append(autoStartRow)
 
-	// Auto-start option
-	pd.autoStartCheck = gtk.NewCheckButton()
-	pd.autoStartCheck.SetLabel("Start with system")
-	pd.autoStartCheck.SetActive(pd.config.AutoStart)
-	generalBox.Append(pd.autoStartCheck)
+	// Separator
+	startupCard.Append(pd.createSeparator())
 
-	// Minimize to tray
-	pd.minimizeCheck = gtk.NewCheckButton()
-	pd.minimizeCheck.SetLabel("Minimize to system tray")
-	pd.minimizeCheck.SetActive(pd.config.MinimizeToTray)
-	generalBox.Append(pd.minimizeCheck)
+	// Minimize to tray row
+	pd.minimizeSwitch = gtk.NewSwitch()
+	pd.minimizeSwitch.SetActive(pd.config.MinimizeToTray)
+	pd.minimizeSwitch.SetVAlign(gtk.AlignCenter)
+	minimizeRow := pd.createSettingRow(
+		"Minimize to Tray",
+		"Keep running in system tray when window is closed",
+		pd.minimizeSwitch,
+	)
+	startupCard.Append(minimizeRow)
 
-	mainBox.Append(generalBox)
+	startupSection.Append(startupCard)
+	mainBox.Append(startupSection)
 
-	// Notifications section
-	notifyLabel := gtk.NewLabel("Notifications")
-	notifyLabel.SetXAlign(0)
-	notifyLabel.AddCSSClass("heading")
-	mainBox.Append(notifyLabel)
+	// ═══════════════════════════════════════════════════════════════════
+	// CONNECTION SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	connectionSection := pd.createSection("Connection", "network-vpn-symbolic")
+	connectionCard := pd.createCard()
 
-	notifyBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	notifyBox.SetMarginStart(12)
+	// Auto-reconnect row
+	pd.reconnectSwitch = gtk.NewSwitch()
+	pd.reconnectSwitch.SetActive(pd.config.AutoReconnect)
+	pd.reconnectSwitch.SetVAlign(gtk.AlignCenter)
+	reconnectRow := pd.createSettingRow(
+		"Auto-reconnect",
+		"Automatically reconnect if connection is lost",
+		pd.reconnectSwitch,
+	)
+	connectionCard.Append(reconnectRow)
 
-	pd.notifyCheck = gtk.NewCheckButton()
-	pd.notifyCheck.SetLabel("Show connection notifications")
-	pd.notifyCheck.SetActive(pd.config.ShowNotifications)
-	notifyBox.Append(pd.notifyCheck)
+	connectionSection.Append(connectionCard)
+	mainBox.Append(connectionSection)
 
-	mainBox.Append(notifyBox)
+	// ═══════════════════════════════════════════════════════════════════
+	// NOTIFICATIONS SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	notifySection := pd.createSection("Notifications", "preferences-system-notifications-symbolic")
+	notifyCard := pd.createCard()
 
-	// Connection section
-	connLabel := gtk.NewLabel("Connection")
-	connLabel.SetXAlign(0)
-	connLabel.AddCSSClass("heading")
-	mainBox.Append(connLabel)
+	// Notifications row
+	pd.notifySwitch = gtk.NewSwitch()
+	pd.notifySwitch.SetActive(pd.config.ShowNotifications)
+	pd.notifySwitch.SetVAlign(gtk.AlignCenter)
+	notifyRow := pd.createSettingRow(
+		"Connection Alerts",
+		"Show notifications when VPN connects or disconnects",
+		pd.notifySwitch,
+	)
+	notifyCard.Append(notifyRow)
 
-	connBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	connBox.SetMarginStart(12)
+	notifySection.Append(notifyCard)
+	mainBox.Append(notifySection)
 
-	pd.reconnectCheck = gtk.NewCheckButton()
-	pd.reconnectCheck.SetLabel("Auto-reconnect")
-	pd.reconnectCheck.SetActive(pd.config.AutoReconnect)
-	connBox.Append(pd.reconnectCheck)
+	// ═══════════════════════════════════════════════════════════════════
+	// APPEARANCE SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	appearSection := pd.createSection("Appearance", "preferences-desktop-theme-symbolic")
+	appearCard := pd.createCard()
 
-	mainBox.Append(connBox)
-
-	// Appearance section
-	appearLabel := gtk.NewLabel("Appearance")
-	appearLabel.SetXAlign(0)
-	appearLabel.AddCSSClass("heading")
-	mainBox.Append(appearLabel)
-
-	appearBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	appearBox.SetMarginStart(12)
-
-	themeLabel := gtk.NewLabel("Theme:")
-	appearBox.Append(themeLabel)
-
+	// Theme row with dropdown
 	pd.themeIDs = []string{"auto", "light", "dark"}
-	themeLabels := []string{"Automatic", "Light", "Dark"}
+	themeLabels := []string{"System Default", "Light", "Dark"}
 	themeModel := gtk.NewStringList(themeLabels)
 	pd.themeDropDown = gtk.NewDropDown(themeModel, nil)
 	pd.themeDropDown.SetSelected(pd.findThemeIndex(pd.config.Theme))
-	appearBox.Append(pd.themeDropDown)
+	pd.themeDropDown.SetVAlign(gtk.AlignCenter)
+	pd.themeDropDown.AddCSSClass("flat")
 
-	mainBox.Append(appearBox)
+	themeRow := pd.createSettingRow(
+		"Theme",
+		"Choose the visual appearance of the application",
+		pd.themeDropDown,
+	)
+	appearCard.Append(themeRow)
 
-	rootBox.Append(mainBox)
+	appearSection.Append(appearCard)
+	mainBox.Append(appearSection)
 
-	// Buttons
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
+	scrolled.SetChild(mainBox)
+	rootBox.Append(scrolled)
+
+	// ═══════════════════════════════════════════════════════════════════
+	// ACTION BUTTONS
+	// ═══════════════════════════════════════════════════════════════════
+	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	buttonBar.SetHAlign(gtk.AlignEnd)
+	buttonBar.SetMarginTop(16)
+	buttonBar.SetMarginBottom(20)
+	buttonBar.SetMarginStart(24)
+	buttonBar.SetMarginEnd(24)
+	buttonBar.AddCSSClass("dialog-action-area")
 
 	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.AddCSSClass("dialog-button")
 	cancelBtn.ConnectClicked(func() {
 		pd.window.Close()
 	})
-	buttonBox.Append(cancelBtn)
+	buttonBar.Append(cancelBtn)
 
 	saveBtn := gtk.NewButtonWithLabel("Save")
 	saveBtn.AddCSSClass("suggested-action")
+	saveBtn.AddCSSClass("dialog-button")
 	saveBtn.ConnectClicked(func() {
 		pd.savePreferences()
 		pd.window.Close()
 	})
-	buttonBox.Append(saveBtn)
+	buttonBar.Append(saveBtn)
 
-	rootBox.Append(buttonBox)
+	rootBox.Append(buttonBar)
 
 	pd.window.SetChild(rootBox)
+}
+
+// createSection creates a section with icon and title.
+func (pd *PreferencesDialog) createSection(title string, iconName string) *gtk.Box {
+	section := gtk.NewBox(gtk.OrientationVertical, 8)
+
+	// Header with icon
+	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+
+	icon := gtk.NewImage()
+	icon.SetFromIconName(iconName)
+	icon.SetPixelSize(18)
+	icon.AddCSSClass("dim-label")
+	headerBox.Append(icon)
+
+	label := gtk.NewLabel(title)
+	label.SetXAlign(0)
+	label.AddCSSClass("heading")
+	label.AddCSSClass("dim-label")
+	headerBox.Append(label)
+
+	section.Append(headerBox)
+
+	return section
+}
+
+// createCard creates a styled card container for settings.
+func (pd *PreferencesDialog) createCard() *gtk.Box {
+	card := gtk.NewBox(gtk.OrientationVertical, 0)
+	card.AddCSSClass("card")
+	card.AddCSSClass("preferences-card")
+	return card
+}
+
+// createSettingRow creates a row with title, description, and widget.
+func (pd *PreferencesDialog) createSettingRow(title string, description string, widget gtk.Widgetter) *gtk.Box {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	row.SetMarginTop(14)
+	row.SetMarginBottom(14)
+	row.SetMarginStart(16)
+	row.SetMarginEnd(16)
+
+	// Text container (title + description)
+	textBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	textBox.SetHExpand(true)
+
+	titleLabel := gtk.NewLabel(title)
+	titleLabel.SetXAlign(0)
+	titleLabel.AddCSSClass("settings-title")
+	textBox.Append(titleLabel)
+
+	descLabel := gtk.NewLabel(description)
+	descLabel.SetXAlign(0)
+	descLabel.AddCSSClass("dim-label")
+	descLabel.AddCSSClass("caption")
+	descLabel.SetWrap(true)
+	descLabel.SetWrapMode(2) // PANGO_WRAP_WORD_CHAR
+	textBox.Append(descLabel)
+
+	row.Append(textBox)
+	row.Append(widget)
+
+	return row
+}
+
+// createSeparator creates a styled separator for cards.
+func (pd *PreferencesDialog) createSeparator() *gtk.Separator {
+	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
+	sep.SetMarginStart(16)
+	sep.SetMarginEnd(16)
+	return sep
 }
 
 // findThemeIndex returns the index of a theme ID, or 0 if not found.
@@ -166,10 +273,10 @@ func (pd *PreferencesDialog) findThemeIndex(themeID string) uint {
 
 // savePreferences saves the current preferences to the config file.
 func (pd *PreferencesDialog) savePreferences() {
-	pd.config.AutoStart = pd.autoStartCheck.Active()
-	pd.config.MinimizeToTray = pd.minimizeCheck.Active()
-	pd.config.ShowNotifications = pd.notifyCheck.Active()
-	pd.config.AutoReconnect = pd.reconnectCheck.Active()
+	pd.config.AutoStart = pd.autoStartSwitch.Active()
+	pd.config.MinimizeToTray = pd.minimizeSwitch.Active()
+	pd.config.ShowNotifications = pd.notifySwitch.Active()
+	pd.config.AutoReconnect = pd.reconnectSwitch.Active()
 
 	themeIdx := pd.themeDropDown.Selected()
 	if int(themeIdx) < len(pd.themeIDs) {
@@ -181,7 +288,7 @@ func (pd *PreferencesDialog) savePreferences() {
 		return
 	}
 
-	pd.mainWindow.SetStatus("Preferences saved")
+	pd.mainWindow.SetStatus("Settings saved")
 }
 
 // Show displays the preferences dialog.
