@@ -300,12 +300,44 @@ func (mw *MainWindow) onPreferences() {
 func (mw *MainWindow) onAbout() {
 	about := gtk.NewAboutDialog()
 	about.SetTransientFor(&mw.window.Window)
+	about.SetModal(true)
+
+	// Application info
 	about.SetProgramName("VPN Manager")
-	about.SetLogoIconName("network-vpn")
+	about.SetLogoIconName("vpn-manager")
 	about.SetVersion(mw.app.version)
-	about.SetComments("A modern and easy-to-use VPN manager for Linux")
-	about.SetWebsite("https://github.com/vpn-manager")
-	about.SetLicense("MIT License")
+	about.SetComments("Modern and elegant OpenVPN client for Linux.\nManage your VPN connections with ease.")
+
+	// Links
+	about.SetWebsite("https://github.com/yllada/vpn-manager")
+	about.SetWebsiteLabel("GitHub Repository")
+
+	// Copyright and License
+	about.SetCopyright("© 2026 Yadian Llada Lopez")
+	about.SetLicense(`MIT License
+
+Copyright (c) 2026 Yadian Llada Lopez
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`)
+
+	// Credits
+	about.SetAuthors([]string{"Yadian Llada Lopez <yadian@y3lcorp.com>"})
 
 	about.Show()
 }
