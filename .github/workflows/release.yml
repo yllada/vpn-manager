@@ -8,12 +8,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., 1.2.3)'
-        required: true
-        type: string
 
 # Prevent concurrent releases
 concurrency:
@@ -25,7 +19,6 @@ env:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   # =============================================================================
@@ -46,11 +39,7 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION=${GITHUB_REF#refs/tags/v}
-          fi
+          VERSION=${GITHUB_REF#refs/tags/v}
           
           # Validate semver format
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
@@ -114,7 +103,7 @@ jobs:
 
       - name: Run tests before release
         run: |
-          go test -v -race ./... || echo "⚠️ Some tests failed, continuing with release"
+          go test -race ./...
 
       - name: Build binary
         run: |
@@ -276,47 +265,3 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # =============================================================================
-  # Post-Release Tasks
-  # =============================================================================
-  post-release:
-    name: Post Release Tasks
-    runs-on: ubuntu-latest
-    needs: [validate, release]
-    if: success()
-    permissions:
-      contents: read
-    steps:
-      - name: Release Summary
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          echo "🎉 Release v${VERSION} published successfully!"
-          echo ""
-          echo "📦 Assets:"
-          echo "  - vpn-manager-${VERSION}-linux-amd64.tar.gz"
-          echo "  - vpn-manager_${VERSION}_amd64.deb"
-          echo ""
-          echo "🔗 Release URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${VERSION}"
-          echo ""
-          echo "📋 Next steps:"
-          echo "  1. Verify the release assets download correctly"
-          echo "  2. Update documentation if needed"
-          echo "  3. Announce the release on relevant channels"
-
-  # =============================================================================
-  # Cleanup on Failure
-  # =============================================================================
-  cleanup:
-    name: Cleanup Failed Release
-    runs-on: ubuntu-latest
-    needs: [validate, build, release]
-    if: failure()
-    permissions:
-      contents: write
-    steps:
-      - name: Delete failed release tag
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "⚠️ Release failed. Manual cleanup may be required."
-          echo "Check the workflow logs for errors."
