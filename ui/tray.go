@@ -25,10 +25,17 @@ type TrayIndicator struct {
 	app              *Application
 	menuItems        map[string]*systray.MenuItem
 	statusItem       *systray.MenuItem
+	connectionInfo   *systray.MenuItem
+	uptimeItem       *systray.MenuItem
 	disconnectItem   *systray.MenuItem
+	quickConnectItem *systray.MenuItem
 	connectItems     map[string]*systray.MenuItem
 	separatorAdded   bool
 	connectedProfile string
+	connectedID      string
+	connectTime      time.Time
+	uptimeTicker     *time.Ticker
+	uptimeStop       chan bool
 }
 
 // NewTrayIndicator creates a new system tray indicator.
@@ -37,6 +44,7 @@ func NewTrayIndicator(app *Application) *TrayIndicator {
 		app:          app,
 		menuItems:    make(map[string]*systray.MenuItem),
 		connectItems: make(map[string]*systray.MenuItem),
+		uptimeStop:   make(chan bool),
 	}
 }
 
@@ -52,12 +60,41 @@ func (t *TrayIndicator) onReady() {
 	systray.SetTitle("VPN Manager")
 	systray.SetTooltip("VPN Manager - Disconnected")
 
-	// Status item (disabled, just shows current state)
-	t.statusItem = systray.AddMenuItem("Disconnected", "Current status")
+	// ═══════════════════════════════════════════════════════════════════════
+	// CONNECTION STATUS SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+	
+	// Status item - shows current state with icon
+	t.statusItem = systray.AddMenuItem("○  Not Connected", "Current VPN status")
 	t.statusItem.Disable()
 
-	// Disconnect item (hidden by default)
-	t.disconnectItem = systray.AddMenuItem("⏹ Disconnect", "Disconnect active VPN")
+	// Connection details (hidden when disconnected)
+	t.connectionInfo = systray.AddMenuItem("    IP: ---", "Connection details")
+	t.connectionInfo.Disable()
+	t.connectionInfo.Hide()
+
+	// Uptime (hidden when disconnected)
+	t.uptimeItem = systray.AddMenuItem("    ⏱ Uptime: --:--:--", "Connection duration")
+	t.uptimeItem.Disable()
+	t.uptimeItem.Hide()
+
+	systray.AddSeparator()
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// QUICK ACTIONS SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+
+	// Quick Connect (to last used profile)
+	t.quickConnectItem = systray.AddMenuItem("⚡ Quick Connect", "Connect to last used profile")
+	t.quickConnectItem.Hide() // Hidden until we have a last profile
+	go func() {
+		for range t.quickConnectItem.ClickedCh {
+			t.quickConnect()
+		}
+	}()
+
+	// Disconnect item (hidden when not connected)
+	t.disconnectItem = systray.AddMenuItem("⏹  Disconnect", "Disconnect from VPN")
 	t.disconnectItem.Hide()
 	go func() {
 		for range t.disconnectItem.ClickedCh {
@@ -67,13 +104,25 @@ func (t *TrayIndicator) onReady() {
 
 	systray.AddSeparator()
 
+	// ═══════════════════════════════════════════════════════════════════════
+	// PROFILES SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+
+	// Section header
+	profilesHeader := systray.AddMenuItem("── Profiles ──", "")
+	profilesHeader.Disable()
+
 	// Profile items will be added dynamically
 	t.refreshProfiles()
 
 	systray.AddSeparator()
 
+	// ═══════════════════════════════════════════════════════════════════════
+	// APP SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+
 	// Show window
-	showItem := systray.AddMenuItem("Open VPN Manager", "Show main window")
+	showItem := systray.AddMenuItem("🖥  Open VPN Manager", "Show main window")
 	go func() {
 		for range showItem.ClickedCh {
 			t.app.showWindow()
@@ -83,13 +132,16 @@ func (t *TrayIndicator) onReady() {
 	systray.AddSeparator()
 
 	// Quit
-	quitItem := systray.AddMenuItem("Quit", "Close VPN Manager")
+	quitItem := systray.AddMenuItem("✕  Quit", "Close VPN Manager")
 	go func() {
 		for range quitItem.ClickedCh {
 			t.app.Quit()
 			systray.Quit()
 		}
 	}()
+
+	// Show quick connect if we have profiles
+	t.updateQuickConnect()
 }
 
 // onExit is called when the systray is about to exit.
@@ -106,7 +158,9 @@ func (t *TrayIndicator) refreshProfiles() {
 			continue
 		}
 
-		item := systray.AddMenuItem(profile.Name, fmt.Sprintf("Connect/Disconnect %s", profile.Name))
+		// Add profile with icon
+		displayName := fmt.Sprintf("🔐 %s", profile.Name)
+		item := systray.AddMenuItem(displayName, fmt.Sprintf("Connect to %s", profile.Name))
 		t.connectItems[profile.ID] = item
 
 		// Handle clicks
@@ -163,11 +217,25 @@ func (t *TrayIndicator) SetConnected(profileName string) {
 	systray.SetIcon(iconConnected)
 	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected to %s", profileName))
 	t.connectedProfile = profileName
+	t.connectTime = time.Now()
+
 	if t.statusItem != nil {
-		t.statusItem.SetTitle(fmt.Sprintf("✓ Connected: %s", profileName))
+		t.statusItem.SetTitle(fmt.Sprintf("●  Connected: %s", profileName))
+	}
+	if t.connectionInfo != nil {
+		t.connectionInfo.SetTitle("    🌐 Secure Connection")
+		t.connectionInfo.Show()
+	}
+	if t.uptimeItem != nil {
+		t.uptimeItem.SetTitle("    ⏱ Uptime: 00:00:00")
+		t.uptimeItem.Show()
+		t.startUptimeCounter()
 	}
 	if t.disconnectItem != nil {
 		t.disconnectItem.Show()
+	}
+	if t.quickConnectItem != nil {
+		t.quickConnectItem.Hide()
 	}
 }
 
@@ -176,12 +244,97 @@ func (t *TrayIndicator) SetDisconnected() {
 	systray.SetIcon(iconDisconnected)
 	systray.SetTooltip("VPN Manager - Disconnected")
 	t.connectedProfile = ""
+	t.connectedID = ""
+
 	if t.statusItem != nil {
-		t.statusItem.SetTitle("Disconnected")
+		t.statusItem.SetTitle("○  Not Connected")
+	}
+	if t.connectionInfo != nil {
+		t.connectionInfo.Hide()
+	}
+	if t.uptimeItem != nil {
+		t.uptimeItem.Hide()
+		t.stopUptimeCounter()
 	}
 	if t.disconnectItem != nil {
 		t.disconnectItem.Hide()
 	}
+	t.updateQuickConnect()
+}
+
+// startUptimeCounter starts the uptime display ticker.
+func (t *TrayIndicator) startUptimeCounter() {
+	t.stopUptimeCounter() // Stop any existing ticker
+
+	t.uptimeTicker = time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-t.uptimeTicker.C:
+				uptime := time.Since(t.connectTime)
+				hours := int(uptime.Hours())
+				minutes := int(uptime.Minutes()) % 60
+				seconds := int(uptime.Seconds()) % 60
+				if t.uptimeItem != nil {
+					t.uptimeItem.SetTitle(fmt.Sprintf("    ⏱ Uptime: %02d:%02d:%02d", hours, minutes, seconds))
+				}
+			case <-t.uptimeStop:
+				return
+			}
+		}
+	}()
+}
+
+// stopUptimeCounter stops the uptime display ticker.
+func (t *TrayIndicator) stopUptimeCounter() {
+	if t.uptimeTicker != nil {
+		t.uptimeTicker.Stop()
+		t.uptimeTicker = nil
+	}
+	// Non-blocking send to stop goroutine
+	select {
+	case t.uptimeStop <- true:
+	default:
+	}
+}
+
+// updateQuickConnect updates the quick connect button visibility.
+func (t *TrayIndicator) updateQuickConnect() {
+	profiles := t.app.vpnManager.ProfileManager().List()
+	if len(profiles) > 0 && t.connectedProfile == "" {
+		// Show quick connect to first/last profile
+		lastProfile := profiles[0]
+		// Try to find last used profile
+		for _, p := range profiles {
+			if !p.LastUsed.IsZero() && (lastProfile.LastUsed.IsZero() || p.LastUsed.After(lastProfile.LastUsed)) {
+				lastProfile = p
+			}
+		}
+		if t.quickConnectItem != nil {
+			t.quickConnectItem.SetTitle(fmt.Sprintf("⚡ Quick Connect: %s", lastProfile.Name))
+			t.quickConnectItem.Show()
+		}
+	} else if t.quickConnectItem != nil {
+		t.quickConnectItem.Hide()
+	}
+}
+
+// quickConnect connects to the last used profile.
+func (t *TrayIndicator) quickConnect() {
+	profiles := t.app.vpnManager.ProfileManager().List()
+	if len(profiles) == 0 {
+		return
+	}
+
+	// Find last used profile
+	lastProfile := profiles[0]
+	for _, p := range profiles {
+		if !p.LastUsed.IsZero() && (lastProfile.LastUsed.IsZero() || p.LastUsed.After(lastProfile.LastUsed)) {
+			lastProfile = p
+		}
+	}
+
+	t.toggleConnection(lastProfile)
 }
 
 // disconnectCurrent disconnects the currently connected VPN.
