@@ -98,6 +98,7 @@ debian/*.substvars
 debian/files
 debian/
 snap/
+docs/
 
 # =============================================================================
 # Vendor (opcional - descomentar si prefieres no versionar dependencias)

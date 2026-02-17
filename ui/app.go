@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/config"
 	"github.com/yllada/vpn-manager/vpn"
@@ -72,6 +74,9 @@ func (a *Application) onActivate() {
 	// Start system tray indicator
 	a.tray = NewTrayIndicator(a)
 	go a.tray.Run()
+
+	// Configure and start health checker if auto-reconnect is enabled
+	a.setupHealthChecker()
 }
 
 // setupAppIcon sets up the application icon
@@ -156,4 +161,83 @@ func (a *Application) connectFromTray(profile *vpn.Profile, savedPassword string
 			a.window.profileList.connectWithCredentials(profile, profile.Username, savedPassword)
 		}
 	}
+}
+
+// setupHealthChecker configures and starts the health checker.
+func (a *Application) setupHealthChecker() {
+	if !a.config.AutoReconnect {
+		return
+	}
+
+	hc := a.vpnManager.HealthChecker()
+	if hc == nil {
+		return
+	}
+
+	// Configure auto-reconnect based on app config
+	config := vpn.DefaultHealthConfig()
+	config.AutoReconnect = a.config.AutoReconnect
+
+	hc.UpdateConfig(config)
+
+	// Set up callbacks for health events
+	hc.SetOnHealthChange(func(profileID string, oldState, newState vpn.HealthState) {
+		// Update UI on health state change
+		glib.IdleAdd(func() {
+			if a.window != nil && a.window.profileList != nil {
+				a.window.profileList.updateHealthIndicator(profileID, newState)
+			}
+		})
+
+		// Show notification on state change
+		if a.config.ShowNotifications {
+			profile, err := a.vpnManager.ProfileManager().Get(profileID)
+			if err == nil {
+				switch newState {
+				case vpn.HealthUnhealthy:
+					NotifyError(profile.Name, "Connection lost - attempting to reconnect...")
+				case vpn.HealthHealthy:
+					if oldState == vpn.HealthUnhealthy {
+						NotifyConnected(profile.Name + " (reconnected)")
+					}
+				}
+			}
+		}
+	})
+
+	hc.SetOnReconnecting(func(profileID string, attempt int) {
+		glib.IdleAdd(func() {
+			if a.window != nil {
+				profile, err := a.vpnManager.ProfileManager().Get(profileID)
+				if err == nil {
+					a.window.SetStatus(fmt.Sprintf("Reconnecting to %s (attempt %d)...", profile.Name, attempt))
+				}
+			}
+		})
+	})
+
+	hc.SetOnReconnectFailed(func(profileID string, err error) {
+		glib.IdleAdd(func() {
+			if a.window != nil {
+				profile, _ := a.vpnManager.ProfileManager().Get(profileID)
+				if profile != nil {
+					a.window.SetStatus(fmt.Sprintf("Failed to reconnect to %s", profile.Name))
+					if a.window.profileList != nil {
+						a.window.profileList.updateRowStatus(profileID, vpn.StatusError)
+					}
+				}
+			}
+		})
+
+		// Notify user of reconnect failure
+		if a.config.ShowNotifications {
+			profile, _ := a.vpnManager.ProfileManager().Get(profileID)
+			if profile != nil {
+				NotifyError(profile.Name, "Auto-reconnect failed after multiple attempts")
+			}
+		}
+	})
+
+	// Start the health checker
+	a.vpnManager.StartHealthChecker()
 }

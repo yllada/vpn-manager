@@ -15,9 +15,11 @@ import (
 // ProfileList represents the VPN profile list.
 // Manages the display and interactions with connection profiles.
 type ProfileList struct {
-	mainWindow *MainWindow
-	listBox    *gtk.ListBox
-	rows       map[string]*ProfileRow
+	mainWindow    *MainWindow
+	listBox       *gtk.ListBox
+	rows          map[string]*ProfileRow
+	statsUpdating bool
+	stopStats     chan struct{}
 }
 
 // ProfileRow represents a profile row in the list.
@@ -32,6 +34,10 @@ type ProfileRow struct {
 	statusIcon  *gtk.Image
 	deleteBtn   *gtk.Button
 	spinner     *gtk.Spinner
+	// Statistics widgets
+	statsBox    *gtk.Box
+	uptimeLabel *gtk.Label
+	latencyLabel *gtk.Label
 }
 
 // NewProfileList creates a new VPN profile list.
@@ -184,6 +190,36 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 		infoBox.Append(badgeBox)
 	}
 
+	// Statistics box (hidden by default, shown when connected)
+	statsBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	statsBox.SetMarginTop(4)
+	statsBox.SetVisible(false)
+
+	// Uptime label
+	uptimeIcon := gtk.NewImage()
+	uptimeIcon.SetFromIconName("appointment-symbolic")
+	uptimeIcon.SetPixelSize(12)
+	statsBox.Append(uptimeIcon)
+
+	uptimeLabel := gtk.NewLabel("")
+	uptimeLabel.AddCSSClass("caption")
+	uptimeLabel.AddCSSClass("dim-label")
+	statsBox.Append(uptimeLabel)
+
+	// Latency label
+	latencyIcon := gtk.NewImage()
+	latencyIcon.SetFromIconName("network-wireless-signal-good-symbolic")
+	latencyIcon.SetPixelSize(12)
+	latencyIcon.SetMarginStart(8)
+	statsBox.Append(latencyIcon)
+
+	latencyLabel := gtk.NewLabel("")
+	latencyLabel.AddCSSClass("caption")
+	latencyLabel.AddCSSClass("dim-label")
+	statsBox.Append(latencyLabel)
+
+	infoBox.Append(statsBox)
+
 	mainBox.Append(infoBox)
 
 	// Connection status
@@ -260,15 +296,18 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 
 	// Guardar referencia
 	pl.rows[profile.ID] = &ProfileRow{
-		profile:     profile,
-		row:         row,
-		mainBox:     mainBox,
-		connectBtn:  connectBtn,
-		configBtn:   configBtn,
-		statusLabel: statusLabel,
-		statusIcon:  statusIcon,
-		deleteBtn:   deleteBtn,
-		spinner:     spinner,
+		profile:      profile,
+		row:          row,
+		mainBox:      mainBox,
+		connectBtn:   connectBtn,
+		configBtn:    configBtn,
+		statusLabel:  statusLabel,
+		statusIcon:   statusIcon,
+		deleteBtn:    deleteBtn,
+		spinner:      spinner,
+		statsBox:     statsBox,
+		uptimeLabel:  uptimeLabel,
+		latencyLabel: latencyLabel,
 	}
 
 	// Update status if connected
@@ -670,6 +709,9 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.connectBtn.RemoveCSSClass("warning")
 		row.connectBtn.AddCSSClass("connect-button")
 		row.deleteBtn.SetSensitive(true)
+		// Hide statistics box and stop updates
+		row.statsBox.SetVisible(false)
+		pl.stopStatsUpdate()
 		// Update tray indicator if no other active connections
 		if tray := pl.mainWindow.app.GetTray(); tray != nil {
 			hasConnected := false
@@ -711,6 +753,10 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.connectBtn.RemoveCSSClass("connect-button")
 		row.connectBtn.AddCSSClass("warning")
 		row.deleteBtn.SetSensitive(false)
+		// Show statistics box
+		row.statsBox.SetVisible(true)
+		// Start statistics update
+		pl.startStatsUpdate(profileID)
 		// Successful connection notification
 		NotifyConnected(row.profile.Name)
 		// Update tray indicator
@@ -804,4 +850,108 @@ func (pl *ProfileList) onDeleteClicked(profile *vpn.Profile) {
 
 	window.SetChild(mainBox)
 	window.Show()
+}
+
+// updateHealthIndicator updates the visual health indicator for a profile.
+func (pl *ProfileList) updateHealthIndicator(profileID string, state vpn.HealthState) {
+	row, exists := pl.rows[profileID]
+	if !exists {
+		return
+	}
+
+	switch state {
+	case vpn.HealthHealthy:
+		row.statusIcon.SetFromIconName("network-vpn-symbolic")
+		row.statusLabel.SetText("Connected")
+		row.statusLabel.RemoveCSSClass("status-error")
+		row.statusLabel.RemoveCSSClass("status-warning")
+		row.statusLabel.AddCSSClass("status-connected")
+	case vpn.HealthDegraded:
+		row.statusIcon.SetFromIconName("network-vpn-acquiring-symbolic")
+		row.statusLabel.SetText("Connection unstable")
+		row.statusLabel.RemoveCSSClass("status-connected")
+		row.statusLabel.RemoveCSSClass("status-error")
+		row.statusLabel.AddCSSClass("status-warning")
+	case vpn.HealthUnhealthy:
+		row.statusIcon.SetFromIconName("network-vpn-disconnected-symbolic")
+		row.statusLabel.SetText("Reconnecting...")
+		row.statusLabel.RemoveCSSClass("status-connected")
+		row.statusLabel.RemoveCSSClass("status-warning")
+		row.statusLabel.AddCSSClass("status-error")
+	}
+}
+
+// startStatsUpdate starts the goroutine that updates connection statistics.
+func (pl *ProfileList) startStatsUpdate(profileID string) {
+	// Stop any existing update goroutine
+	pl.stopStatsUpdate()
+
+	pl.stopStats = make(chan struct{})
+	pl.statsUpdating = true
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-pl.stopStats:
+				return
+			case <-ticker.C:
+				glib.IdleAdd(func() {
+					pl.updateStats(profileID)
+				})
+			}
+		}
+	}()
+}
+
+// stopStatsUpdate stops the statistics update goroutine.
+func (pl *ProfileList) stopStatsUpdate() {
+	if pl.statsUpdating && pl.stopStats != nil {
+		close(pl.stopStats)
+		pl.statsUpdating = false
+	}
+}
+
+// updateStats updates the statistics display for a connected profile.
+func (pl *ProfileList) updateStats(profileID string) {
+	row, exists := pl.rows[profileID]
+	if !exists {
+		return
+	}
+
+	conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profileID)
+	if !exists || conn.GetStatus() != vpn.StatusConnected {
+		return
+	}
+
+	// Update uptime
+	uptime := conn.GetUptime()
+	row.uptimeLabel.SetText(formatDuration(uptime))
+
+	// Update latency from health checker if available
+	hc := pl.mainWindow.app.vpnManager.HealthChecker()
+	if hc != nil {
+		if health, exists := hc.GetHealth(profileID); exists && health.Latency > 0 {
+			row.latencyLabel.SetText(fmt.Sprintf("%dms", health.Latency.Milliseconds()))
+		} else {
+			row.latencyLabel.SetText("--")
+		}
+	}
+}
+
+// formatDuration formats a duration in a human-readable format.
+func formatDuration(d time.Duration) string {
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
 }

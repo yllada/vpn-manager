@@ -92,6 +92,7 @@ type Connection struct {
 type Manager struct {
 	profileManager *ProfileManager
 	connections    map[string]*Connection
+	healthChecker  *HealthChecker
 	mu             sync.RWMutex
 }
 
@@ -103,10 +104,34 @@ func NewManager() (*Manager, error) {
 		return nil, fmt.Errorf("failed to initialize profile manager: %w", err)
 	}
 
-	return &Manager{
+	m := &Manager{
 		profileManager: pm,
 		connections:    make(map[string]*Connection),
-	}, nil
+	}
+
+	// Initialize health checker with default config
+	m.healthChecker = NewHealthChecker(m, DefaultHealthConfig())
+
+	return m, nil
+}
+
+// HealthChecker returns the health checker instance.
+func (m *Manager) HealthChecker() *HealthChecker {
+	return m.healthChecker
+}
+
+// StartHealthChecker starts the health monitoring goroutine.
+func (m *Manager) StartHealthChecker() {
+	if m.healthChecker != nil {
+		m.healthChecker.Start()
+	}
+}
+
+// StopHealthChecker stops the health monitoring goroutine.
+func (m *Manager) StopHealthChecker() {
+	if m.healthChecker != nil {
+		m.healthChecker.Stop()
+	}
 }
 
 // ProfileManager returns the associated profile manager.

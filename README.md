@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.1-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/Go-1.24+-00ADD8.svg" alt="Go Version">
   <img src="https://img.shields.io/badge/GTK-4.0-4A86CF.svg" alt="GTK Version">
@@ -47,6 +47,13 @@
   - Exclude mode: all traffic except specified uses the VPN
 - **OTP Support** - Two-factor authentication with one-time passwords
 - **Auto-reconnect** - Automatically restores connection if lost
+- **Health Monitoring** - Continuous connectivity checks with automatic recovery
+
+### 💻 Command Line Interface
+- **`--list`** - List all configured VPN profiles
+- **`--connect NAME`** - Connect to a profile by name
+- **`--disconnect`** - Disconnect active connections
+- **`--status`** - Show current connection status
 
 ### 🎨 Modern Interface
 - **GTK4 + libadwaita** - Native interface following GNOME design guidelines
@@ -56,8 +63,14 @@
 
 ### 📊 Real-Time Monitoring
 - **Connection status** - View current state of each profile
-- **Network statistics** - Monitor bytes sent/received
+- **Live statistics** - Uptime and latency displayed in real-time
+- **Health indicators** - Visual feedback on connection quality
 - **Assigned IP address** - Shows current VPN IP
+
+### 📝 Logging & Debugging
+- **Structured logging** - Detailed logs with timestamps and severity levels
+- **Automatic rotation** - Log files are compressed and rotated (5MB max, 5 backups)
+- **Log location** - `~/.config/vpn-manager/logs/`
 
 ### ⚙️ Flexible Configuration
 - **Auto-start** - Option to start with the system
@@ -147,6 +160,10 @@ Contributions are welcome! Please follow these steps:
 - [ ] Multi-language support
 - [ ] Configuration export/import
 - [ ] NetworkManager integration
+- [ ] Kill switch (block traffic on VPN disconnect)
+- [x] Command line interface ✅ v1.0.2
+- [x] Health monitoring & auto-reconnect ✅ v1.0.2
+- [x] Live connection statistics ✅ v1.0.2
 
 ## License
 

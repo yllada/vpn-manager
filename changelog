@@ -1,3 +1,23 @@
+vpn-manager (1.0.1-1) stable; urgency=medium
+
+  * New Features:
+    - Command-line interface (CLI) for scripting and automation
+    - Connection health monitoring with auto-reconnect
+    - Real-time connection statistics in UI (uptime, latency)
+    - Structured logging with automatic log rotation
+  
+  * Improvements:
+    - Better error handling and user feedback
+    - Improved health state visualization
+    - Desktop notifications for health events
+  
+  * Technical:
+    - Added unit tests for core components
+    - Refactored logging system with rotation support
+    - Modular CLI package for extensibility
+
+ -- VPN Manager Team <vpn-manager@example.com>  Mon, 17 Feb 2026 12:00:00 +0000
+
 vpn-manager (1.0.0-1) stable; urgency=medium
 
   * Initial release
