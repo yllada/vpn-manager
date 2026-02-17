@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -99,14 +101,22 @@ func (mw *MainWindow) createLayout() {
 func (mw *MainWindow) createMenu() *gio.Menu {
 	menu := gio.NewMenu()
 
-	// Preferences
-	menu.Append("Preferences", "app.preferences")
+	// Profiles section
+	profilesSection := gio.NewMenu()
+	profilesSection.Append("Import Profiles...", "app.import")
+	profilesSection.Append("Export Profiles...", "app.export")
+	menu.AppendSection("", &profilesSection.MenuModel)
 
-	// About
-	menu.Append("About", "app.about")
+	// Settings section
+	settingsSection := gio.NewMenu()
+	settingsSection.Append("Preferences", "app.preferences")
+	menu.AppendSection("", &settingsSection.MenuModel)
 
-	// Quit
-	menu.Append("Quit", "app.quit")
+	// App section
+	appSection := gio.NewMenu()
+	appSection.Append("About", "app.about")
+	appSection.Append("Quit", "app.quit")
+	menu.AppendSection("", &appSection.MenuModel)
 
 	// Connect actions
 	mw.setupActions()
@@ -155,6 +165,22 @@ func (mw *MainWindow) setupActions() {
 	})
 	mw.app.app.AddAction(refreshAction)
 	mw.app.app.SetAccelsForAction("app.refresh", []string{"F5"})
+
+	// Export profiles action (Ctrl+E)
+	exportAction := gio.NewSimpleAction("export", nil)
+	exportAction.ConnectActivate(func(_ *glib.Variant) {
+		mw.onExportProfiles()
+	})
+	mw.app.app.AddAction(exportAction)
+	mw.app.app.SetAccelsForAction("app.export", []string{"<Control>e"})
+
+	// Import profiles action (Ctrl+I)
+	importAction := gio.NewSimpleAction("import", nil)
+	importAction.ConnectActivate(func(_ *glib.Variant) {
+		mw.onImportProfiles()
+	})
+	mw.app.app.AddAction(importAction)
+	mw.app.app.SetAccelsForAction("app.import", []string{"<Control>i"})
 }
 
 // createStatusBar creates the status bar.
@@ -429,4 +455,117 @@ func (mw *MainWindow) showInfo(title, message string) {
 
 	window.SetChild(mainBox)
 	window.Show()
+}
+
+// =============================================================================
+// Export/Import Handlers
+// =============================================================================
+
+// onExportProfiles handles the export profiles action.
+func (mw *MainWindow) onExportProfiles() {
+	profiles := mw.app.vpnManager.ProfileManager().List()
+	if len(profiles) == 0 {
+		mw.showInfo("Export Profiles", "No profiles to export.")
+		return
+	}
+
+	dialog := gtk.NewFileChooserNative(
+		"Export VPN Profiles",
+		&mw.window.Window,
+		gtk.FileChooserActionSave,
+		"Export",
+		"Cancel",
+	)
+
+	// Set suggested filename with date
+	suggestedName := fmt.Sprintf("vpn-profiles-backup-%s.yaml",
+		time.Now().Format("20060102"))
+	dialog.SetCurrentName(suggestedName)
+
+	// Add file filter
+	filter := gtk.NewFileFilter()
+	filter.SetName("VPN Backup Files (*.yaml)")
+	filter.AddPattern("*.yaml")
+	filter.AddPattern("*.yml")
+	dialog.AddFilter(filter)
+
+	dialog.ConnectResponse(func(response int) {
+		if response == int(gtk.ResponseAccept) {
+			file := dialog.File()
+			if file != nil {
+				filePath := file.Path()
+
+				// Ensure .yaml extension
+				if !hasYAMLExtension(filePath) {
+					filePath += ".yaml"
+				}
+
+				err := mw.app.vpnManager.ProfileManager().Export(filePath)
+				if err != nil {
+					mw.showError("Export Failed", fmt.Sprintf("Failed to export profiles: %v", err))
+					return
+				}
+
+				mw.showInfo("Export Complete",
+					fmt.Sprintf("Successfully exported %d profile(s) to:\n%s",
+						len(profiles), filePath))
+				mw.SetStatus(fmt.Sprintf("Exported %d profiles", len(profiles)))
+			}
+		}
+	})
+
+	dialog.Show()
+}
+
+// onImportProfiles handles the import profiles action.
+func (mw *MainWindow) onImportProfiles() {
+	dialog := gtk.NewFileChooserNative(
+		"Import VPN Profiles",
+		&mw.window.Window,
+		gtk.FileChooserActionOpen,
+		"Import",
+		"Cancel",
+	)
+
+	// Add file filter
+	filter := gtk.NewFileFilter()
+	filter.SetName("VPN Backup Files (*.yaml, *.yml)")
+	filter.AddPattern("*.yaml")
+	filter.AddPattern("*.yml")
+	dialog.AddFilter(filter)
+
+	dialog.ConnectResponse(func(response int) {
+		if response == int(gtk.ResponseAccept) {
+			file := dialog.File()
+			if file != nil {
+				filePath := file.Path()
+
+				count, err := mw.app.vpnManager.ProfileManager().Import(filePath)
+				if err != nil {
+					mw.showError("Import Failed", fmt.Sprintf("Failed to import profiles: %v", err))
+					return
+				}
+
+				if count == 0 {
+					mw.showInfo("Import Complete", "No new profiles were imported.")
+					return
+				}
+
+				// Reload the profile list
+				mw.profileList.LoadProfiles()
+
+				mw.showInfo("Import Complete",
+					fmt.Sprintf("Successfully imported %d profile(s).\n\nNote: You'll need to re-enter credentials for imported profiles.", count))
+				mw.SetStatus(fmt.Sprintf("Imported %d profiles", count))
+			}
+		}
+	})
+
+	dialog.Show()
+}
+
+// hasYAMLExtension checks if a file path has a YAML extension.
+func hasYAMLExtension(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml")
 }
