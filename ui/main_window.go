@@ -32,6 +32,10 @@ func NewMainWindow(app *Application) *MainWindow {
 	mw.window.SetResizable(false) // Disable maximize and resize
 	mw.window.SetIconName("vpn-manager")
 
+	// Hide to tray instead of closing - like ProtonVPN behavior
+	// Clicking X hides the window, app continues running in system tray
+	mw.window.SetHideOnClose(true)
+
 	// Create main layout
 	mw.createLayout()
 
