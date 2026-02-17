@@ -9,3 +9,4 @@ Terminal=false
 Categories=Network;System;
 Keywords=vpn;openvpn;network;security;
 StartupNotify=true
+StartupWMClass=com.vpnmanager.app
