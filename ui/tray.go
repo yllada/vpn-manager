@@ -85,7 +85,7 @@ func (t *TrayIndicator) onReady() {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	// Quick Connect (to last used profile)
-	t.quickConnectItem = systray.AddMenuItem("⚡ Quick Connect", "Connect to last used profile")
+	t.quickConnectItem = systray.AddMenuItem("Quick Connect", "Connect to last used profile")
 	t.quickConnectItem.Hide() // Hidden until we have a last profile
 	go func() {
 		for range t.quickConnectItem.ClickedCh {
@@ -122,7 +122,7 @@ func (t *TrayIndicator) onReady() {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	// Show window
-	showItem := systray.AddMenuItem("🖥  Open VPN Manager", "Show main window")
+	showItem := systray.AddMenuItem("Open VPN Manager", "Show main window")
 	go func() {
 		for range showItem.ClickedCh {
 			t.app.showWindow()
@@ -132,7 +132,7 @@ func (t *TrayIndicator) onReady() {
 	systray.AddSeparator()
 
 	// Quit
-	quitItem := systray.AddMenuItem("✕  Quit", "Close VPN Manager")
+	quitItem := systray.AddMenuItem("Quit", "Close VPN Manager")
 	go func() {
 		for range quitItem.ClickedCh {
 			t.app.Quit()
@@ -159,7 +159,7 @@ func (t *TrayIndicator) refreshProfiles() {
 		}
 
 		// Add profile with icon
-		displayName := fmt.Sprintf("🔐 %s", profile.Name)
+		displayName := fmt.Sprintf("%s", profile.Name)
 		item := systray.AddMenuItem(displayName, fmt.Sprintf("Connect to %s", profile.Name))
 		t.connectItems[profile.ID] = item
 
@@ -311,7 +311,7 @@ func (t *TrayIndicator) updateQuickConnect() {
 			}
 		}
 		if t.quickConnectItem != nil {
-			t.quickConnectItem.SetTitle(fmt.Sprintf("⚡ Quick Connect: %s", lastProfile.Name))
+			t.quickConnectItem.SetTitle(fmt.Sprintf("Quick Connect: %s", lastProfile.Name))
 			t.quickConnectItem.Show()
 		}
 	} else if t.quickConnectItem != nil {
