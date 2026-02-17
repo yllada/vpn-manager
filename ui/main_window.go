@@ -29,6 +29,7 @@ func NewMainWindow(app *Application) *MainWindow {
 	mw.window = gtk.NewApplicationWindow(app.app)
 	mw.window.SetTitle("VPN Manager")
 	mw.window.SetDefaultSize(800, 600)
+	mw.window.SetResizable(false) // Disable maximize and resize
 	mw.window.SetIconName("vpn-manager")
 
 	// Create main layout
