@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/diamondburned/gotk4/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -61,6 +62,12 @@ func (a *Application) Run(args []string) int {
 
 // onActivate is called when the application is activated
 func (a *Application) onActivate() {
+	// Initialize libadwaita
+	adw.Init()
+
+	// Apply configured theme
+	a.ApplyTheme(a.config.Theme)
+
 	// Set up the application icon
 	a.setupAppIcon()
 
@@ -118,6 +125,24 @@ func (a *Application) GetVPNManager() *vpn.Manager {
 // GetConfig returns the configuration
 func (a *Application) GetConfig() *config.Config {
 	return a.config
+}
+
+// ApplyTheme applies the specified theme to the application.
+// Supported values: "auto" (system default), "light", "dark"
+func (a *Application) ApplyTheme(theme string) {
+	styleManager := adw.StyleManagerGetDefault()
+	if styleManager == nil {
+		return
+	}
+
+	switch theme {
+	case "light":
+		styleManager.SetColorScheme(adw.ColorSchemeForceLight)
+	case "dark":
+		styleManager.SetColorScheme(adw.ColorSchemeForceDark)
+	default: // "auto" or any other value
+		styleManager.SetColorScheme(adw.ColorSchemeDefault)
+	}
 }
 
 // GetVersion returns the application version

@@ -280,7 +280,10 @@ func (pd *PreferencesDialog) savePreferences() {
 
 	themeIdx := pd.themeDropDown.Selected()
 	if int(themeIdx) < len(pd.themeIDs) {
-		pd.config.Theme = pd.themeIDs[themeIdx]
+		newTheme := pd.themeIDs[themeIdx]
+		pd.config.Theme = newTheme
+		// Apply theme immediately
+		pd.mainWindow.app.ApplyTheme(newTheme)
 	}
 
 	if err := pd.config.Save(); err != nil {
