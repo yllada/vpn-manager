@@ -1,33 +1,25 @@
 #!/bin/bash
+# =============================================================================
 # Script to package VPN Manager as .deb
-# Usage: ./scripts/build-deb.sh [version]
+# =============================================================================
+# Usage: 
+#   ./scripts/build-deb.sh [version]              # Build from source
+#   ./scripts/build-deb.sh [version] [binary]     # Use pre-built binary (faster)
+#
+# Examples:
+#   ./scripts/build-deb.sh 1.0.2                  # Compile and package
+#   ./scripts/build-deb.sh 1.0.2 ./vpn-manager    # Package existing binary
+# =============================================================================
 
-set -e
+set -euo pipefail
 
 VERSION="${1:-1.0.0}"
+PREBUILT_BINARY="${2:-}"
 PKG_NAME="vpn-manager"
 ARCH="amd64"
 PKG_DIR="${PKG_NAME}_${VERSION}_${ARCH}"
 
-# Detect Go location
-GO_BIN=$(command -v go 2>/dev/null || echo "/usr/local/go/bin/go")
-if [ ! -x "$GO_BIN" ]; then
-    # Try common locations
-    for path in /usr/local/go/bin/go /usr/bin/go /snap/bin/go ~/go/bin/go; do
-        if [ -x "$path" ]; then
-            GO_BIN="$path"
-            break
-        fi
-    done
-fi
-
-if [ ! -x "$GO_BIN" ]; then
-    echo "❌ Error: Go not found. Install Go first."
-    exit 1
-fi
-
-echo "🔨 Building VPN Manager v${VERSION}..."
-echo "   Using Go: $GO_BIN"
+echo "🔨 Packaging VPN Manager v${VERSION}..."
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,20 +39,47 @@ mkdir -p usr/share/icons/hicolor/scalable/apps
 mkdir -p usr/share/icons/hicolor/256x256/apps
 mkdir -p usr/share/doc/${PKG_NAME}
 
-# Compile the binary
-echo "📦 Compiling binary..."
+# Get or build the binary
 cd "${PROJECT_DIR}"
 
-# Preserve Go module cache from the original user
-if [ -n "$SUDO_USER" ]; then
-    export HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-    export GOPATH="${HOME}/go"
-    export GOCACHE="${HOME}/.cache/go-build"
+if [[ -n "$PREBUILT_BINARY" && -f "$PREBUILT_BINARY" ]]; then
+    echo "📦 Using pre-built binary: $PREBUILT_BINARY"
+    cp "$PREBUILT_BINARY" "${BUILD_DIR}/${PKG_DIR}/usr/bin/${PKG_NAME}"
+else
+    echo "📦 Compiling binary from source..."
+    
+    # Detect Go location
+    GO_BIN=$(command -v go 2>/dev/null || echo "")
+    if [[ -z "$GO_BIN" ]]; then
+        for path in /usr/local/go/bin/go /usr/bin/go /snap/bin/go ~/go/bin/go; do
+            if [[ -x "$path" ]]; then
+                GO_BIN="$path"
+                break
+            fi
+        done
+    fi
+    
+    if [[ -z "$GO_BIN" || ! -x "$GO_BIN" ]]; then
+        echo "❌ Error: Go not found. Install Go or provide pre-built binary."
+        echo "   Usage: $0 $VERSION /path/to/vpn-manager"
+        exit 1
+    fi
+    
+    echo "   Using Go: $GO_BIN"
+    
+    # Preserve Go module cache from the original user
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        export HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+        export GOPATH="${HOME}/go"
+        export GOCACHE="${HOME}/.cache/go-build"
+    fi
+    
+    CGO_ENABLED=1 "$GO_BIN" build \
+        -trimpath \
+        -ldflags="-s -w -X main.appVersion=${VERSION}" \
+        -o "${BUILD_DIR}/${PKG_DIR}/usr/bin/${PKG_NAME}" \
+        .
 fi
-
-CGO_ENABLED=1 "$GO_BIN" build -ldflags="-s -w -X main.appVersion=${VERSION}" \
-    -o "${BUILD_DIR}/${PKG_DIR}/usr/bin/${PKG_NAME}" \
-    .
 
 # Copy files
 echo "📄 Copying files..."

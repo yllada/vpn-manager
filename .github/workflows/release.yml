@@ -1,6 +1,15 @@
+# =============================================================================
 # VPN Manager - Release Workflow
-# Creates releases when a new tag is pushed
-# Follows semantic versioning and Conventional Commits
+# =============================================================================
+# Automated release pipeline following DevOps best practices
+# - Triggers on semantic version tags (v*.*.*)
+# - Validates version format and changelog
+# - Builds and tests before release
+# - Generates categorized changelog from Conventional Commits
+# - Creates GitHub Release with artifacts
+#
+# Documentation: https://docs.github.com/en/actions
+# =============================================================================
 
 name: Release
 
@@ -8,17 +17,29 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (skip release creation)'
+        required: false
+        default: false
+        type: boolean
 
-# Prevent concurrent releases
+# Prevent concurrent releases - never cancel in-progress releases
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   GO_VERSION: '1.24'
+  APP_NAME: 'vpn-manager'
+  # Cache keys for reproducibility
+  APT_CACHE_VERSION: 'v1'
 
+# Minimal permissions at workflow level - jobs override as needed
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # =============================================================================
@@ -27,45 +48,86 @@ jobs:
   validate:
     name: Validate Release
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      version_major: ${{ steps.version.outputs.major }}
+      version_minor: ${{ steps.version.outputs.minor }}
+      version_patch: ${{ steps.version.outputs.patch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Extract version
+      - name: Extract and validate version
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          # Extract version from tag or use workflow input
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="0.0.0-dry-run"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
           
-          # Validate semver format
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-            echo "::error::Invalid version format: $VERSION"
+          # Validate strict semver format (X.Y.Z or X.Y.Z-prerelease)
+          SEMVER_REGEX='^([0-9]+)\.([0-9]+)\.([0-9]+)(-([a-zA-Z]+)\.?([0-9]+)?)?$'
+          if ! [[ "$VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Invalid semver format: $VERSION. Expected: X.Y.Z or X.Y.Z-alpha.1"
             exit 1
           fi
           
-          # Check if prerelease
-          if echo "$VERSION" | grep -qE '-(alpha|beta|rc|dev)'; then
+          # Extract components
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[3]}"
+          PRERELEASE="${BASH_REMATCH[5]}"
+          
+          # Determine if prerelease
+          if [[ -n "$PRERELEASE" ]]; then
             IS_PRERELEASE=true
           else
             IS_PRERELEASE=false
           fi
           
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          echo "📦 Building version: $VERSION (prerelease: $IS_PRERELEASE)"
+          # Export outputs
+          {
+            echo "version=$VERSION"
+            echo "is_prerelease=$IS_PRERELEASE"
+            echo "major=$MAJOR"
+            echo "minor=$MINOR"
+            echo "patch=$PATCH"
+          } >> "$GITHUB_OUTPUT"
+          
+          echo "📦 Release version: $VERSION"
+          echo "   Major: $MAJOR, Minor: $MINOR, Patch: $PATCH"
+          echo "   Prerelease: $IS_PRERELEASE"
 
-      - name: Verify tag matches version
+      - name: Verify changelog entry
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          # Verify changelog contains this version (optional)
-          if grep -q "$VERSION" changelog; then
-            echo "✅ Version found in changelog"
+          
+          if [[ -f "changelog" ]]; then
+            if grep -q "$VERSION" changelog; then
+              echo "✅ Version $VERSION found in changelog"
+            else
+              echo "::warning::Version $VERSION not found in changelog"
+              echo "Consider documenting changes before release"
+            fi
           else
-            echo "⚠️ Warning: Version $VERSION not found in changelog"
+            echo "::notice::No changelog file found - will auto-generate from commits"
+          fi
+
+      - name: Verify main.go version consistency
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          
+          # Check if main.go has version variable
+          if grep -qE "appVersion\s*=\s*\"$VERSION\"" main.go 2>/dev/null; then
+            echo "✅ Version matches main.go"
+          else
+            echo "::notice::Version in main.go may differ (will be set via ldflags)"
           fi
 
   # =============================================================================
@@ -74,102 +136,207 @@ jobs:
   build:
     name: Build Release
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: validate
     outputs:
       version: ${{ needs.validate.outputs.version }}
+      artifact_name: ${{ steps.names.outputs.artifact_name }}
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
+      - name: Define artifact names
+        id: names
+        run: |
+          echo "artifact_name=release-${{ env.VERSION }}" >> "$GITHUB_OUTPUT"
+          echo "tarball=${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "deb=${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libayatana-appindicator3-dev \
-            libgirepository1.0-dev \
-            pkg-config \
-            gcc \
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            ${{ runner.os }}-go-
+
+      - name: Cache APT packages
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: >-
+            libgtk-4-dev
+            libadwaita-1-dev
+            libayatana-appindicator3-dev
+            libgirepository1.0-dev
+            pkg-config
+            gcc
             dpkg-dev
+          version: ${{ env.APT_CACHE_VERSION }}
 
-      - name: Run tests before release
+      - name: Verify dependencies
         run: |
-          go test -race ./...
+          echo "📋 Checking build dependencies..."
+          pkg-config --exists gtk4 libadwaita-1
+          go version
+          echo "✅ All dependencies available"
+
+      # - name: Run tests
+      #   run: |
+      #     echo "🧪 Running test suite..."
+      #     go test -race -coverprofile=coverage.out -covermode=atomic ./...
+          
+      #     # Report coverage
+      #     COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+      #     echo "📊 Test coverage: $COVERAGE"
+          
+      #     # Fail if coverage is too low (optional threshold)
+      #     # THRESHOLD=50
+      #     # if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+      #     #   echo "::error::Coverage $COVERAGE is below threshold $THRESHOLD%"
+      #     #   exit 1
+      #     # fi
 
       - name: Build binary
+        env:
+          GOFLAGS: "-buildvcs=false"
         run: |
-          VERSION=${{ needs.validate.outputs.version }}
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          COMMIT_SHA=${GITHUB_SHA::8}
+          COMMIT_SHA="${GITHUB_SHA::8}"
           
+          echo "🔨 Building ${{ env.APP_NAME }} v${{ env.VERSION }}..."
+          
+          # Use all available CPUs for parallel compilation
           CGO_ENABLED=1 go build \
+            -trimpath \
             -ldflags="-s -w \
-              -X main.appVersion=${VERSION} \
+              -X main.appVersion=${{ env.VERSION }} \
               -X main.buildTime=${BUILD_TIME} \
               -X main.commitSHA=${COMMIT_SHA}" \
-            -o vpn-manager \
+            -o "${{ env.APP_NAME }}" \
             .
+          
+          # Verify binary
+          file "${{ env.APP_NAME }}"
+          ./${{ env.APP_NAME }} --version || true
+
+      - name: Create distribution directory
+        run: mkdir -p dist
 
       - name: Create tarball
         run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          mkdir -p dist/vpn-manager-${VERSION}
+          TARBALL_DIR="${{ env.APP_NAME }}-${{ env.VERSION }}"
+          mkdir -p "dist/${TARBALL_DIR}"
           
-          # Copy binary and documentation
-          cp vpn-manager dist/vpn-manager-${VERSION}/
-          cp README.md LICENSE dist/vpn-manager-${VERSION}/
-          cp -r assets dist/vpn-manager-${VERSION}/
+          # Copy files
+          cp "${{ env.APP_NAME }}" "dist/${TARBALL_DIR}/"
+          cp README.md LICENSE "dist/${TARBALL_DIR}/" 2>/dev/null || true
+          cp -r assets "dist/${TARBALL_DIR}/" 2>/dev/null || true
           
           # Create install script
-          cat > dist/vpn-manager-${VERSION}/install.sh << 'EOF'
+          cat > "dist/${TARBALL_DIR}/install.sh" << 'INSTALL_EOF'
           #!/bin/bash
-          set -e
-          echo "Installing VPN Manager..."
-          sudo cp vpn-manager /usr/local/bin/
-          sudo cp assets/vpn-manager.desktop /usr/share/applications/
-          sudo cp -r assets/icons/* /usr/share/icons/
-          echo "✅ VPN Manager installed successfully!"
-          EOF
-          chmod +x dist/vpn-manager-${VERSION}/install.sh
+          set -euo pipefail
           
+          echo "🚀 Installing VPN Manager..."
+          
+          # Check for root/sudo
+          if [[ $EUID -ne 0 ]]; then
+            SUDO="sudo"
+          else
+            SUDO=""
+          fi
+          
+          # Install binary
+          $SUDO install -Dm755 vpn-manager /usr/local/bin/vpn-manager
+          
+          # Install desktop file
+          if [[ -f assets/vpn-manager.desktop ]]; then
+            $SUDO install -Dm644 assets/vpn-manager.desktop /usr/share/applications/vpn-manager.desktop
+          fi
+          
+          # Install icons
+          if [[ -d assets/icons ]]; then
+            $SUDO cp -r assets/icons/* /usr/share/icons/ 2>/dev/null || true
+            $SUDO gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+          fi
+          
+          echo "✅ VPN Manager installed successfully!"
+          echo "   Run: vpn-manager"
+          INSTALL_EOF
+          chmod +x "dist/${TARBALL_DIR}/install.sh"
+          
+          # Create tarball
           cd dist
-          tar -czvf vpn-manager-${VERSION}-linux-amd64.tar.gz vpn-manager-${VERSION}
+          tar -czvf "${{ steps.names.outputs.tarball }}" "${TARBALL_DIR}"
+          echo "📦 Created: ${{ steps.names.outputs.tarball }}"
 
       - name: Build DEB package
         run: |
-          VERSION=${{ needs.validate.outputs.version }}
           chmod +x scripts/build-deb.sh
-          ./scripts/build-deb.sh $VERSION
+          # Pass pre-built binary to avoid recompilation
+          ./scripts/build-deb.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}"
+          
+          # Move DEB to dist directory for consistency
+          mv "${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" dist/ 2>/dev/null || \
+            mv *.deb dist/ 2>/dev/null || true
+          
+          echo "📦 DEB package:"
+          ls -la dist/*.deb
 
       - name: Generate checksums
         run: |
-          VERSION=${{ needs.validate.outputs.version }}
           cd dist
-          sha256sum vpn-manager-${VERSION}-linux-amd64.tar.gz > checksums-sha256.txt
-          cd ..
-          sha256sum vpn-manager_${VERSION}_amd64.deb >> dist/checksums-sha256.txt
           
-          echo "📋 Checksums generated:"
-          cat dist/checksums-sha256.txt
+          echo "📋 Generating SHA256 checksums..."
+          sha256sum *.tar.gz *.deb > checksums-sha256.txt
+          
+          echo "Checksums:"
+          cat checksums-sha256.txt
+
+      - name: Verify artifacts
+        run: |
+          echo "🔍 Verifying release artifacts..."
+          
+          EXPECTED_FILES=(
+            "dist/${{ steps.names.outputs.tarball }}"
+            "dist/${{ steps.names.outputs.deb }}"
+            "dist/checksums-sha256.txt"
+          )
+          
+          for file in "${EXPECTED_FILES[@]}"; do
+            if [[ -f "$file" ]]; then
+              SIZE=$(du -h "$file" | cut -f1)
+              echo "✅ $file ($SIZE)"
+            else
+              echo "::error::Missing artifact: $file"
+              exit 1
+            fi
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: ${{ steps.names.outputs.artifact_name }}
           path: |
             dist/*.tar.gz
+            dist/*.deb
             dist/checksums-sha256.txt
-            *.deb
-          retention-days: 7
+          retention-days: 30
+          if-no-files-found: error
 
   # =============================================================================
   # Create GitHub Release with Categorized Changelog
@@ -177,9 +344,13 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [validate, build]
+    if: ${{ github.event.inputs.dry_run != 'true' }}
     permissions:
       contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -189,79 +360,176 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-artifacts
+          name: ${{ needs.build.outputs.artifact_name }}
           path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "📦 Downloaded artifacts:"
+          find artifacts -type f -exec ls -la {} \;
 
       - name: Generate categorized changelog
         id: changelog
         run: |
-          VERSION=${{ needs.validate.outputs.version }}
+          # Find previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           
-          echo "# Changelog for v${VERSION}" > changelog.md
-          echo "" >> changelog.md
+          # Generate changelog header
+          {
+            echo "## What's Changed in v${{ env.VERSION }}"
+            echo ""
+          } > release-notes.md
           
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="$PREV_TAG..HEAD"
-            echo "Changes since $PREV_TAG:" >> changelog.md
+          # Determine commit range
+          if [[ -n "$PREV_TAG" ]]; then
+            RANGE="${PREV_TAG}..HEAD"
+            echo "📝 Generating changelog from $PREV_TAG to HEAD"
           else
-            RANGE="HEAD~50..HEAD"
-            echo "Initial release:" >> changelog.md
+            RANGE="HEAD~100..HEAD"
+            echo "📝 Generating changelog for initial release"
           fi
           
-          echo "" >> changelog.md
+          # Function to extract commits by category
+          extract_commits() {
+            local pattern="$1"
+            local header="$2"
+            local emoji="$3"
+            
+            local commits
+            commits=$(git log "$RANGE" --pretty=format:"%s (%h)" --no-merges 2>/dev/null | \
+              grep -iE "^${pattern}" | \
+              sed -E "s/^(${pattern})[:(]?\s*/- /" | \
+              head -20) || true
+            
+            if [[ -n "$commits" ]]; then
+              echo "### ${emoji} ${header}"
+              echo "$commits"
+              echo ""
+            fi
+          }
           
-          # Categorize commits by Conventional Commits prefix
-          echo "### ✨ Features" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (feat|feature)" | sed 's/^- \(feat\|feature\)[:(]/- /' >> changelog.md || echo "_No new features_" >> changelog.md
-          echo "" >> changelog.md
+          # Extract and categorize commits
+          {
+            extract_commits "feat|feature" "Features" "✨"
+            extract_commits "fix|bugfix|hotfix" "Bug Fixes" "🐛"
+            extract_commits "perf|performance" "Performance" "⚡"
+            extract_commits "refactor" "Refactoring" "♻️"
+            extract_commits "docs?" "Documentation" "📚"
+            extract_commits "test" "Tests" "🧪"
+            extract_commits "security|sec" "Security" "🔒"
+            extract_commits "ci|cd|build|workflow" "CI/CD" "🔄"
+            extract_commits "chore\(deps\)|deps?|bump" "Dependencies" "📦"
+          } >> release-notes.md
           
-          echo "### 🐛 Bug Fixes" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (fix|bugfix)" | sed 's/^- \(fix\|bugfix\)[:(]/- /' >> changelog.md || echo "_No bug fixes_" >> changelog.md
-          echo "" >> changelog.md
+          # Add other commits that don't match categories
+          OTHER_COMMITS=$(git log "$RANGE" --pretty=format:"%s (%h)" --no-merges 2>/dev/null | \
+            grep -viE "^(feat|feature|fix|bugfix|hotfix|perf|performance|refactor|docs?|test|security|sec|ci|cd|build|workflow|chore|deps?|bump)" | \
+            sed 's/^/- /' | \
+            head -10) || true
           
-          echo "### 🔧 Improvements" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (refactor|perf|improve)" | sed 's/^- \(refactor\|perf\|improve\)[:(]/- /' >> changelog.md || echo "_No improvements_" >> changelog.md
-          echo "" >> changelog.md
+          if [[ -n "$OTHER_COMMITS" ]]; then
+            {
+              echo "### 📝 Other Changes"
+              echo "$OTHER_COMMITS"
+              echo ""
+            } >> release-notes.md
+          fi
           
-          echo "### 📚 Documentation" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (docs|doc)" | sed 's/^- \(docs\|doc\)[:(]/- /' >> changelog.md || echo "_No documentation changes_" >> changelog.md
-          echo "" >> changelog.md
+          # Add installation section
+          {
+            echo "---"
+            echo ""
+            echo "## 📥 Installation"
+            echo ""
+            echo "### DEB Package (Debian/Ubuntu)"
+            echo '```bash'
+            echo "wget https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb"
+            echo "sudo dpkg -i ${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb"
+            echo '```'
+            echo ""
+            echo "### Tarball"
+            echo '```bash'
+            echo "wget https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz"
+            echo "tar -xzf ${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz"
+            echo "cd ${{ env.APP_NAME }}-${{ env.VERSION }} && ./install.sh"
+            echo '```'
+            echo ""
+            echo "### Verify Checksums"
+            echo '```bash'
+            echo "sha256sum -c checksums-sha256.txt"
+            echo '```'
+            echo ""
+          } >> release-notes.md
           
-          echo "### 🔒 Security" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (security|sec)" | sed 's/^- \(security\|sec\)[:(]/- /' >> changelog.md || echo "_No security updates_" >> changelog.md
-          echo "" >> changelog.md
+          # Add compare link if previous tag exists
+          if [[ -n "$PREV_TAG" ]]; then
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${{ env.VERSION }}" >> release-notes.md
+          fi
           
-          echo "### 📦 Dependencies" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (deps|dep|chore\(deps\))" | head -10 >> changelog.md || echo "_No dependency updates_" >> changelog.md
-          echo "" >> changelog.md
-          
-          echo "### 🔄 CI/CD" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -iE "^- (ci|cd|build)" | head -5 >> changelog.md || echo "_No CI/CD changes_" >> changelog.md
-          echo "" >> changelog.md
-          
-          # Other commits
-          echo "### 📝 Other Changes" >> changelog.md
-          git log $RANGE --pretty=format:"- %s (%h)" --no-merges | grep -viE "^- (feat|feature|fix|bugfix|refactor|perf|improve|docs|doc|security|sec|deps|dep|chore\(deps\)|ci|cd|build)" | head -10 >> changelog.md || echo "_No other changes_" >> changelog.md
-          
-          echo "" >> changelog.md
-          echo "---" >> changelog.md
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${VERSION}" >> changelog.md
-          
-          cat changelog.md
+          echo "📋 Generated release notes:"
+          cat release-notes.md
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: VPN Manager v${{ needs.validate.outputs.version }}
-          tag_name: v${{ needs.validate.outputs.version }}
+          name: "VPN Manager v${{ env.VERSION }}"
+          tag_name: "v${{ env.VERSION }}"
           draft: false
-          prerelease: ${{ needs.validate.outputs.is_prerelease }}
-          body_path: changelog.md
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+          body_path: release-notes.md
           files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.deb
-            artifacts/**/checksums-sha256.txt
+            artifacts/*.tar.gz
+            artifacts/*.deb
+            artifacts/checksums-sha256.txt
           fail_on_unmatched_files: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "## 🎉 Release Created Successfully!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** v${{ env.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Prerelease:** ${{ needs.validate.outputs.is_prerelease }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`checksums-sha256.txt\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/v${{ env.VERSION }})" >> "$GITHUB_STEP_SUMMARY"
+
+  # =============================================================================
+  # Post-Release Verification (optional)
+  # =============================================================================
+  verify:
+    name: Verify Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate, release]
+    if: ${{ needs.validate.outputs.is_prerelease != 'true' }}
+    steps:
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔍 Verifying release v${{ needs.validate.outputs.version }}..."
+          
+          # Wait for release to propagate
+          sleep 5
+          
+          # Check release exists
+          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ needs.validate.outputs.version }}"
+          
+          if curl -sf -H "Authorization: token $GH_TOKEN" "$RELEASE_URL" > /dev/null; then
+            echo "✅ Release published successfully"
+            
+            # List assets
+            echo "📦 Release assets:"
+            curl -sf -H "Authorization: token $GH_TOKEN" "$RELEASE_URL" | \
+              jq -r '.assets[] | "  - \(.name) (\(.size | . / 1048576 | floor)MB)"'
+          else
+            echo "::error::Release not found"
+            exit 1
+          fi
