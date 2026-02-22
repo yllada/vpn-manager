@@ -655,6 +655,7 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 
 // monitorConnection monitors VPN connection status in the background.
 // Updates the interface when connection status changes.
+// All UI updates are dispatched to the main GTK thread via glib.IdleAdd().
 func (pl *ProfileList) monitorConnection(profileID string) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -666,11 +667,23 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 		}
 
 		status := conn.GetStatus()
-		pl.updateRowStatus(profileID, status)
+
+		// Capture values for the closure to avoid race conditions
+		currentStatus := status
+		currentProfileID := profileID
+
+		// Update UI on main GTK thread
+		glib.IdleAdd(func() {
+			pl.updateRowStatus(currentProfileID, currentStatus)
+		})
 
 		if status == vpn.StatusConnected {
 			profile := conn.Profile
-			pl.mainWindow.SetStatus(fmt.Sprintf("Connected to %s", profile.Name))
+			// Capture profile name for the closure
+			profileName := profile.Name
+			glib.IdleAdd(func() {
+				pl.mainWindow.SetStatus(fmt.Sprintf("Connected to %s", profileName))
+			})
 			break
 		} else if status == vpn.StatusError || status == vpn.StatusDisconnected {
 			break

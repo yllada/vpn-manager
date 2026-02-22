@@ -19,19 +19,25 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 
 	"github.com/yllada/vpn-manager/cli"
 	"github.com/yllada/vpn-manager/common"
 	"github.com/yllada/vpn-manager/ui"
 )
 
-const (
-	// appVersion is the current version of the application.
-	appVersion = "1.0.1"
+// Build-time variables injected via ldflags (-X main.appVersion=x.y.z)
+// Default values are used for local development builds
+var (
+	appVersion = "dev"
+	buildTime  = "unknown"
+	commitSHA  = "unknown"
 )
 
 var (
@@ -59,6 +65,10 @@ func main() {
 	// Handle version flag
 	if *showVersion {
 		fmt.Printf("VPN Manager v%s\n", appVersion)
+		if buildTime != "unknown" {
+			fmt.Printf("  Build:  %s\n", buildTime)
+			fmt.Printf("  Commit: %s\n", commitSHA)
+		}
 		os.Exit(0)
 	}
 
@@ -78,6 +88,13 @@ func main() {
 	}
 	defer common.CloseLogger()
 
+	// Setup graceful shutdown context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown signals (SIGINT, SIGTERM)
+	setupSignalHandler(cancel)
+
 	// Verify OpenVPN installation
 	if !checkOpenVPNInstalled() {
 		common.LogError("OpenVPN is not installed on the system")
@@ -87,7 +104,7 @@ func main() {
 
 	// Check if any CLI mode flag is set
 	if *listProfiles || *connectProfile != "" || *disconnectVPN != "" || *showStatus {
-		runCLI()
+		runCLI(ctx)
 		return
 	}
 
@@ -103,11 +120,20 @@ func main() {
 }
 
 // runCLI handles command-line interface operations.
-func runCLI() {
+// It accepts a context for graceful shutdown support.
+func runCLI(ctx context.Context) {
 	cliApp, err := cli.New()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Check if context is already cancelled before proceeding
+	select {
+	case <-ctx.Done():
+		common.LogInfo("Operation cancelled before execution")
+		return
+	default:
 	}
 
 	var cliErr error
@@ -131,6 +157,21 @@ func runCLI() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
 		os.Exit(1)
 	}
+}
+
+// setupSignalHandler configures graceful shutdown on SIGINT/SIGTERM.
+// When a signal is received, it cancels the context to allow cleanup.
+func setupSignalHandler(cancel context.CancelFunc) {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		common.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
+		cancel()
+		// Note: In CLI mode, the context cancellation will be checked
+		// In GUI mode, GTK handles the shutdown via window close
+	}()
 }
 
 // checkOpenVPNInstalled verifies that OpenVPN is available on the system.

@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"math"
 )
 
 // IconConfig defines the configuration for icon generation.
@@ -174,15 +173,4 @@ func GenerateConnectedIcon() []byte {
 func GenerateDisconnectedIcon() []byte {
 	gen := NewIconGenerator(DefaultDisconnectedIconConfig())
 	return gen.Generate()
-}
-
-// Utility function to blend colors (for future anti-aliasing).
-func blendColors(c1, c2 color.RGBA, ratio float64) color.RGBA {
-	ratio = math.Max(0, math.Min(1, ratio))
-	return color.RGBA{
-		R: uint8(float64(c1.R)*(1-ratio) + float64(c2.R)*ratio),
-		G: uint8(float64(c1.G)*(1-ratio) + float64(c2.G)*ratio),
-		B: uint8(float64(c1.B)*(1-ratio) + float64(c2.B)*ratio),
-		A: uint8(float64(c1.A)*(1-ratio) + float64(c2.A)*ratio),
-	}
 }

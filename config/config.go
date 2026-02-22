@@ -54,17 +54,42 @@ func Load() (*Config, error) {
 		return cfg, nil
 	}
 
-	data, err := os.ReadFile(configPath)
+	file, err := os.Open(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading configuration: %w", err)
+		return nil, fmt.Errorf("error opening configuration: %w", err)
 	}
+	defer file.Close()
+
+	decoder := yaml.NewDecoder(file)
+	decoder.KnownFields(true) // Strict validation: reject unknown fields
 
 	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := decoder.Decode(&config); err != nil {
 		return nil, fmt.Errorf("error parsing configuration: %w", err)
 	}
 
+	// Validate values
+	if err := config.validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	return &config, nil
+}
+
+// validate verifies that configuration values are valid
+func (c *Config) validate() error {
+	validThemes := []string{"auto", "light", "dark"}
+	isValidTheme := false
+	for _, t := range validThemes {
+		if c.Theme == t {
+			isValidTheme = true
+			break
+		}
+	}
+	if !isValidTheme {
+		c.Theme = "auto" // Fallback to default
+	}
+	return nil
 }
 
 // Save saves the configuration to the file

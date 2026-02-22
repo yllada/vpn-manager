@@ -5,6 +5,8 @@ package vpn
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -241,7 +243,6 @@ func (m *Manager) ListConnections() []*Connection {
 func (m *Manager) runConnection(conn *Connection, username string, password string) {
 	log.Printf("VPN: Starting connection to %s", conn.Profile.Name)
 	log.Printf("VPN: Configuration file: %s", conn.Profile.ConfigPath)
-	log.Printf("VPN: User: %s", username)
 
 	// Create temporary credentials file
 	credFile, err := m.createCredentialsFile(username, password)
@@ -250,7 +251,7 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 		m.handleConnectionError(conn, fmt.Errorf("failed to create credentials: %w", err))
 		return
 	}
-	log.Printf("VPN: Credentials file created: %s", credFile)
+	log.Printf("VPN: Credentials file created")
 
 	// Ensure cleanup of credentials file
 	defer func() {
@@ -346,6 +347,15 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	}
 	log.Printf("VPN: OpenVPN process started with PID %d", cmd.Process.Pid)
 
+	// Remove credentials file after a short delay for security
+	if credFile != "" {
+		go func(credPath string) {
+			time.Sleep(3 * time.Second)
+			os.Remove(credPath)
+			log.Printf("VPN: Credentials file removed early for security")
+		}(credFile)
+	}
+
 	// For OpenVPN3, send credentials via stdin
 	if useOpenVPN3 && stdin != nil {
 		go func() {
@@ -389,8 +399,12 @@ func (m *Manager) createCredentialsFile(username, password string) (string, erro
 		return "", err
 	}
 
-	// Create temporary file
-	credFile := filepath.Join(tmpDir, fmt.Sprintf("cred-%d", time.Now().UnixNano()))
+	// Create temporary file with cryptographically random name
+	randBytes := make([]byte, 16)
+	if _, err := rand.Read(randBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random filename: %w", err)
+	}
+	credFile := filepath.Join(tmpDir, hex.EncodeToString(randBytes))
 	content := fmt.Sprintf("%s\n%s\n", username, password)
 
 	// Write with restrictive permissions

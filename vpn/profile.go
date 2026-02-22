@@ -24,6 +24,22 @@ var (
 	ErrDuplicateName   = errors.New("profile name already exists")
 )
 
+// dangerousDirectives contains OpenVPN directives that can execute arbitrary code.
+// These directives are blocked to prevent malicious .ovpn files from compromising the system.
+var dangerousDirectives = []string{
+	"script-security",     // Allows script execution
+	"up ",                 // Script executed on connect
+	"down ",               // Script executed on disconnect
+	"plugin ",             // Loads external plugins
+	"auth-user-pass-verify", // Authentication verification script
+	"client-connect",      // Script on client connection
+	"client-disconnect",   // Script on client disconnection
+	"tls-verify",          // TLS verification script
+	"ipchange",            // Script when IP changes
+	"route-up",            // Script after routes are added
+	"route-pre-down",      // Script before routes are removed
+}
+
 // Profile represents a VPN connection profile.
 // It contains all the necessary information to establish a VPN connection,
 // including the path to the OpenVPN configuration file and user credentials.
@@ -282,6 +298,15 @@ func validateConfigFile(path string) error {
 	}
 
 	content := string(data)
+	contentLower := strings.ToLower(content)
+
+	// Security check: detect dangerous directives that can execute code
+	for _, directive := range dangerousDirectives {
+		if strings.Contains(contentLower, strings.ToLower(directive)) {
+			return fmt.Errorf("%w: contains potentially dangerous directive '%s' - this could allow arbitrary code execution", ErrInvalidConfig, strings.TrimSpace(directive))
+		}
+	}
+
 	// Check for common OpenVPN directives
 	requiredDirectives := []string{"remote", "client"}
 	hasRequired := false

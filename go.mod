@@ -6,6 +6,7 @@ require (
 	fyne.io/systray v1.12.0
 	github.com/diamondburned/gotk4/pkg v0.3.2-0.20250703063411-16654385f59a
 	github.com/zalando/go-keyring v0.2.6
+	golang.org/x/crypto v0.32.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

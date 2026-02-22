@@ -73,6 +73,16 @@ const (
 	defaultMaxBackups  = 5
 )
 
+// isSymlink checks if a path is a symbolic link.
+// Returns false if path doesn't exist (safe to create).
+func isSymlink(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false // Doesn't exist, safe to create
+	}
+	return info.Mode()&os.ModeSymlink != 0
+}
+
 // GetLogger returns the singleton logger instance.
 func GetLogger() *AppLogger {
 	loggerOnce.Do(func() {
@@ -130,11 +140,22 @@ func (l *AppLogger) EnableFileLogging() error {
 	}
 
 	logDir := filepath.Join(homeDir, ".config", ConfigDirName, "logs")
+
+	// Security: verify logDir is not a symlink to prevent symlink attacks
+	if isSymlink(logDir) {
+		return fmt.Errorf("security error: log directory is a symlink")
+	}
+
 	if err := os.MkdirAll(logDir, 0700); err != nil {
 		return err
 	}
 
 	logPath := filepath.Join(logDir, LogFileName)
+
+	// Security: verify log file is not a symlink to prevent symlink attacks
+	if isSymlink(logPath) {
+		return fmt.Errorf("security error: log file is a symlink")
+	}
 
 	// Check if rotation is needed before opening
 	l.rotateIfNeeded(logPath)

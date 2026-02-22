@@ -9,6 +9,7 @@ import (
 	"fyne.io/systray"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/common"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -146,7 +147,19 @@ func (t *TrayIndicator) onReady() {
 
 // onExit is called when the systray is about to exit.
 func (t *TrayIndicator) onExit() {
-	// Cleanup if needed
+	// Stop uptime counter if running
+	t.stopUptimeCounter()
+
+	// Disconnect any active VPN connections gracefully
+	if t.app != nil && t.app.vpnManager != nil {
+		connections := t.app.vpnManager.ListConnections()
+		for _, conn := range connections {
+			common.LogInfo("Tray: Disconnecting VPN %s on exit", conn.Profile.Name)
+			_ = t.app.vpnManager.Disconnect(conn.Profile.ID)
+		}
+	}
+
+	common.LogInfo("Tray indicator cleanup completed")
 }
 
 // refreshProfiles updates the profile menu items.

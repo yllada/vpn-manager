@@ -4,11 +4,13 @@
 package vpn
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/yllada/vpn-manager/common"
+	"github.com/yllada/vpn-manager/keyring"
 )
 
 // HealthState represents the current health state of a connection.
@@ -305,22 +307,42 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 		return
 	}
 
-	// Store credentials before disconnect (if available from the connection)
-	username := conn.Profile.Username
-	// Note: password is not stored in the connection, would need to be retrieved from keyring
+	profile := conn.Profile
+	password := ""
+
+	// Obtener credenciales del keyring si están guardadas
+	if profile.SavePassword {
+		savedPassword, err := keyring.Get(profile.ID)
+		if err == nil {
+			password = savedPassword
+		} else {
+			// No hay credenciales - notificar y abortar
+			common.LogWarn("Cannot auto-reconnect %s: no saved credentials", profile.Name)
+			if hc.onReconnectFailed != nil {
+				hc.onReconnectFailed(profile.ID, fmt.Errorf("no saved credentials for auto-reconnect"))
+			}
+			return
+		}
+	} else {
+		// Perfil sin SavePassword - reconexión manual requerida
+		common.LogWarn("Cannot auto-reconnect %s: credentials not saved", profile.Name)
+		if hc.onReconnectFailed != nil {
+			hc.onReconnectFailed(profile.ID, fmt.Errorf("credentials not saved, manual reconnect required"))
+		}
+		return
+	}
 
 	// Disconnect first
-	if err := hc.manager.Disconnect(conn.Profile.ID); err != nil {
+	if err := hc.manager.Disconnect(profile.ID); err != nil {
 		common.LogError("Failed to disconnect before reconnect: %v", err)
 	}
 
 	// Small delay after disconnect
 	time.Sleep(1 * time.Second)
 
-	// Attempt to reconnect
-	// Note: This requires saved credentials; manual credential entry not possible here
-	if err := hc.manager.Connect(conn.Profile.ID, username, ""); err != nil {
-		common.LogError("Reconnect failed for %s: %v", conn.Profile.Name, err)
+	// Attempt to reconnect with retrieved credentials
+	if err := hc.manager.Connect(profile.ID, profile.Username, password); err != nil {
+		common.LogError("Reconnect failed for %s: %v", profile.Name, err)
 
 		hc.mu.Lock()
 		if health.ReconnectAttempts < hc.config.MaxReconnectAttempts || hc.config.MaxReconnectAttempts == 0 {
@@ -330,11 +352,11 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 		} else {
 			hc.mu.Unlock()
 			if hc.onReconnectFailed != nil {
-				hc.onReconnectFailed(conn.Profile.ID, err)
+				hc.onReconnectFailed(profile.ID, err)
 			}
 		}
 	} else {
-		common.LogInfo("Reconnect successful for %s", conn.Profile.Name)
+		common.LogInfo("Reconnect successful for %s", profile.Name)
 	}
 }
 
