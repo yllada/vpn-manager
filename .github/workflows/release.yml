@@ -157,22 +157,13 @@ jobs:
           echo "deb=${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-          cache-dependency-path: go.sum
-
-      - name: Cache Go build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ env.GO_VERSION }}-
-            ${{ runner.os }}-go-
+          cache-dependency-path: |
+            go.sum
+            go.mod
 
       - name: Cache APT packages
         uses: awalsh128/cache-apt-pkgs-action@v1.4.3
@@ -187,11 +178,28 @@ jobs:
             dpkg-dev
           version: ${{ env.APT_CACHE_VERSION }}
 
-      - name: Verify dependencies
+      - name: Download and verify Go dependencies
         run: |
-          echo "📋 Checking build dependencies..."
+          echo "📦 Downloading Go dependencies..."
+          go mod download -x
+          
+          echo "✅ Verifying go.sum integrity..."
+          go mod verify
+          
+          echo "🔍 Checking for missing/extra dependencies..."
+          if ! go mod tidy -diff > /dev/null 2>&1; then
+            echo "::error::go.sum is out of sync. Run 'go mod tidy' locally and commit the changes."
+            go mod tidy -diff || true
+            exit 1
+          fi
+          echo "✅ Dependencies verified"
+
+      - name: Verify build environment
+        run: |
+          echo "📋 Build environment:"
+          echo "  Go: $(go version)"
+          echo "  GTK4: $(pkg-config --modversion gtk4)"
           pkg-config --exists gtk4 libadwaita-1
-          go version
           echo "✅ All dependencies available"
 
       # - name: Run tests
