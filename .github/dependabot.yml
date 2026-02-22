@@ -1,0 +1,86 @@
+# =============================================================================
+# Dependabot Configuration
+# =============================================================================
+# Automatically creates PRs to keep dependencies up to date.
+# Documentation: https://docs.github.com/en/code-security/dependabot
+# =============================================================================
+
+version: 2
+
+updates:
+  # ===========================================================================
+  # Go Modules
+  # ===========================================================================
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    
+    # Limit open PRs to avoid overwhelming the maintainers
+    open-pull-requests-limit: 5
+    
+    # Commit message format (conventional commits)
+    commit-message:
+      prefix: "deps(go)"
+      include: "scope"
+    
+    # Labels for filtering and automation
+    labels:
+      - "dependencies"
+      - "go"
+    
+    # Group updates to reduce PR noise
+    groups:
+      # Group all patch updates together
+      go-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+      
+      # Group minor updates together
+      go-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+    
+    # Ignore specific dependencies if needed
+    # ignore:
+    #   - dependency-name: "example.com/problematic-pkg"
+    #     versions: ["4.x"]
+
+  # ===========================================================================
+  # GitHub Actions
+  # ===========================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    
+    open-pull-requests-limit: 5
+    
+    commit-message:
+      prefix: "ci(actions)"
+      include: "scope"
+    
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci"
+    
+    # Group all GitHub Actions updates together
+    groups:
+      github-actions-all:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
