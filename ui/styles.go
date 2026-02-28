@@ -231,6 +231,65 @@ button.flat:hover {
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
+
+/* ============================================
+   Tailscale Panel Styles
+   ============================================ */
+
+/* Provider tabs/stack switcher */
+stackswitcher {
+    padding: 4px;
+}
+
+stackswitcher button {
+    min-width: 100px;
+}
+
+/* Card frames for Tailscale sections */
+.card {
+    border-radius: 12px;
+    border: 1px solid alpha(currentColor, 0.15);
+    margin: 6px 0;
+}
+
+/* Tailscale status indicator */
+.tailscale-connected {
+    color: #2ec27e;
+}
+
+.tailscale-disconnected {
+    color: alpha(currentColor, 0.5);
+}
+
+/* Pill-shaped buttons */
+button.pill {
+    border-radius: 50px;
+    padding: 8px 24px;
+}
+
+/* Success color class */
+.success image {
+    color: #2ec27e;
+}
+
+/* Peer list rows */
+.peer-row {
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+.peer-row:hover {
+    background-color: alpha(currentColor, 0.05);
+}
+
+/* Exit node online indicator */
+.exit-node-online {
+    color: #2ec27e;
+}
+
+.exit-node-offline {
+    color: alpha(currentColor, 0.3);
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.

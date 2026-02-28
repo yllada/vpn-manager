@@ -27,8 +27,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/cli"
-	"github.com/yllada/vpn-manager/common"
 	"github.com/yllada/vpn-manager/ui"
 )
 
@@ -73,12 +73,12 @@ func main() {
 	}
 
 	// Initialize logger with structured logging and file output
-	logLevel := common.LevelInfo
+	logLevel := app.LevelInfo
 	if *verbose {
-		logLevel = common.LevelDebug
+		logLevel = app.LevelDebug
 	}
 
-	if err := common.InitLogger(common.LogConfig{
+	if err := app.InitLogger(app.LogConfig{
 		Level:       logLevel,
 		EnableFile:  true,
 		MaxFileSize: 5 * 1024 * 1024, // 5MB
@@ -86,7 +86,7 @@ func main() {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Could not initialize file logging: %v\n", err)
 	}
-	defer common.CloseLogger()
+	defer app.CloseLogger()
 
 	// Setup graceful shutdown context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -97,7 +97,7 @@ func main() {
 
 	// Verify OpenVPN installation
 	if !checkOpenVPNInstalled() {
-		common.LogError("OpenVPN is not installed on the system")
+		app.LogError("OpenVPN is not installed on the system")
 		fmt.Fprintln(os.Stderr, "Error: OpenVPN is not installed on the system.")
 		os.Exit(1)
 	}
@@ -109,12 +109,12 @@ func main() {
 	}
 
 	// Start the GTK application (GUI mode)
-	common.LogInfo("Starting %s v%s", common.AppName, appVersion)
-	app := ui.NewApplication(common.AppID, appVersion)
-	exitCode := app.Run(os.Args)
+	app.LogInfo("Starting %s v%s", app.AppName, appVersion)
+	application := ui.NewApplication(app.AppID, appVersion)
+	exitCode := application.Run(os.Args)
 
 	if exitCode != 0 {
-		common.LogWarn("Application exited with code %d", exitCode)
+		app.LogWarn("Application exited with code %d", exitCode)
 	}
 	os.Exit(exitCode)
 }
@@ -131,7 +131,7 @@ func runCLI(ctx context.Context) {
 	// Check if context is already cancelled before proceeding
 	select {
 	case <-ctx.Done():
-		common.LogInfo("Operation cancelled before execution")
+		app.LogInfo("Operation cancelled before execution")
 		return
 	default:
 	}
@@ -167,7 +167,7 @@ func setupSignalHandler(cancel context.CancelFunc) {
 
 	go func() {
 		sig := <-sigChan
-		common.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
+		app.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
 		cancel()
 		// Note: In CLI mode, the context cancellation will be checked
 		// In GUI mode, GTK handles the shutdown via window close

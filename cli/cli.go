@@ -10,7 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/yllada/vpn-manager/common"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -117,7 +117,7 @@ func (c *CLI) Connect(nameOrID string) error {
 	}
 
 	// Wait for connection to establish (with timeout)
-	timeout := time.After(common.ConnectionTimeout)
+	timeout := time.After(app.ConnectionTimeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 

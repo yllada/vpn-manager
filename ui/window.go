@@ -9,16 +9,21 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
 
 // MainWindow represents the main application window.
 type MainWindow struct {
-	app         *Application
-	window      *gtk.ApplicationWindow
-	headerBar   *gtk.HeaderBar
-	profileList *ProfileList
-	statusBar   *gtk.Box
-	statusLabel *gtk.Label
+	app            *Application
+	window         *gtk.ApplicationWindow
+	headerBar      *gtk.HeaderBar
+	profileList    *ProfileList
+	tailscalePanel *TailscalePanel
+	stack          *gtk.Stack
+	stackSwitcher  *gtk.StackSwitcher
+	statusBar      *gtk.Box
+	statusLabel    *gtk.Label
+	addButton      *gtk.Button
 }
 
 // NewMainWindow creates a new main window.
@@ -49,12 +54,12 @@ func (mw *MainWindow) createLayout() {
 	// Create GTK4 header bar
 	mw.headerBar = gtk.NewHeaderBar()
 
-	// Button to add new profile
-	addButton := gtk.NewButton()
-	addButton.SetIconName("list-add-symbolic")
-	addButton.SetTooltipText("Add VPN profile")
-	addButton.ConnectClicked(mw.onAddProfile)
-	mw.headerBar.PackStart(addButton)
+	// Button to add new profile (only visible for OpenVPN)
+	mw.addButton = gtk.NewButton()
+	mw.addButton.SetIconName("list-add-symbolic")
+	mw.addButton.SetTooltipText("Add VPN profile")
+	mw.addButton.ConnectClicked(mw.onAddProfile)
+	mw.headerBar.PackStart(mw.addButton)
 
 	// Menu button
 	menuButton := gtk.NewMenuButton()
@@ -72,19 +77,34 @@ func (mw *MainWindow) createLayout() {
 	// Create main container
 	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
 
-	// Create content area
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
-	contentBox.SetHExpand(true)
+	// Create stack for multiple providers
+	mw.stack = gtk.NewStack()
+	mw.stack.SetTransitionType(gtk.StackTransitionTypeSlideLeftRight)
+	mw.stack.SetTransitionDuration(200)
 
-	// Profile list
+	// OpenVPN page
 	mw.profileList = NewProfileList(mw)
+	scrolledOpenVPN := gtk.NewScrolledWindow()
+	scrolledOpenVPN.SetVExpand(true)
+	scrolledOpenVPN.SetChild(mw.profileList.GetWidget())
+	mw.stack.AddTitled(scrolledOpenVPN, "openvpn", "OpenVPN")
 
-	scrolled := gtk.NewScrolledWindow()
-	scrolled.SetVExpand(true)
-	scrolled.SetChild(mw.profileList.GetWidget())
+	// Tailscale page (only if available)
+	mw.createTailscalePage()
 
-	contentBox.Append(scrolled)
-	mainBox.Append(contentBox)
+	// Stack switcher in header bar (centered)
+	mw.stackSwitcher = gtk.NewStackSwitcher()
+	mw.stackSwitcher.SetStack(mw.stack)
+	mw.headerBar.SetTitleWidget(mw.stackSwitcher)
+
+	// Note: Add button visibility managed manually when switching
+	// GTK4 Stack doesn't have ConnectNotify, we use property notify
+	mw.stack.Connect("notify::visible-child-name", func() {
+		visiblePage := mw.stack.VisibleChildName()
+		mw.addButton.SetVisible(visiblePage == "openvpn")
+	})
+
+	mainBox.Append(mw.stack)
 
 	// Status bar
 	mw.createStatusBar()
@@ -95,6 +115,36 @@ func (mw *MainWindow) createLayout() {
 
 	// Load profiles
 	mw.profileList.LoadProfiles()
+}
+
+// createTailscalePage creates the Tailscale page if available.
+func (mw *MainWindow) createTailscalePage() {
+	// Try to create Tailscale provider
+	provider, err := tailscale.NewProvider()
+	if err != nil {
+		// Tailscale not available, skip
+		return
+	}
+
+	if !provider.IsAvailable() {
+		// Tailscale daemon not running
+		return
+	}
+
+	// Register provider with manager
+	mw.app.vpnManager.RegisterProvider(provider)
+
+	// Create Tailscale panel
+	mw.tailscalePanel = NewTailscalePanel(mw, provider)
+
+	scrolledTailscale := gtk.NewScrolledWindow()
+	scrolledTailscale.SetVExpand(true)
+	scrolledTailscale.SetChild(mw.tailscalePanel.GetWidget())
+
+	mw.stack.AddTitled(scrolledTailscale, "tailscale", "Tailscale")
+
+	// Start periodic updates
+	mw.tailscalePanel.StartUpdates()
 }
 
 // createMenu creates the application menu.

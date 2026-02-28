@@ -1,6 +1,6 @@
 // Package common provides shared constants, types, and utilities
 // used across the VPN Manager application.
-package common
+package app
 
 import (
 	"crypto/rand"

@@ -18,14 +18,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/common"
+	"github.com/yllada/vpn-manager/app"
 )
 
 // Common errors - re-exported from common package for convenience.
 var (
-	ErrAlreadyConnected = common.ErrAlreadyConnected
-	ErrNotConnected     = common.ErrNotConnected
-	ErrConnectionFailed = common.ErrConnectionFailed
+	ErrAlreadyConnected = app.ErrAlreadyConnected
+	ErrNotConnected     = app.ErrNotConnected
+	ErrConnectionFailed = app.ErrConnectionFailed
 )
 
 // ConnectionStatus represents the current state of a VPN connection.
@@ -92,10 +92,11 @@ type Connection struct {
 // It maintains a registry of active connections and provides methods
 // to connect, disconnect, and query connection status.
 type Manager struct {
-	profileManager *ProfileManager
-	connections    map[string]*Connection
-	healthChecker  *HealthChecker
-	mu             sync.RWMutex
+	profileManager   *ProfileManager
+	connections      map[string]*Connection
+	healthChecker    *HealthChecker
+	providerRegistry *app.ProviderRegistry
+	mu               sync.RWMutex
 }
 
 // NewManager creates a new VPN connection manager.
@@ -107,8 +108,9 @@ func NewManager() (*Manager, error) {
 	}
 
 	m := &Manager{
-		profileManager: pm,
-		connections:    make(map[string]*Connection),
+		profileManager:   pm,
+		connections:      make(map[string]*Connection),
+		providerRegistry: app.NewProviderRegistry(),
 	}
 
 	// Initialize health checker with default config
@@ -139,6 +141,26 @@ func (m *Manager) StopHealthChecker() {
 // ProfileManager returns the associated profile manager.
 func (m *Manager) ProfileManager() *ProfileManager {
 	return m.profileManager
+}
+
+// ProviderRegistry returns the provider registry.
+func (m *Manager) ProviderRegistry() *app.ProviderRegistry {
+	return m.providerRegistry
+}
+
+// RegisterProvider adds a VPN provider to the registry.
+func (m *Manager) RegisterProvider(provider app.VPNProvider) {
+	m.providerRegistry.Register(provider)
+}
+
+// GetProvider returns a provider by type.
+func (m *Manager) GetProvider(providerType app.VPNProviderType) (app.VPNProvider, bool) {
+	return m.providerRegistry.Get(providerType)
+}
+
+// AvailableProviders returns all available providers on this system.
+func (m *Manager) AvailableProviders() []app.VPNProvider {
+	return m.providerRegistry.Available()
 }
 
 // Connect initiates a VPN connection for the specified profile.
@@ -736,7 +758,7 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 }
 
 // applySplitTunnelExcludeMode configures "exclude" mode where everything goes through VPN except listed routes
-func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, tunInterface, vpnGateway string) {
+func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, _, _ string) {
 	profile := conn.Profile
 	log.Printf("VPN: Configuring EXCLUDE mode - Everything will go through VPN except specified routes")
 

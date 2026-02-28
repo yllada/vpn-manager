@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -388,7 +389,7 @@ func (std *SplitTunnelDialog) createSettingRowWithCheckbox(title string, descrip
 	descLabel.AddCSSClass("dim-label")
 	descLabel.AddCSSClass("caption")
 	descLabel.SetWrap(true)
-	descLabel.SetWrapMode(2)
+	descLabel.SetWrapMode(pango.WrapWordChar)
 	textBox.Append(descLabel)
 
 	row.Append(textBox)

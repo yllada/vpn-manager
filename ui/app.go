@@ -9,7 +9,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/config"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -18,7 +18,7 @@ type Application struct {
 	app        *gtk.Application
 	window     *MainWindow
 	vpnManager *vpn.Manager
-	config     *config.Config
+	config     *app.Config
 	version    string
 	tray       *TrayIndicator
 }
@@ -26,7 +26,7 @@ type Application struct {
 // NewApplication creates a new application
 func NewApplication(appID, version string) *Application {
 	// Create GTK4 application
-	app := gtk.NewApplication(appID, gio.ApplicationFlagsNone)
+	gtkApp := gtk.NewApplication(appID, gio.ApplicationDefaultFlags)
 
 	// Create VPN manager
 	vpnManager, err := vpn.NewManager()
@@ -35,21 +35,21 @@ func NewApplication(appID, version string) *Application {
 	}
 
 	// Load configuration
-	cfg, err := config.Load()
+	cfg, err := app.Load()
 	if err != nil {
 		// Use default configuration if there's an error
-		cfg = config.DefaultConfig()
+		cfg = app.DefaultConfig()
 	}
 
 	application := &Application{
-		app:        app,
+		app:        gtkApp,
 		vpnManager: vpnManager,
 		config:     cfg,
 		version:    version,
 	}
 
 	// Connect activation signal
-	app.ConnectActivate(application.onActivate)
+	gtkApp.ConnectActivate(application.onActivate)
 
 	return application
 }
@@ -119,7 +119,7 @@ func (a *Application) GetVPNManager() *vpn.Manager {
 }
 
 // GetConfig returns the configuration
-func (a *Application) GetConfig() *config.Config {
+func (a *Application) GetConfig() *app.Config {
 	return a.config
 }
 

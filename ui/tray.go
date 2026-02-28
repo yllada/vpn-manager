@@ -3,13 +3,14 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"fyne.io/systray"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/common"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -37,6 +38,10 @@ type TrayIndicator struct {
 	connectTime      time.Time
 	uptimeTicker     *time.Ticker
 	uptimeStop       chan bool
+	// Tailscale fields
+	tailscaleStatusItem     *systray.MenuItem
+	tailscaleConnectItem    *systray.MenuItem
+	tailscaleDisconnectItem *systray.MenuItem
 }
 
 // NewTrayIndicator creates a new system tray indicator.
@@ -64,7 +69,7 @@ func (t *TrayIndicator) onReady() {
 	// ═══════════════════════════════════════════════════════════════════════
 	// CONNECTION STATUS SECTION
 	// ═══════════════════════════════════════════════════════════════════════
-	
+
 	// Status item - shows current state with icon
 	t.statusItem = systray.AddMenuItem("○  Not Connected", "Current VPN status")
 	t.statusItem.Disable()
@@ -119,6 +124,40 @@ func (t *TrayIndicator) onReady() {
 	systray.AddSeparator()
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// TAILSCALE SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+
+	// Section header
+	tailscaleHeader := systray.AddMenuItem("── Tailscale ──", "")
+	tailscaleHeader.Disable()
+
+	// Tailscale status
+	t.tailscaleStatusItem = systray.AddMenuItem("○  Not Connected", "Tailscale status")
+	t.tailscaleStatusItem.Disable()
+
+	// Connect
+	t.tailscaleConnectItem = systray.AddMenuItem("▶  Connect Tailscale", "Connect to Tailscale")
+	go func() {
+		for range t.tailscaleConnectItem.ClickedCh {
+			t.connectTailscale()
+		}
+	}()
+
+	// Disconnect (hidden when not connected)
+	t.tailscaleDisconnectItem = systray.AddMenuItem("⏹  Disconnect Tailscale", "Disconnect from Tailscale")
+	t.tailscaleDisconnectItem.Hide()
+	go func() {
+		for range t.tailscaleDisconnectItem.ClickedCh {
+			t.disconnectTailscale()
+		}
+	}()
+
+	// Initial Tailscale status check
+	go t.refreshTailscaleStatus()
+
+	systray.AddSeparator()
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// APP SECTION
 	// ═══════════════════════════════════════════════════════════════════════
 
@@ -154,12 +193,12 @@ func (t *TrayIndicator) onExit() {
 	if t.app != nil && t.app.vpnManager != nil {
 		connections := t.app.vpnManager.ListConnections()
 		for _, conn := range connections {
-			common.LogInfo("Tray: Disconnecting VPN %s on exit", conn.Profile.Name)
+			app.LogInfo("Tray: Disconnecting VPN %s on exit", conn.Profile.Name)
 			_ = t.app.vpnManager.Disconnect(conn.Profile.ID)
 		}
 	}
 
-	common.LogInfo("Tray indicator cleanup completed")
+	app.LogInfo("Tray indicator cleanup completed")
 }
 
 // refreshProfiles updates the profile menu items.
@@ -679,4 +718,147 @@ func (t *TrayIndicator) monitorTrayConnection(profileID string) {
 			break
 		}
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAILSCALE TRAY METHODS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// refreshTailscaleStatus updates the Tailscale status in the tray.
+func (t *TrayIndicator) refreshTailscaleStatus() {
+	registry := t.app.vpnManager.ProviderRegistry()
+	if registry == nil {
+		return
+	}
+
+	provider, exists := registry.Get("tailscale")
+	if !exists || provider == nil {
+		if t.tailscaleStatusItem != nil {
+			t.tailscaleStatusItem.SetTitle("○  Not Installed")
+		}
+		if t.tailscaleConnectItem != nil {
+			t.tailscaleConnectItem.Disable()
+		}
+		return
+	}
+
+	ctx := context.Background()
+	status, err := provider.Status(ctx)
+	if err != nil {
+		if t.tailscaleStatusItem != nil {
+			t.tailscaleStatusItem.SetTitle("○  Error")
+		}
+		return
+	}
+
+	switch status.BackendState {
+	case "Running":
+		if t.tailscaleStatusItem != nil {
+			nodeName := "Tailscale"
+			if status.ConnectionInfo != nil && status.ConnectionInfo.LocalIP != "" {
+				nodeName = status.ConnectionInfo.LocalIP
+			}
+			t.tailscaleStatusItem.SetTitle(fmt.Sprintf("●  Connected: %s", nodeName))
+		}
+		if t.tailscaleConnectItem != nil {
+			t.tailscaleConnectItem.Hide()
+		}
+		if t.tailscaleDisconnectItem != nil {
+			t.tailscaleDisconnectItem.Show()
+		}
+	case "NeedsLogin":
+		if t.tailscaleStatusItem != nil {
+			t.tailscaleStatusItem.SetTitle("○  Needs Login")
+		}
+		if t.tailscaleConnectItem != nil {
+			t.tailscaleConnectItem.SetTitle("🔐  Login to Tailscale")
+			t.tailscaleConnectItem.Show()
+			t.tailscaleConnectItem.Enable()
+		}
+		if t.tailscaleDisconnectItem != nil {
+			t.tailscaleDisconnectItem.Hide()
+		}
+	default:
+		if t.tailscaleStatusItem != nil {
+			t.tailscaleStatusItem.SetTitle("○  Disconnected")
+		}
+		if t.tailscaleConnectItem != nil {
+			t.tailscaleConnectItem.SetTitle("▶  Connect Tailscale")
+			t.tailscaleConnectItem.Show()
+			t.tailscaleConnectItem.Enable()
+		}
+		if t.tailscaleDisconnectItem != nil {
+			t.tailscaleDisconnectItem.Hide()
+		}
+	}
+}
+
+// connectTailscale connects to Tailscale via the tray.
+func (t *TrayIndicator) connectTailscale() {
+	registry := t.app.vpnManager.ProviderRegistry()
+	if registry == nil {
+		return
+	}
+
+	provider, exists := registry.Get("tailscale")
+	if !exists || provider == nil {
+		return
+	}
+
+	// Connect in background
+	go func() {
+		ctx := context.Background()
+		// Check current status to see if login is needed
+		status, err := provider.Status(ctx)
+		if err == nil && status.BackendState == "NeedsLogin" {
+			// Trigger login - this will open browser
+			if loginProvider, ok := provider.(interface{ Login() error }); ok {
+				loginProvider.Login()
+			}
+			return
+		}
+
+		// Normal connect - Tailscale doesn't need profile/auth for basic connect
+		err = provider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
+		if err != nil {
+			app.LogError("Tray: Tailscale connect failed: %v", err)
+		}
+		t.refreshTailscaleStatus()
+
+		// Update window UI if visible
+		glib.IdleAdd(func() {
+			if t.app.window != nil && t.app.window.tailscalePanel != nil {
+				t.app.window.tailscalePanel.updateStatus()
+			}
+		})
+	}()
+}
+
+// disconnectTailscale disconnects from Tailscale via the tray.
+func (t *TrayIndicator) disconnectTailscale() {
+	registry := t.app.vpnManager.ProviderRegistry()
+	if registry == nil {
+		return
+	}
+
+	provider, exists := registry.Get("tailscale")
+	if !exists || provider == nil {
+		return
+	}
+
+	go func() {
+		ctx := context.Background()
+		err := provider.Disconnect(ctx, nil)
+		if err != nil {
+			app.LogError("Tray: Tailscale disconnect failed: %v", err)
+		}
+		t.refreshTailscaleStatus()
+
+		// Update window UI if visible
+		glib.IdleAdd(func() {
+			if t.app.window != nil && t.app.window.tailscalePanel != nil {
+				t.app.window.tailscalePanel.updateStatus()
+			}
+		})
+	}()
 }

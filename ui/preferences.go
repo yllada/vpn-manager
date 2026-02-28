@@ -5,20 +5,24 @@ package ui
 
 import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/config"
+	"github.com/diamondburned/gotk4/pkg/pango"
+	"github.com/yllada/vpn-manager/app"
 )
 
 // PreferencesDialog represents the preferences dialog.
 type PreferencesDialog struct {
-	window          *gtk.Window
-	mainWindow      *MainWindow
-	config          *config.Config
-	autoStartSwitch *gtk.Switch
-	minimizeSwitch  *gtk.Switch
-	notifySwitch    *gtk.Switch
-	reconnectSwitch *gtk.Switch
-	themeDropDown   *gtk.DropDown
-	themeIDs        []string
+	window                *gtk.Window
+	mainWindow            *MainWindow
+	config                *app.Config
+	autoStartSwitch       *gtk.Switch
+	minimizeSwitch        *gtk.Switch
+	notifySwitch          *gtk.Switch
+	reconnectSwitch       *gtk.Switch
+	themeDropDown         *gtk.DropDown
+	themeIDs              []string
+	tailscaleSwitch       *gtk.Switch
+	tailscaleRoutesSwitch *gtk.Switch
+	tailscaleDNSSwitch    *gtk.Switch
 }
 
 // NewPreferencesDialog creates a new preferences dialog.
@@ -155,6 +159,50 @@ func (pd *PreferencesDialog) build() {
 	appearSection.Append(appearCard)
 	mainBox.Append(appearSection)
 
+	// ═══════════════════════════════════════════════════════════════════
+	// TAILSCALE SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	tailscaleSection := pd.createSection("Tailscale", "network-vpn-symbolic")
+	tailscaleCard := pd.createCard()
+
+	// Enable Tailscale row
+	pd.tailscaleSwitch = gtk.NewSwitch()
+	pd.tailscaleSwitch.SetActive(pd.config.Tailscale.Enabled)
+	pd.tailscaleSwitch.SetVAlign(gtk.AlignCenter)
+	tailscaleRow := pd.createSettingRow(
+		"Enable Tailscale",
+		"Show Tailscale controls in the main window",
+		pd.tailscaleSwitch,
+	)
+	tailscaleCard.Append(tailscaleRow)
+	tailscaleCard.Append(pd.createSeparator())
+
+	// Accept Routes row
+	pd.tailscaleRoutesSwitch = gtk.NewSwitch()
+	pd.tailscaleRoutesSwitch.SetActive(pd.config.Tailscale.AcceptRoutes)
+	pd.tailscaleRoutesSwitch.SetVAlign(gtk.AlignCenter)
+	routesRow := pd.createSettingRow(
+		"Accept Routes",
+		"Accept subnet routes advertised by other nodes",
+		pd.tailscaleRoutesSwitch,
+	)
+	tailscaleCard.Append(routesRow)
+	tailscaleCard.Append(pd.createSeparator())
+
+	// Accept DNS row
+	pd.tailscaleDNSSwitch = gtk.NewSwitch()
+	pd.tailscaleDNSSwitch.SetActive(pd.config.Tailscale.AcceptDNS)
+	pd.tailscaleDNSSwitch.SetVAlign(gtk.AlignCenter)
+	dnsRow := pd.createSettingRow(
+		"Accept DNS",
+		"Use Tailscale DNS settings (MagicDNS)",
+		pd.tailscaleDNSSwitch,
+	)
+	tailscaleCard.Append(dnsRow)
+
+	tailscaleSection.Append(tailscaleCard)
+	mainBox.Append(tailscaleSection)
+
 	scrolled.SetChild(mainBox)
 	rootBox.Append(scrolled)
 
@@ -244,7 +292,7 @@ func (pd *PreferencesDialog) createSettingRow(title string, description string, 
 	descLabel.AddCSSClass("dim-label")
 	descLabel.AddCSSClass("caption")
 	descLabel.SetWrap(true)
-	descLabel.SetWrapMode(2) // PANGO_WRAP_WORD_CHAR
+	descLabel.SetWrapMode(pango.WrapWordChar)
 	textBox.Append(descLabel)
 
 	row.Append(textBox)
@@ -277,6 +325,11 @@ func (pd *PreferencesDialog) savePreferences() {
 	pd.config.MinimizeToTray = pd.minimizeSwitch.Active()
 	pd.config.ShowNotifications = pd.notifySwitch.Active()
 	pd.config.AutoReconnect = pd.reconnectSwitch.Active()
+
+	// Tailscale settings
+	pd.config.Tailscale.Enabled = pd.tailscaleSwitch.Active()
+	pd.config.Tailscale.AcceptRoutes = pd.tailscaleRoutesSwitch.Active()
+	pd.config.Tailscale.AcceptDNS = pd.tailscaleDNSSwitch.Active()
 
 	themeIdx := pd.themeDropDown.Selected()
 	if int(themeIdx) < len(pd.themeIDs) {
