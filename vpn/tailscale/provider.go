@@ -130,10 +130,11 @@ func (p *Provider) Status(ctx context.Context) (*app.ProviderStatus, error) {
 		Connected:    status.BackendState == "Running",
 	}
 
-	// Add connection info if connected
-	if providerStatus.Connected && status.Self != nil {
+	// Add connection info if we have Self info (available even when stopped)
+	if status.Self != nil {
 		providerStatus.ConnectionInfo = &app.ConnectionInfo{
 			TailscaleIPs: status.Self.TailscaleIPs,
+			Hostname:     status.Self.HostName,
 		}
 
 		if len(status.Self.TailscaleIPs) > 0 {
@@ -553,7 +554,28 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("tailscale up failed: %w: %s", err, string(output))
+		outputStr := string(output)
+		outputLower := strings.ToLower(outputStr)
+		// Check for access denied - need elevated privileges
+		if strings.Contains(outputLower, "access denied") {
+			// Try with pkexec for elevated privileges
+			return c.upWithPkexec(ctx, args[1:]) // Skip "up" as we'll add it in upWithPkexec
+		}
+		return fmt.Errorf("tailscale up failed: %w: %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// upWithPkexec attempts tailscale up using pkexec for elevated privileges.
+func (c *Client) upWithPkexec(ctx context.Context, extraArgs []string) error {
+	args := []string{c.binaryPath, "up"}
+	args = append(args, extraArgs...)
+
+	cmd := exec.CommandContext(ctx, "pkexec", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tailscale up (pkexec) failed: %w: %s", err, string(output))
 	}
 
 	return nil
@@ -564,7 +586,25 @@ func (c *Client) Down(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, c.binaryPath, "down")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("tailscale down failed: %w: %s", err, string(output))
+		outputStr := string(output)
+		outputLower := strings.ToLower(outputStr)
+		// Check for access denied - need elevated privileges
+		if strings.Contains(outputLower, "access denied") {
+			// Try with pkexec for elevated privileges
+			return c.downWithPkexec(ctx)
+		}
+		return fmt.Errorf("tailscale down failed: %w: %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// downWithPkexec attempts tailscale down using pkexec for elevated privileges.
+func (c *Client) downWithPkexec(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "pkexec", c.binaryPath, "down")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tailscale down (pkexec) failed: %w: %s", err, string(output))
 	}
 
 	return nil
@@ -676,7 +716,25 @@ func (c *Client) Logout(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, c.binaryPath, "logout")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("tailscale logout failed: %w: %s", err, string(output))
+		outputStr := string(output)
+		outputLower := strings.ToLower(outputStr)
+		// Check for access denied - need elevated privileges
+		if strings.Contains(outputLower, "access denied") {
+			// Try with pkexec for elevated privileges
+			return c.logoutWithPkexec(ctx)
+		}
+		return fmt.Errorf("tailscale logout failed: %w: %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// logoutWithPkexec attempts tailscale logout using pkexec for elevated privileges.
+func (c *Client) logoutWithPkexec(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "pkexec", c.binaryPath, "logout")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tailscale logout (pkexec) failed: %w: %s", err, string(output))
 	}
 
 	return nil

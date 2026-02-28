@@ -90,7 +90,7 @@ func (tp *TailscalePanel) createLayout() {
 	tp.box.SetMarginStart(12)
 	tp.box.SetMarginEnd(12)
 
-	// Header with Tailscale logo/icon
+	// Header - matching OpenVPN/WireGuard style
 	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	headerBox.SetHAlign(gtk.AlignCenter)
 
@@ -105,266 +105,237 @@ func (tp *TailscalePanel) createLayout() {
 
 	tp.box.Append(headerBox)
 
-	// Status card
-	statusCard := tp.createStatusCard()
-	tp.box.Append(statusCard)
+	// Main profile card - styled like OpenVPN/WireGuard profiles
+	profileCard := tp.createProfileCard()
+	tp.box.Append(profileCard)
 
-	// Server selection (Headscale support)
-	serverSection := tp.createServerSection()
-	tp.box.Append(serverSection)
-
-	// Control buttons
-	controlsBox := tp.createControlButtons()
-	tp.box.Append(controlsBox)
-
-	// Exit node section
-	exitNodeSection := tp.createExitNodeSection()
-	tp.box.Append(exitNodeSection)
-
-	// Taildrop file sharing section
-	taildropSection := tp.createTaildropSection()
-	tp.box.Append(taildropSection)
-
-	// Quick settings section
-	settingsSection := tp.createQuickSettingsSection()
-	tp.box.Append(settingsSection)
-
-	// Peers section (collapsible)
-	peersSection := tp.createPeersSection()
-	tp.box.Append(peersSection)
+	// Tabbed sections using Notebook
+	notebook := tp.createSettingsNotebook()
+	tp.box.Append(notebook)
 
 	// Initial status update
 	tp.updateStatus()
 }
 
-// createStatusCard creates the status display card.
-func (tp *TailscalePanel) createStatusCard() *gtk.Frame {
-	frame := gtk.NewFrame("")
-	frame.AddCSSClass("card")
+// createSettingsNotebook creates a notebook with tabs for different settings.
+func (tp *TailscalePanel) createSettingsNotebook() *gtk.Notebook {
+	notebook := gtk.NewNotebook()
+	notebook.SetShowBorder(false)
+	notebook.AddCSSClass("tailscale-notebook")
 
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(16)
-	box.SetMarginBottom(16)
-	box.SetMarginStart(16)
-	box.SetMarginEnd(16)
+	// Server tab
+	serverPage := tp.createServerTab()
+	serverLabel := tp.createTabLabel("network-server-symbolic", "Server")
+	notebook.AppendPage(serverPage, serverLabel)
 
-	// Status row
-	statusRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	statusRow.SetHAlign(gtk.AlignCenter)
+	// Features tab
+	featuresPage := tp.createFeaturesTab()
+	featuresLabel := tp.createTabLabel("preferences-system-symbolic", "Features")
+	notebook.AppendPage(featuresPage, featuresLabel)
 
-	tp.statusIcon = gtk.NewImage()
-	tp.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-	tp.statusIcon.SetPixelSize(24)
-	statusRow.Append(tp.statusIcon)
+	// Peers tab
+	peersPage := tp.createPeersTab()
+	peersLabel := tp.createTabLabel("system-users-symbolic", "Peers")
+	notebook.AppendPage(peersPage, peersLabel)
 
-	tp.statusLabel = gtk.NewLabel("Not Connected")
-	tp.statusLabel.AddCSSClass("title-2")
-	statusRow.Append(tp.statusLabel)
-
-	box.Append(statusRow)
-
-	// Details grid
-	detailsGrid := gtk.NewGrid()
-	detailsGrid.SetRowSpacing(4)
-	detailsGrid.SetColumnSpacing(12)
-	detailsGrid.SetHAlign(gtk.AlignCenter)
-	detailsGrid.SetMarginTop(12)
-
-	// Hostname
-	hostnameLabel := gtk.NewLabel("Hostname:")
-	hostnameLabel.AddCSSClass("dim-label")
-	hostnameLabel.SetXAlign(1)
-	detailsGrid.Attach(hostnameLabel, 0, 0, 1, 1)
-
-	tp.hostnameLabel = gtk.NewLabel("-")
-	tp.hostnameLabel.SetXAlign(0)
-	detailsGrid.Attach(tp.hostnameLabel, 1, 0, 1, 1)
-
-	// IP Address
-	ipTitleLabel := gtk.NewLabel("IP Address:")
-	ipTitleLabel.AddCSSClass("dim-label")
-	ipTitleLabel.SetXAlign(1)
-	detailsGrid.Attach(ipTitleLabel, 0, 1, 1, 1)
-
-	tp.ipLabel = gtk.NewLabel("-")
-	tp.ipLabel.SetXAlign(0)
-	detailsGrid.Attach(tp.ipLabel, 1, 1, 1, 1)
-
-	// Version
-	versionTitleLabel := gtk.NewLabel("Version:")
-	versionTitleLabel.AddCSSClass("dim-label")
-	versionTitleLabel.SetXAlign(1)
-	detailsGrid.Attach(versionTitleLabel, 0, 2, 1, 1)
-
-	tp.versionLabel = gtk.NewLabel("-")
-	tp.versionLabel.SetXAlign(0)
-	detailsGrid.Attach(tp.versionLabel, 1, 2, 1, 1)
-
-	box.Append(detailsGrid)
-	frame.SetChild(box)
-
-	return frame
+	return notebook
 }
 
-// createControlButtons creates the main control buttons.
-func (tp *TailscalePanel) createControlButtons() *gtk.Box {
-	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+// createTabLabel creates a label with icon for notebook tabs.
+func (tp *TailscalePanel) createTabLabel(iconName, text string) *gtk.Box {
+	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	box.SetHAlign(gtk.AlignCenter)
-	box.SetMarginTop(12)
 
-	// Connect/Disconnect button
-	tp.connectBtn = gtk.NewButtonWithLabel("Connect")
-	tp.connectBtn.AddCSSClass("suggested-action")
-	tp.connectBtn.AddCSSClass("pill")
-	tp.connectBtn.SetSizeRequest(120, -1)
-	tp.connectBtn.ConnectClicked(tp.onConnectClicked)
-	box.Append(tp.connectBtn)
+	icon := gtk.NewImage()
+	icon.SetFromIconName(iconName)
+	icon.SetPixelSize(16)
+	box.Append(icon)
 
-	// Login button
-	tp.loginBtn = gtk.NewButtonWithLabel("Login")
-	tp.loginBtn.AddCSSClass("pill")
-	tp.loginBtn.ConnectClicked(tp.onLoginClicked)
-	box.Append(tp.loginBtn)
-
-	// Logout button
-	tp.logoutBtn = gtk.NewButtonWithLabel("Logout")
-	tp.logoutBtn.AddCSSClass("destructive-action")
-	tp.logoutBtn.AddCSSClass("pill")
-	tp.logoutBtn.ConnectClicked(tp.onLogoutClicked)
-	box.Append(tp.logoutBtn)
+	label := gtk.NewLabel(text)
+	box.Append(label)
 
 	return box
 }
 
-// createExitNodeSection creates the exit node selector.
-func (tp *TailscalePanel) createExitNodeSection() *gtk.Frame {
-	frame := gtk.NewFrame("")
-	frame.AddCSSClass("card")
+// createProfileCard creates the main profile card matching OpenVPN/WireGuard style.
+func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
+	listBox := gtk.NewListBox()
+	listBox.SetSelectionMode(gtk.SelectionNone)
+	listBox.AddCSSClass("boxed-list")
 
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	row := gtk.NewListBoxRow()
+	row.SetSelectable(false)
+	row.AddCSSClass("profile-card")
 
-	// Title
-	titleLabel := gtk.NewLabel("Exit Node")
-	titleLabel.AddCSSClass("heading")
-	titleLabel.SetXAlign(0)
-	box.Append(titleLabel)
+	// Horizontal main container - matching OpenVPN structure
+	mainBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	mainBox.SetMarginTop(12)
+	mainBox.SetMarginBottom(12)
+	mainBox.SetMarginStart(12)
+	mainBox.SetMarginEnd(12)
 
-	// Description
-	descLabel := gtk.NewLabel("Route internet traffic through another device")
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	descLabel.SetXAlign(0)
-	box.Append(descLabel)
+	// Profile icon - Tailscale specific
+	icon := gtk.NewImage()
+	icon.SetFromIconName("network-workgroup-symbolic")
+	icon.SetPixelSize(32)
+	icon.AddCSSClass("profile-icon")
+	mainBox.Append(icon)
 
-	// Exit node dropdown
-	rowBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	rowBox.SetMarginTop(8)
+	// Info container (name and status details)
+	infoBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	infoBox.SetHExpand(true)
+	infoBox.SetVAlign(gtk.AlignCenter)
 
-	// We'll use a simple combo/dropdown
-	tp.exitNodeCombo = gtk.NewDropDown(nil, nil)
-	tp.exitNodeCombo.SetHExpand(true)
-	rowBox.Append(tp.exitNodeCombo)
+	// Hostname as profile name
+	tp.hostnameLabel = gtk.NewLabel("Tailscale")
+	tp.hostnameLabel.SetXAlign(0)
+	tp.hostnameLabel.AddCSSClass("heading")
+	tp.hostnameLabel.AddCSSClass("profile-name")
+	infoBox.Append(tp.hostnameLabel)
 
-	// Apply button
-	tp.exitNodeBtn = gtk.NewButtonWithLabel("Apply")
-	tp.exitNodeBtn.ConnectClicked(tp.onExitNodeApply)
-	rowBox.Append(tp.exitNodeBtn)
+	// IP and network as subtitle
+	subtitleBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	tp.ipLabel = gtk.NewLabel("-")
+	tp.ipLabel.SetXAlign(0)
+	tp.ipLabel.AddCSSClass("dim-label")
+	tp.ipLabel.AddCSSClass("caption")
+	subtitleBox.Append(tp.ipLabel)
 
-	box.Append(rowBox)
-	frame.SetChild(box)
+	tp.networkLabel = gtk.NewLabel("")
+	tp.networkLabel.SetXAlign(0)
+	tp.networkLabel.AddCSSClass("dim-label")
+	tp.networkLabel.AddCSSClass("caption")
+	subtitleBox.Append(tp.networkLabel)
+	infoBox.Append(subtitleBox)
 
-	return frame
+	// Badges container
+	badgeBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	badgeBox.SetMarginTop(4)
+
+	// Tailscale badge
+	tsBadge := gtk.NewLabel("Tailscale")
+	tsBadge.AddCSSClass("tailscale-badge")
+	badgeBox.Append(tsBadge)
+
+	// Version badge
+	tp.versionLabel = gtk.NewLabel("")
+	tp.versionLabel.AddCSSClass("version-badge")
+	tp.versionLabel.SetVisible(false)
+	badgeBox.Append(tp.versionLabel)
+
+	infoBox.Append(badgeBox)
+	mainBox.Append(infoBox)
+
+	// Connection status - matching OpenVPN/WireGuard
+	statusBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	statusBox.SetVAlign(gtk.AlignCenter)
+
+	tp.statusIcon = gtk.NewImage()
+	tp.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
+	tp.statusIcon.SetPixelSize(16)
+	statusBox.Append(tp.statusIcon)
+
+	tp.statusLabel = gtk.NewLabel("Not Connected")
+	tp.statusLabel.AddCSSClass("status-disconnected")
+	statusBox.Append(tp.statusLabel)
+
+	mainBox.Append(statusBox)
+
+	// Button container - matching OpenVPN/WireGuard circular buttons
+	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	buttonBox.SetVAlign(gtk.AlignCenter)
+	buttonBox.SetMarginStart(12)
+
+	// Connect button
+	tp.connectBtn = gtk.NewButton()
+	tp.connectBtn.SetIconName("media-playback-start-symbolic")
+	tp.connectBtn.SetTooltipText("Connect")
+	tp.connectBtn.AddCSSClass("circular")
+	tp.connectBtn.AddCSSClass("connect-button")
+	tp.connectBtn.ConnectClicked(tp.onConnectClicked)
+	buttonBox.Append(tp.connectBtn)
+
+	// Login button - visible when NeedsLogin (amber color to indicate action needed)
+	tp.loginBtn = gtk.NewButton()
+	tp.loginBtn.SetIconName("avatar-default-symbolic")
+	tp.loginBtn.SetTooltipText("Login to Tailscale")
+	tp.loginBtn.AddCSSClass("circular")
+	tp.loginBtn.AddCSSClass("login-button")
+	tp.loginBtn.ConnectClicked(tp.onLoginClicked)
+	buttonBox.Append(tp.loginBtn)
+
+	// Logout button - visible when logged in (flat style)
+	tp.logoutBtn = gtk.NewButton()
+	tp.logoutBtn.SetIconName("application-exit-symbolic")
+	tp.logoutBtn.SetTooltipText("Logout from Tailscale")
+	tp.logoutBtn.AddCSSClass("circular")
+	tp.logoutBtn.AddCSSClass("flat")
+	tp.logoutBtn.ConnectClicked(tp.onLogoutClicked)
+	buttonBox.Append(tp.logoutBtn)
+
+	mainBox.Append(buttonBox)
+
+	row.SetChild(mainBox)
+	listBox.Append(row)
+
+	return listBox
 }
 
-// createPeersSection creates the peers list section.
-func (tp *TailscalePanel) createPeersSection() *gtk.Expander {
-	expander := gtk.NewExpander("Connected Peers")
-	expander.SetMarginTop(12)
+// createServerTab creates the server configuration tab content.
+func (tp *TailscalePanel) createServerTab() *gtk.Box {
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	mainBox.SetMarginTop(16)
+	mainBox.SetMarginBottom(16)
+	mainBox.SetMarginStart(12)
+	mainBox.SetMarginEnd(12)
 
-	scrolled := gtk.NewScrolledWindow()
-	scrolled.SetMinContentHeight(150)
-	scrolled.SetMaxContentHeight(300)
+	card := gtk.NewBox(gtk.OrientationVertical, 8)
+	card.AddCSSClass("card")
 
-	tp.peersBox = gtk.NewListBox()
-	tp.peersBox.AddCSSClass("boxed-list")
-	tp.peersBox.SetSelectionMode(gtk.SelectionNone)
-
-	scrolled.SetChild(tp.peersBox)
-	expander.SetChild(scrolled)
-
-	return expander
-}
-
-// createServerSection creates the control server selection (Headscale support).
-func (tp *TailscalePanel) createServerSection() *gtk.Frame {
-	frame := gtk.NewFrame("")
-	frame.AddCSSClass("card")
-
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
-
-	// Title
-	titleLabel := gtk.NewLabel("Control Server")
-	titleLabel.AddCSSClass("heading")
-	titleLabel.SetXAlign(0)
-	box.Append(titleLabel)
-
-	// Description
-	descLabel := gtk.NewLabel("Use Tailscale Cloud or your own Headscale server")
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	descLabel.SetXAlign(0)
-	box.Append(descLabel)
+	innerBox := gtk.NewBox(gtk.OrientationVertical, 8)
+	innerBox.SetMarginTop(12)
+	innerBox.SetMarginBottom(12)
+	innerBox.SetMarginStart(12)
+	innerBox.SetMarginEnd(12)
 
 	// Server type dropdown
 	serverTypeRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	serverTypeRow.SetMarginTop(8)
 
-	serverLabel := gtk.NewLabel("Server:")
+	serverLabel := gtk.NewLabel("Control Server:")
 	serverLabel.SetXAlign(0)
+	serverLabel.AddCSSClass("dim-label")
 	serverTypeRow.Append(serverLabel)
 
-	// Load server preference from config
 	cfg := tp.mainWindow.app.GetConfig()
 	serverOptions := []string{"Tailscale Cloud", "Custom (Headscale)"}
 	serverModel := gtk.NewStringList(serverOptions)
 	tp.serverCombo = gtk.NewDropDown(serverModel, nil)
 	tp.serverCombo.SetHExpand(true)
 
-	// Set initial selection based on config
 	if cfg.Tailscale.ControlServer != "cloud" && cfg.Tailscale.ControlServer != "" {
-		tp.serverCombo.SetSelected(1) // Custom (Headscale)
+		tp.serverCombo.SetSelected(1)
 	} else {
-		tp.serverCombo.SetSelected(0) // Tailscale Cloud
+		tp.serverCombo.SetSelected(0)
 	}
-
 	tp.serverCombo.NotifyProperty("selected", func() {
 		tp.onServerTypeChanged()
 	})
 	serverTypeRow.Append(tp.serverCombo)
+	innerBox.Append(serverTypeRow)
 
-	box.Append(serverTypeRow)
-
-	// Custom server URL entry (hidden by default)
+	// Custom server URL entry
 	serverUrlRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	serverUrlRow.SetMarginTop(8)
 
 	urlLabel := gtk.NewLabel("URL:")
 	urlLabel.SetXAlign(0)
+	urlLabel.AddCSSClass("dim-label")
 	serverUrlRow.Append(urlLabel)
 
 	tp.serverEntry = gtk.NewEntry()
 	tp.serverEntry.SetPlaceholderText("https://headscale.example.com")
 	tp.serverEntry.SetHExpand(true)
 
-	// Load custom server URL from config and set visibility
 	if cfg.Tailscale.ControlServer != "cloud" && cfg.Tailscale.ControlServer != "" {
 		tp.serverEntry.SetText(cfg.Tailscale.ControlServer)
 		tp.serverEntry.SetVisible(true)
@@ -372,135 +343,175 @@ func (tp *TailscalePanel) createServerSection() *gtk.Frame {
 		tp.serverEntry.SetVisible(false)
 	}
 	serverUrlRow.Append(tp.serverEntry)
+	innerBox.Append(serverUrlRow)
 
-	box.Append(serverUrlRow)
-
-	// Auth Key section
+	// Auth Key entry
 	authKeyRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	authKeyRow.SetMarginTop(12)
+	authKeyRow.SetMarginTop(8)
 
 	authKeyLabel := gtk.NewLabel("Auth Key:")
 	authKeyLabel.SetXAlign(0)
+	authKeyLabel.AddCSSClass("dim-label")
 	authKeyRow.Append(authKeyLabel)
 
 	tp.authKeyEntry = gtk.NewEntry()
 	tp.authKeyEntry.SetPlaceholderText("tskey-auth-...")
 	tp.authKeyEntry.SetHExpand(true)
-	tp.authKeyEntry.SetVisibility(false) // Password-style
+	tp.authKeyEntry.SetVisibility(false)
 	authKeyRow.Append(tp.authKeyEntry)
 
-	// Show/hide toggle
 	showKeyBtn := gtk.NewToggleButton()
 	showKeyBtn.SetIconName("view-reveal-symbolic")
 	showKeyBtn.SetTooltipText("Show/hide key")
+	showKeyBtn.AddCSSClass("flat")
 	showKeyBtn.ConnectToggled(func() {
 		tp.authKeyEntry.SetVisibility(showKeyBtn.Active())
 	})
 	authKeyRow.Append(showKeyBtn)
+	innerBox.Append(authKeyRow)
 
-	box.Append(authKeyRow)
-
-	// Auth key hint
 	authHint := gtk.NewLabel("Optional: Pre-authenticated key for automatic login")
 	authHint.AddCSSClass("dim-label")
 	authHint.AddCSSClass("caption")
 	authHint.SetXAlign(0)
-	box.Append(authHint)
+	innerBox.Append(authHint)
 
-	frame.SetChild(box)
-	return frame
+	card.Append(innerBox)
+	mainBox.Append(card)
+
+	return mainBox
 }
 
-// createTaildropSection creates the Taildrop file sharing section.
-func (tp *TailscalePanel) createTaildropSection() *gtk.Frame {
-	frame := gtk.NewFrame("")
-	frame.AddCSSClass("card")
+// createFeaturesTab creates the features tab with Exit Node, Taildrop, and Settings.
+func (tp *TailscalePanel) createFeaturesTab() *gtk.Box {
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	mainBox.SetMarginTop(16)
+	mainBox.SetMarginBottom(16)
+	mainBox.SetMarginStart(12)
+	mainBox.SetMarginEnd(12)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 8)
 
-	// Title row with icon
-	titleRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	// Exit Node card
+	exitCard := gtk.NewBox(gtk.OrientationVertical, 8)
+	exitCard.AddCSSClass("card")
 
+	exitInner := gtk.NewBox(gtk.OrientationVertical, 8)
+	exitInner.SetMarginTop(12)
+	exitInner.SetMarginBottom(12)
+	exitInner.SetMarginStart(12)
+	exitInner.SetMarginEnd(12)
+
+	exitTitle := gtk.NewLabel("Exit Node")
+	exitTitle.AddCSSClass("heading")
+	exitTitle.SetXAlign(0)
+	exitInner.Append(exitTitle)
+
+	exitDesc := gtk.NewLabel("Route internet traffic through another device")
+	exitDesc.AddCSSClass("dim-label")
+	exitDesc.AddCSSClass("caption")
+	exitDesc.SetXAlign(0)
+	exitInner.Append(exitDesc)
+
+	exitRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	exitRow.SetMarginTop(8)
+
+	tp.exitNodeCombo = gtk.NewDropDown(nil, nil)
+	tp.exitNodeCombo.SetHExpand(true)
+	exitRow.Append(tp.exitNodeCombo)
+
+	tp.exitNodeBtn = gtk.NewButtonWithLabel("Apply")
+	tp.exitNodeBtn.AddCSSClass("flat")
+	tp.exitNodeBtn.ConnectClicked(tp.onExitNodeApply)
+	exitRow.Append(tp.exitNodeBtn)
+
+	exitInner.Append(exitRow)
+	exitCard.Append(exitInner)
+	contentBox.Append(exitCard)
+
+	// Taildrop card
+	taildropCard := gtk.NewBox(gtk.OrientationVertical, 8)
+	taildropCard.AddCSSClass("card")
+
+	taildropInner := gtk.NewBox(gtk.OrientationVertical, 8)
+	taildropInner.SetMarginTop(12)
+	taildropInner.SetMarginBottom(12)
+	taildropInner.SetMarginStart(12)
+	taildropInner.SetMarginEnd(12)
+
+	taildropTitleRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	fileIcon := gtk.NewImage()
 	fileIcon.SetFromIconName("folder-download-symbolic")
-	titleRow.Append(fileIcon)
+	taildropTitleRow.Append(fileIcon)
 
-	titleLabel := gtk.NewLabel("Taildrop")
-	titleLabel.AddCSSClass("heading")
-	titleRow.Append(titleLabel)
+	taildropTitle := gtk.NewLabel("Taildrop")
+	taildropTitle.AddCSSClass("heading")
+	taildropTitleRow.Append(taildropTitle)
+	taildropInner.Append(taildropTitleRow)
 
-	box.Append(titleRow)
+	taildropDesc := gtk.NewLabel("Share files instantly with devices on your tailnet")
+	taildropDesc.AddCSSClass("dim-label")
+	taildropDesc.AddCSSClass("caption")
+	taildropDesc.SetXAlign(0)
+	taildropInner.Append(taildropDesc)
 
-	// Description
-	descLabel := gtk.NewLabel("Share files instantly with devices on your tailnet")
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	descLabel.SetXAlign(0)
-	box.Append(descLabel)
-
-	// Status label
 	tp.taildropStatus = gtk.NewLabel("")
 	tp.taildropStatus.SetXAlign(0)
 	tp.taildropStatus.AddCSSClass("caption")
-	box.Append(tp.taildropStatus)
+	taildropInner.Append(tp.taildropStatus)
 
-	// Buttons row
-	buttonsRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonsRow.SetMarginTop(8)
-	buttonsRow.SetHAlign(gtk.AlignStart)
+	taildropBtnRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	taildropBtnRow.SetMarginTop(8)
 
-	// Send file button
 	tp.taildropBtn = gtk.NewButtonWithLabel("Send File...")
 	tp.taildropBtn.SetIconName("document-send-symbolic")
+	tp.taildropBtn.AddCSSClass("flat")
 	tp.taildropBtn.ConnectClicked(tp.onTaildropSend)
-	buttonsRow.Append(tp.taildropBtn)
+	taildropBtnRow.Append(tp.taildropBtn)
 
-	// Receive files button
 	tp.taildropReceive = gtk.NewButtonWithLabel("Check Incoming")
 	tp.taildropReceive.SetIconName("folder-download-symbolic")
+	tp.taildropReceive.AddCSSClass("flat")
 	tp.taildropReceive.ConnectClicked(tp.onTaildropReceive)
-	buttonsRow.Append(tp.taildropReceive)
+	taildropBtnRow.Append(tp.taildropReceive)
 
-	box.Append(buttonsRow)
+	taildropInner.Append(taildropBtnRow)
+	taildropCard.Append(taildropInner)
+	contentBox.Append(taildropCard)
 
-	frame.SetChild(box)
-	return frame
-}
+	// Quick Settings card
+	settingsCard := gtk.NewBox(gtk.OrientationVertical, 8)
+	settingsCard.AddCSSClass("card")
 
-// createQuickSettingsSection creates quick toggle settings.
-func (tp *TailscalePanel) createQuickSettingsSection() *gtk.Frame {
-	frame := gtk.NewFrame("")
-	frame.AddCSSClass("card")
+	settingsInner := gtk.NewBox(gtk.OrientationVertical, 8)
+	settingsInner.SetMarginTop(12)
+	settingsInner.SetMarginBottom(12)
+	settingsInner.SetMarginStart(12)
+	settingsInner.SetMarginEnd(12)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	settingsTitle := gtk.NewLabel("Quick Settings")
+	settingsTitle.AddCSSClass("heading")
+	settingsTitle.SetXAlign(0)
+	settingsInner.Append(settingsTitle)
 
-	// Title
-	titleLabel := gtk.NewLabel("Quick Settings")
-	titleLabel.AddCSSClass("heading")
-	titleLabel.SetXAlign(0)
-	box.Append(titleLabel)
-
-	// Shields Up toggle
+	// Shields Up row
 	shieldsRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	shieldsRow.SetMarginTop(8)
 
+	shieldsTextBox := gtk.NewBox(gtk.OrientationVertical, 2)
+	shieldsTextBox.SetHExpand(true)
+
 	shieldsLabel := gtk.NewLabel("Shields Up")
-	shieldsLabel.SetHExpand(true)
 	shieldsLabel.SetXAlign(0)
-	shieldsRow.Append(shieldsLabel)
+	shieldsTextBox.Append(shieldsLabel)
 
 	shieldsDesc := gtk.NewLabel("Block incoming connections")
 	shieldsDesc.AddCSSClass("dim-label")
 	shieldsDesc.AddCSSClass("caption")
-	shieldsRow.Append(shieldsDesc)
+	shieldsDesc.SetXAlign(0)
+	shieldsTextBox.Append(shieldsDesc)
+
+	shieldsRow.Append(shieldsTextBox)
 
 	tp.shieldsUpSwitch = gtk.NewSwitch()
 	tp.shieldsUpSwitch.SetVAlign(gtk.AlignCenter)
@@ -509,22 +520,26 @@ func (tp *TailscalePanel) createQuickSettingsSection() *gtk.Frame {
 		return false
 	})
 	shieldsRow.Append(tp.shieldsUpSwitch)
+	settingsInner.Append(shieldsRow)
 
-	box.Append(shieldsRow)
+	// Advertise Exit row
+	exitAdvRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	exitAdvRow.SetMarginTop(8)
 
-	// Advertise Exit Node toggle
-	exitRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	exitRow.SetMarginTop(8)
+	exitAdvTextBox := gtk.NewBox(gtk.OrientationVertical, 2)
+	exitAdvTextBox.SetHExpand(true)
 
-	exitLabel := gtk.NewLabel("Advertise as Exit Node")
-	exitLabel.SetHExpand(true)
-	exitLabel.SetXAlign(0)
-	exitRow.Append(exitLabel)
+	exitAdvLabel := gtk.NewLabel("Advertise as Exit Node")
+	exitAdvLabel.SetXAlign(0)
+	exitAdvTextBox.Append(exitAdvLabel)
 
-	exitDesc := gtk.NewLabel("Let others use your connection")
-	exitDesc.AddCSSClass("dim-label")
-	exitDesc.AddCSSClass("caption")
-	exitRow.Append(exitDesc)
+	exitAdvDesc := gtk.NewLabel("Let others use your connection")
+	exitAdvDesc.AddCSSClass("dim-label")
+	exitAdvDesc.AddCSSClass("caption")
+	exitAdvDesc.SetXAlign(0)
+	exitAdvTextBox.Append(exitAdvDesc)
+
+	exitAdvRow.Append(exitAdvTextBox)
 
 	tp.advertiseExitSwitch = gtk.NewSwitch()
 	tp.advertiseExitSwitch.SetVAlign(gtk.AlignCenter)
@@ -532,44 +547,106 @@ func (tp *TailscalePanel) createQuickSettingsSection() *gtk.Frame {
 		go tp.onAdvertiseExitChanged(state)
 		return false
 	})
-	exitRow.Append(tp.advertiseExitSwitch)
+	exitAdvRow.Append(tp.advertiseExitSwitch)
+	settingsInner.Append(exitAdvRow)
 
-	box.Append(exitRow)
+	settingsCard.Append(settingsInner)
+	contentBox.Append(settingsCard)
 
-	frame.SetChild(box)
-	return frame
+	mainBox.Append(contentBox)
+	return mainBox
+}
+
+// createPeersTab creates the peers list tab content.
+func (tp *TailscalePanel) createPeersTab() *gtk.Box {
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	mainBox.SetMarginTop(16)
+	mainBox.SetMarginBottom(16)
+	mainBox.SetMarginStart(12)
+	mainBox.SetMarginEnd(12)
+
+	card := gtk.NewBox(gtk.OrientationVertical, 0)
+	card.AddCSSClass("card")
+
+	scrolled := gtk.NewScrolledWindow()
+	scrolled.SetMinContentHeight(150)
+	scrolled.SetMaxContentHeight(350)
+
+	tp.peersBox = gtk.NewListBox()
+	tp.peersBox.AddCSSClass("boxed-list")
+	tp.peersBox.SetSelectionMode(gtk.SelectionNone)
+
+	scrolled.SetChild(tp.peersBox)
+	card.Append(scrolled)
+	mainBox.Append(card)
+
+	return mainBox
 }
 
 // Event handlers
 
 func (tp *TailscalePanel) onConnectClicked() {
-	ctx := context.Background()
+	// Disable button to prevent multiple clicks
+	tp.connectBtn.SetSensitive(false)
+	tp.mainWindow.SetStatus("Processing Tailscale connection...")
 
-	status, err := tp.provider.Status(ctx)
-	if err != nil {
-		tp.mainWindow.showError("Tailscale Error", err.Error())
-		return
-	}
+	// Run in goroutine to avoid blocking UI (especially for pkexec dialogs)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
 
-	if status.Connected {
-		// Disconnect
-		if err := tp.provider.Disconnect(ctx, nil); err != nil {
-			tp.mainWindow.showError("Disconnect Error", err.Error())
+		status, err := tp.provider.Status(ctx)
+		if err != nil {
+			glib.IdleAdd(func() {
+				tp.connectBtn.SetSensitive(true)
+				tp.mainWindow.showError("Tailscale Error", err.Error())
+			})
 			return
 		}
-		tp.mainWindow.SetStatus("Tailscale disconnected")
-		NotifyDisconnected("Tailscale")
-	} else {
-		// Connect
-		if err := tp.provider.Connect(ctx, nil, app.AuthInfo{Interactive: true}); err != nil {
-			tp.mainWindow.showError("Connect Error", err.Error())
+
+		// Check if we need to login first
+		if status.BackendState == "NeedsLogin" {
+			glib.IdleAdd(func() {
+				tp.connectBtn.SetSensitive(true)
+				tp.mainWindow.SetStatus("Tailscale needs login first")
+				// Trigger login flow
+				tp.onLoginClicked()
+			})
 			return
 		}
-		tp.mainWindow.SetStatus("Tailscale connected")
-		NotifyConnected("Tailscale")
-	}
 
-	tp.updateStatus()
+		if status.Connected {
+			// Disconnect
+			if err := tp.provider.Disconnect(ctx, nil); err != nil {
+				glib.IdleAdd(func() {
+					tp.connectBtn.SetSensitive(true)
+					tp.mainWindow.showError("Disconnect Error", err.Error())
+				})
+				return
+			}
+			glib.IdleAdd(func() {
+				tp.connectBtn.SetSensitive(true)
+				tp.mainWindow.SetStatus("Tailscale disconnected")
+				NotifyDisconnected("Tailscale")
+				tp.updateStatus()
+			})
+		} else {
+			// Connect (state is Stopped - already logged in but not connected)
+			if err := tp.provider.Connect(ctx, nil, app.AuthInfo{Interactive: true}); err != nil {
+				glib.IdleAdd(func() {
+					tp.connectBtn.SetSensitive(true)
+					tp.mainWindow.showError("Connect Error", err.Error())
+				})
+				return
+			}
+			glib.IdleAdd(func() {
+				tp.connectBtn.SetSensitive(true)
+				tp.mainWindow.SetStatus("Tailscale connected")
+				NotifyConnected("Tailscale")
+				tp.updateStatus()
+			})
+		}
+	}()
 }
 
 func (tp *TailscalePanel) onLoginClicked() {
@@ -779,15 +856,30 @@ func (tp *TailscalePanel) showOperatorSetupDialog() {
 }
 
 func (tp *TailscalePanel) onLogoutClicked() {
-	ctx := context.Background()
+	// Disable button to prevent multiple clicks
+	tp.logoutBtn.SetSensitive(false)
+	tp.mainWindow.SetStatus("Logging out of Tailscale...")
 
-	if err := tp.provider.Logout(ctx); err != nil {
-		tp.mainWindow.showError("Logout Error", err.Error())
-		return
-	}
+	// Run in goroutine to avoid blocking UI (needed for pkexec dialog)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
 
-	tp.mainWindow.SetStatus("Logged out of Tailscale")
-	tp.updateStatus()
+		err := tp.provider.Logout(ctx)
+
+		// Update UI from main thread
+		glib.IdleAdd(func() {
+			tp.logoutBtn.SetSensitive(true)
+
+			if err != nil {
+				tp.mainWindow.showError("Logout Error", err.Error())
+				return
+			}
+
+			tp.mainWindow.SetStatus("Logged out of Tailscale")
+			tp.updateStatus()
+		})
+	}()
 }
 
 func (tp *TailscalePanel) onExitNodeApply() {
@@ -849,34 +941,65 @@ func (tp *TailscalePanel) updateStatus() {
 		tp.statusLabel.SetText("Connected")
 		tp.statusLabel.RemoveCSSClass("status-disconnected")
 		tp.statusLabel.AddCSSClass("status-connected")
-		tp.connectBtn.SetLabel("Disconnect")
-		tp.connectBtn.RemoveCSSClass("suggested-action")
+		// Change to stop icon for disconnect
+		tp.connectBtn.SetIconName("media-playback-stop-symbolic")
+		tp.connectBtn.SetTooltipText("Disconnect")
+		tp.connectBtn.RemoveCSSClass("connect-button")
 		tp.connectBtn.AddCSSClass("destructive-action")
+		// Hide login, show logout when connected
+		tp.loginBtn.SetVisible(false)
+		tp.logoutBtn.SetVisible(true)
 	} else {
 		tp.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
 
 		switch status.BackendState {
 		case "NeedsLogin":
 			tp.statusLabel.SetText("Needs Login")
+			tp.loginBtn.SetVisible(true)
+			tp.logoutBtn.SetVisible(false)
 		case "Stopped":
 			tp.statusLabel.SetText("Stopped")
+			tp.loginBtn.SetVisible(false)
+			tp.logoutBtn.SetVisible(true) // Can logout when stopped
 		default:
 			tp.statusLabel.SetText("Disconnected")
+			tp.loginBtn.SetVisible(false)
+			tp.logoutBtn.SetVisible(true)
 		}
 
 		tp.statusLabel.RemoveCSSClass("status-connected")
 		tp.statusLabel.AddCSSClass("status-disconnected")
-		tp.connectBtn.SetLabel("Connect")
+		// Change to play icon for connect
+		tp.connectBtn.SetIconName("media-playback-start-symbolic")
+		tp.connectBtn.SetTooltipText("Connect")
 		tp.connectBtn.RemoveCSSClass("destructive-action")
-		tp.connectBtn.AddCSSClass("suggested-action")
+		tp.connectBtn.AddCSSClass("connect-button")
 	}
 
 	// Update connection info
 	if status.ConnectionInfo != nil {
+		// Set hostname (device name)
+		if status.ConnectionInfo.Hostname != "" {
+			tp.hostnameLabel.SetText(status.ConnectionInfo.Hostname)
+		} else {
+			tp.hostnameLabel.SetText("Tailscale")
+		}
+
+		// Set IP address
 		if len(status.ConnectionInfo.TailscaleIPs) > 0 {
 			tp.ipLabel.SetText(status.ConnectionInfo.TailscaleIPs[0])
 		}
-		tp.hostnameLabel.SetText(status.ConnectionInfo.ExitNode)
+
+		// Show network name if available
+		if status.ConnectionInfo.ExitNode != "" {
+			tp.networkLabel.SetText(fmt.Sprintf("via %s", status.ConnectionInfo.ExitNode))
+		} else {
+			tp.networkLabel.SetText("")
+		}
+	} else {
+		tp.hostnameLabel.SetText("Tailscale")
+		tp.ipLabel.SetText("-")
+		tp.networkLabel.SetText("")
 	}
 
 	// Update exit nodes
@@ -885,13 +1008,8 @@ func (tp *TailscalePanel) updateStatus() {
 	// Update peers list
 	tp.updatePeers()
 
-	// Button visibility based on state
-	needsLogin := status.BackendState == "NeedsLogin"
-	isLoggedIn := status.Connected || status.BackendState == "Running" || status.BackendState == "Stopped"
-
-	tp.loginBtn.SetVisible(needsLogin || !isLoggedIn)
-	tp.logoutBtn.SetVisible(isLoggedIn && !needsLogin)
-	tp.connectBtn.SetSensitive(!needsLogin)
+	// Disable connect button when needs login
+	tp.connectBtn.SetSensitive(status.BackendState != "NeedsLogin")
 }
 
 // updateExitNodes fetches and populates exit nodes.
@@ -936,7 +1054,9 @@ func (tp *TailscalePanel) updatePeers() {
 
 	ctx := context.Background()
 	tsStatus, err := tp.provider.GetTailscaleStatus(ctx)
-	if err != nil || tsStatus == nil {
+	if err != nil || tsStatus == nil || len(tsStatus.Peer) == 0 {
+		// Show empty state placeholder directly
+		tp.showEmptyPeersState()
 		return
 	}
 
@@ -944,6 +1064,36 @@ func (tp *TailscalePanel) updatePeers() {
 		row := tp.createPeerRow(peer)
 		tp.peersBox.Append(row)
 	}
+}
+
+// showEmptyPeersState shows a placeholder when no peers are connected.
+func (tp *TailscalePanel) showEmptyPeersState() {
+	row := gtk.NewListBoxRow()
+	row.SetSelectable(false)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(24)
+	box.SetMarginBottom(24)
+	box.SetHAlign(gtk.AlignCenter)
+	box.SetVAlign(gtk.AlignCenter)
+
+	icon := gtk.NewImage()
+	icon.SetFromIconName("network-workgroup-symbolic")
+	icon.SetPixelSize(32)
+	icon.AddCSSClass("dim-label")
+	box.Append(icon)
+
+	label := gtk.NewLabel("No peers connected")
+	label.AddCSSClass("dim-label")
+	box.Append(label)
+
+	hint := gtk.NewLabel("Connect other devices to your tailnet")
+	hint.AddCSSClass("dim-label")
+	hint.AddCSSClass("caption")
+	box.Append(hint)
+
+	row.SetChild(box)
+	tp.peersBox.Append(row)
 }
 
 // createPeerRow creates a row for a peer.

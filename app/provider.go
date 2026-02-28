@@ -150,6 +150,9 @@ type ConnectionInfo struct {
 	// RemoteIP is the IP of the VPN server/exit node.
 	RemoteIP string
 
+	// Hostname is the device hostname on the network.
+	Hostname string
+
 	// DNS contains the DNS servers being used.
 	DNS []string
 

@@ -300,6 +300,60 @@ button.pill {
 .exit-node-offline {
     color: alpha(currentColor, 0.3);
 }
+
+/* Tailscale Badge */
+.tailscale-badge {
+    background-color: alpha(#3584e4, 0.2);
+    color: #3584e4;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+/* Tailscale Notebook Tabs */
+.tailscale-notebook {
+    margin-top: 12px;
+}
+
+.tailscale-notebook > header {
+    background: transparent;
+}
+
+.tailscale-notebook > header > tabs > tab {
+    padding: 8px 16px;
+    border-radius: 8px 8px 0 0;
+    margin: 0 2px;
+}
+
+.tailscale-notebook > header > tabs > tab:checked {
+    background-color: alpha(currentColor, 0.08);
+}
+
+/* Version Badge */
+.version-badge {
+    background-color: alpha(currentColor, 0.1);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    opacity: 0.7;
+}
+
+/* Login button styling - amber/orange for "needs attention" */
+button.login-button {
+    background-color: #e5a50a;
+    color: white;
+}
+
+button.login-button:hover {
+    background-color: #c88800;
+}
+
+button.login-button image {
+    color: white;
+    -gtk-icon-style: symbolic;
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.
