@@ -74,6 +74,7 @@ type Manager struct {
 	profileManager   *ProfileManager
 	connections      map[string]*Connection
 	healthChecker    *HealthChecker
+	killSwitch       *KillSwitch
 	providerRegistry *app.ProviderRegistry
 	mu               sync.RWMutex
 }
@@ -90,6 +91,7 @@ func NewManager() (*Manager, error) {
 		profileManager:   pm,
 		connections:      make(map[string]*Connection),
 		providerRegistry: app.NewProviderRegistry(),
+		killSwitch:       NewKillSwitch(),
 	}
 
 	// Initialize health checker with default config
@@ -209,6 +211,13 @@ func (m *Manager) Disconnect(profileID string) error {
 	if conn.cmd != nil && conn.cmd.Process != nil {
 		if err := conn.cmd.Process.Kill(); err != nil {
 			log.Printf("VPN: Warning: Failed to kill process: %v", err)
+		}
+	}
+
+	// Disable kill switch if no other connections remain
+	if len(m.connections) <= 1 {
+		if err := m.killSwitch.Disable(); err != nil {
+			log.Printf("KillSwitch: Warning: failed to disable: %v", err)
 		}
 	}
 
@@ -437,6 +446,16 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			conn.mu.Lock()
 			conn.Status = StatusConnected
 			conn.mu.Unlock()
+
+			// Enable kill switch if configured
+			if m.killSwitch.GetMode() != KillSwitchOff {
+				tunIface := m.detectTunInterface()
+				// Extract VPN server IP from profile config
+				vpnServerIP := m.getVPNServerIP(conn.Profile)
+				if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
+					log.Printf("KillSwitch: Warning: failed to enable: %v", err)
+				}
+			}
 
 			// Apply split tunneling routes only for "exclude" mode
 			// In "include" mode, routes were already configured with OpenVPN's --route
@@ -907,5 +926,55 @@ func normalizeNetworkRoute(route string) string {
 	}
 
 	log.Printf("VPN: Invalid route: %s", route)
+	return ""
+}
+
+// KillSwitch returns the kill switch instance
+func (m *Manager) KillSwitch() *KillSwitch {
+	return m.killSwitch
+}
+
+// getVPNServerIP extracts the VPN server IP from the profile config
+func (m *Manager) getVPNServerIP(profile *Profile) string {
+	if profile == nil || profile.ConfigPath == "" {
+		return ""
+	}
+
+	data, err := os.ReadFile(profile.ConfigPath)
+	if err != nil {
+		log.Printf("VPN: Failed to read config for server IP: %v", err)
+		return ""
+	}
+
+	// Look for "remote <ip/hostname> <port>" directive
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "remote ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				// parts[1] is the server address (could be IP or hostname)
+				serverAddr := parts[1]
+				// Check if it's already an IP
+				if ip := net.ParseIP(serverAddr); ip != nil {
+					return serverAddr
+				}
+				// Try to resolve hostname
+				ips, err := net.LookupIP(serverAddr)
+				if err == nil && len(ips) > 0 {
+					// Prefer IPv4
+					for _, ip := range ips {
+						if ip.To4() != nil {
+							return ip.String()
+						}
+					}
+					return ips[0].String()
+				}
+				log.Printf("VPN: Could not resolve server hostname: %s", serverAddr)
+				return serverAddr // Return hostname as fallback
+			}
+		}
+	}
+
 	return ""
 }

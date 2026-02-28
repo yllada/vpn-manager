@@ -35,9 +35,11 @@ type ProfileRow struct {
 	deleteBtn   *gtk.Button
 	spinner     *gtk.Spinner
 	// Statistics widgets
-	statsBox    *gtk.Box
-	uptimeLabel *gtk.Label
+	statsBox     *gtk.Box
+	uptimeLabel  *gtk.Label
 	latencyLabel *gtk.Label
+	txLabel      *gtk.Label
+	rxLabel      *gtk.Label
 }
 
 // NewProfileList creates a new VPN profile list.
@@ -218,6 +220,30 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 	latencyLabel.AddCSSClass("dim-label")
 	statsBox.Append(latencyLabel)
 
+	// TX label (upload)
+	txIcon := gtk.NewImage()
+	txIcon.SetFromIconName("go-up-symbolic")
+	txIcon.SetPixelSize(12)
+	txIcon.SetMarginStart(8)
+	statsBox.Append(txIcon)
+
+	txLabel := gtk.NewLabel("")
+	txLabel.AddCSSClass("caption")
+	txLabel.AddCSSClass("dim-label")
+	statsBox.Append(txLabel)
+
+	// RX label (download)
+	rxIcon := gtk.NewImage()
+	rxIcon.SetFromIconName("go-down-symbolic")
+	rxIcon.SetPixelSize(12)
+	rxIcon.SetMarginStart(8)
+	statsBox.Append(rxIcon)
+
+	rxLabel := gtk.NewLabel("")
+	rxLabel.AddCSSClass("caption")
+	rxLabel.AddCSSClass("dim-label")
+	statsBox.Append(rxLabel)
+
 	infoBox.Append(statsBox)
 
 	mainBox.Append(infoBox)
@@ -308,6 +334,8 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 		statsBox:     statsBox,
 		uptimeLabel:  uptimeLabel,
 		latencyLabel: latencyLabel,
+		txLabel:      txLabel,
+		rxLabel:      rxLabel,
 	}
 
 	// Update status if connected
@@ -951,6 +979,30 @@ func (pl *ProfileList) updateStats(profileID string) {
 		} else {
 			row.latencyLabel.SetText("--")
 		}
+	}
+
+	// Update TX/RX statistics
+	row.txLabel.SetText(formatBytes(conn.BytesSent))
+	row.rxLabel.SetText(formatBytes(conn.BytesRecv))
+}
+
+// formatBytes formats a byte count in a human-readable format.
+func formatBytes(bytes uint64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%.1fGB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1fMB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1fKB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%dB", bytes)
 	}
 }
 

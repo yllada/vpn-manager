@@ -331,11 +331,20 @@ func (tp *TailscalePanel) createServerSection() *gtk.Frame {
 	serverLabel.SetXAlign(0)
 	serverTypeRow.Append(serverLabel)
 
-	// TODO: Load from config
+	// Load server preference from config
+	cfg := tp.mainWindow.app.GetConfig()
 	serverOptions := []string{"Tailscale Cloud", "Custom (Headscale)"}
 	serverModel := gtk.NewStringList(serverOptions)
 	tp.serverCombo = gtk.NewDropDown(serverModel, nil)
 	tp.serverCombo.SetHExpand(true)
+
+	// Set initial selection based on config
+	if cfg.Tailscale.ControlServer != "cloud" && cfg.Tailscale.ControlServer != "" {
+		tp.serverCombo.SetSelected(1) // Custom (Headscale)
+	} else {
+		tp.serverCombo.SetSelected(0) // Tailscale Cloud
+	}
+
 	tp.serverCombo.NotifyProperty("selected", func() {
 		tp.onServerTypeChanged()
 	})
@@ -354,7 +363,14 @@ func (tp *TailscalePanel) createServerSection() *gtk.Frame {
 	tp.serverEntry = gtk.NewEntry()
 	tp.serverEntry.SetPlaceholderText("https://headscale.example.com")
 	tp.serverEntry.SetHExpand(true)
-	tp.serverEntry.SetVisible(false) // Hidden until "Custom" selected
+
+	// Load custom server URL from config and set visibility
+	if cfg.Tailscale.ControlServer != "cloud" && cfg.Tailscale.ControlServer != "" {
+		tp.serverEntry.SetText(cfg.Tailscale.ControlServer)
+		tp.serverEntry.SetVisible(true)
+	} else {
+		tp.serverEntry.SetVisible(false)
+	}
 	serverUrlRow.Append(tp.serverEntry)
 
 	box.Append(serverUrlRow)
