@@ -15,6 +15,8 @@ const (
 	ProviderOpenVPN VPNProviderType = "openvpn"
 	// ProviderTailscale represents Tailscale mesh VPN connections.
 	ProviderTailscale VPNProviderType = "tailscale"
+	// ProviderWireGuard represents WireGuard VPN connections.
+	ProviderWireGuard VPNProviderType = "wireguard"
 )
 
 // String returns the string representation of the provider type.

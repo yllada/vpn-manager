@@ -981,7 +981,8 @@ func (pl *ProfileList) updateStats(profileID string) {
 		}
 	}
 
-	// Update TX/RX statistics
+	// Update TX/RX statistics from interface
+	conn.UpdateStats()
 	row.txLabel.SetText(formatBytes(conn.BytesSent))
 	row.rxLabel.SetText(formatBytes(conn.BytesRecv))
 }

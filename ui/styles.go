@@ -137,6 +137,16 @@ button.destructive-action image {
     border-radius: 10px;
 }
 
+/* WireGuard Badge */
+.wg-badge {
+    background-color: alpha(#88171a, 0.2);
+    color: #e01b24;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
 /* Connection Timer */
 .connection-timer {
     font-family: monospace;

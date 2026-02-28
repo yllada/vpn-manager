@@ -10,6 +10,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
+	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
 // MainWindow represents the main application window.
@@ -19,6 +20,7 @@ type MainWindow struct {
 	headerBar      *gtk.HeaderBar
 	profileList    *ProfileList
 	tailscalePanel *TailscalePanel
+	wireguardPanel *WireGuardPanel
 	stack          *gtk.Stack
 	stackSwitcher  *gtk.StackSwitcher
 	statusBar      *gtk.Box
@@ -92,6 +94,9 @@ func (mw *MainWindow) createLayout() {
 	// Tailscale page (only if available)
 	mw.createTailscalePage()
 
+	// WireGuard page (only if available)
+	mw.createWireGuardPage()
+
 	// Stack switcher in header bar (centered)
 	mw.stackSwitcher = gtk.NewStackSwitcher()
 	mw.stackSwitcher.SetStack(mw.stack)
@@ -145,6 +150,32 @@ func (mw *MainWindow) createTailscalePage() {
 
 	// Start periodic updates
 	mw.tailscalePanel.StartUpdates()
+}
+
+// createWireGuardPage creates the WireGuard page if available.
+func (mw *MainWindow) createWireGuardPage() {
+	// Create WireGuard provider
+	provider := wireguard.NewProvider()
+
+	if !provider.IsAvailable() {
+		// WireGuard tools not installed
+		return
+	}
+
+	// Register provider with manager
+	mw.app.vpnManager.RegisterProvider(provider)
+
+	// Create WireGuard panel
+	mw.wireguardPanel = NewWireGuardPanel(mw, provider)
+
+	scrolledWireGuard := gtk.NewScrolledWindow()
+	scrolledWireGuard.SetVExpand(true)
+	scrolledWireGuard.SetChild(mw.wireguardPanel.GetWidget())
+
+	mw.stack.AddTitled(scrolledWireGuard, "wireguard", "WireGuard")
+
+	// Start periodic updates
+	mw.wireguardPanel.StartUpdates()
 }
 
 // createMenu creates the application menu.

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -361,12 +362,14 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	}
 	log.Printf("VPN: OpenVPN process started with PID %d", cmd.Process.Pid)
 
-	// Remove credentials file after a short delay for security
+	// Remove credentials file after a longer delay for security
+	// (pkexec can add significant delay before OpenVPN actually starts)
 	if credFile != "" {
 		go func(credPath string) {
-			time.Sleep(3 * time.Second)
-			os.Remove(credPath)
-			log.Printf("VPN: Credentials file removed early for security")
+			time.Sleep(30 * time.Second)
+			if err := os.Remove(credPath); err == nil {
+				log.Printf("VPN: Credentials file removed for security")
+			}
 		}(credFile)
 	}
 
@@ -564,6 +567,59 @@ func (c *Connection) GetUptime() time.Duration {
 		return 0
 	}
 	return time.Since(c.StartTime)
+}
+
+// UpdateStats updates the connection statistics from the tun interface.
+// Returns true if stats were updated successfully.
+func (c *Connection) UpdateStats() bool {
+	if c.Status != StatusConnected {
+		return false
+	}
+
+	// Find the tun interface
+	tunInterface := ""
+	files, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return false
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), "tun") {
+			tunInterface = f.Name()
+			break
+		}
+	}
+	if tunInterface == "" {
+		return false
+	}
+
+	// Read TX bytes from /sys/class/net/<iface>/statistics/tx_bytes
+	txPath := fmt.Sprintf("/sys/class/net/%s/statistics/tx_bytes", tunInterface)
+	txData, err := os.ReadFile(txPath)
+	if err != nil {
+		return false
+	}
+	txBytes, err := strconv.ParseUint(strings.TrimSpace(string(txData)), 10, 64)
+	if err != nil {
+		return false
+	}
+
+	// Read RX bytes from /sys/class/net/<iface>/statistics/rx_bytes
+	rxPath := fmt.Sprintf("/sys/class/net/%s/statistics/rx_bytes", tunInterface)
+	rxData, err := os.ReadFile(rxPath)
+	if err != nil {
+		return false
+	}
+	rxBytes, err := strconv.ParseUint(strings.TrimSpace(string(rxData)), 10, 64)
+	if err != nil {
+		return false
+	}
+
+	c.mu.Lock()
+	c.BytesSent = txBytes
+	c.BytesRecv = rxBytes
+	c.mu.Unlock()
+
+	return true
 }
 
 // applySplitTunnelRoutes applies the split tunneling routes configured in the profile
