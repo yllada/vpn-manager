@@ -1,9 +1,15 @@
 // Package ui provides the graphical user interface for VPN Manager.
 // This file contains the system tray indicator functionality.
+//
+// Design follows enterprise VPN standards (Cisco AnyConnect, Mullvad, GlobalProtect):
+// - Clean, minimal interface
+// - Connection status with visual indicator
+// - Session uptime display
+// - Quick disconnect action
+// - Application launcher
 package ui
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -22,85 +28,65 @@ var (
 )
 
 // TrayIndicator manages the system tray icon and menu.
-// It provides quick access to VPN connections without opening the main window.
+// Professional enterprise design - simple and effective.
 type TrayIndicator struct {
-	app              *Application
-	menuItems        map[string]*systray.MenuItem
-	statusItem       *systray.MenuItem
-	connectionInfo   *systray.MenuItem
-	uptimeItem       *systray.MenuItem
-	disconnectItem   *systray.MenuItem
-	quickConnectItem *systray.MenuItem
-	connectItems     map[string]*systray.MenuItem
-	separatorAdded   bool
+	app *Application
+
+	// Menu items - kept minimal for enterprise UX
+	statusItem     *systray.MenuItem
+	uptimeItem     *systray.MenuItem
+	disconnectItem *systray.MenuItem
+	openAppItem    *systray.MenuItem
+	quitItem       *systray.MenuItem
+
+	// Connection state
 	connectedProfile string
 	connectedID      string
 	connectTime      time.Time
 	uptimeTicker     *time.Ticker
 	uptimeStop       chan bool
-	// Tailscale fields
-	tailscaleStatusItem     *systray.MenuItem
-	tailscaleConnectItem    *systray.MenuItem
-	tailscaleDisconnectItem *systray.MenuItem
 }
 
 // NewTrayIndicator creates a new system tray indicator.
 func NewTrayIndicator(app *Application) *TrayIndicator {
 	return &TrayIndicator{
-		app:          app,
-		menuItems:    make(map[string]*systray.MenuItem),
-		connectItems: make(map[string]*systray.MenuItem),
-		uptimeStop:   make(chan bool),
+		app:        app,
+		uptimeStop: make(chan bool),
 	}
 }
 
 // Run starts the system tray indicator.
-// This should be called from a goroutine as it blocks.
 func (t *TrayIndicator) Run() {
 	systray.Run(t.onReady, t.onExit)
 }
 
 // onReady is called when the systray is ready.
 func (t *TrayIndicator) onReady() {
+	// Set disconnected state initially
 	systray.SetIcon(iconDisconnected)
 	systray.SetTitle("VPN Manager")
-	systray.SetTooltip("VPN Manager - Disconnected")
+	systray.SetTooltip("VPN Manager - Not Connected")
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// CONNECTION STATUS SECTION
-	// ═══════════════════════════════════════════════════════════════════════
+	// ════════════════════════════════════════════════════════════════════════
+	// STATUS SECTION - Enterprise style: clean status indicator
+	// ════════════════════════════════════════════════════════════════════════
 
-	// Status item - shows current state with icon
-	t.statusItem = systray.AddMenuItem("○  Not Connected", "Current VPN status")
+	t.statusItem = systray.AddMenuItem("Not Connected", "Current VPN status")
 	t.statusItem.Disable()
 
-	// Connection details (hidden when disconnected)
-	t.connectionInfo = systray.AddMenuItem("    IP: ---", "Connection details")
-	t.connectionInfo.Disable()
-	t.connectionInfo.Hide()
-
-	// Uptime (hidden when disconnected)
-	t.uptimeItem = systray.AddMenuItem("    ⏱ Uptime: --:--:--", "Connection duration")
+	// Uptime - only shown when connected
+	t.uptimeItem = systray.AddMenuItem("", "Session duration")
 	t.uptimeItem.Disable()
 	t.uptimeItem.Hide()
 
 	systray.AddSeparator()
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// QUICK ACTIONS SECTION
-	// ═══════════════════════════════════════════════════════════════════════
+	// ════════════════════════════════════════════════════════════════════════
+	// ACTIONS SECTION
+	// ════════════════════════════════════════════════════════════════════════
 
-	// Quick Connect (to last used profile)
-	t.quickConnectItem = systray.AddMenuItem("Quick Connect", "Connect to last used profile")
-	t.quickConnectItem.Hide() // Hidden until we have a last profile
-	go func() {
-		for range t.quickConnectItem.ClickedCh {
-			t.quickConnect()
-		}
-	}()
-
-	// Disconnect item (hidden when not connected)
-	t.disconnectItem = systray.AddMenuItem("⏹  Disconnect", "Disconnect from VPN")
+	// Disconnect - only shown when connected
+	t.disconnectItem = systray.AddMenuItem("Disconnect", "Disconnect from VPN")
 	t.disconnectItem.Hide()
 	go func() {
 		for range t.disconnectItem.ClickedCh {
@@ -110,86 +96,31 @@ func (t *TrayIndicator) onReady() {
 
 	systray.AddSeparator()
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// PROFILES SECTION
-	// ═══════════════════════════════════════════════════════════════════════
+	// ════════════════════════════════════════════════════════════════════════
+	// APPLICATION SECTION
+	// ════════════════════════════════════════════════════════════════════════
 
-	// Section header
-	profilesHeader := systray.AddMenuItem("── Profiles ──", "")
-	profilesHeader.Disable()
-
-	// Profile items will be added dynamically
-	t.refreshProfiles()
-
-	systray.AddSeparator()
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// TAILSCALE SECTION
-	// ═══════════════════════════════════════════════════════════════════════
-
-	// Section header
-	tailscaleHeader := systray.AddMenuItem("── Tailscale ──", "")
-	tailscaleHeader.Disable()
-
-	// Tailscale status
-	t.tailscaleStatusItem = systray.AddMenuItem("○  Not Connected", "Tailscale status")
-	t.tailscaleStatusItem.Disable()
-
-	// Connect
-	t.tailscaleConnectItem = systray.AddMenuItem("▶  Connect Tailscale", "Connect to Tailscale")
+	t.openAppItem = systray.AddMenuItem("Open VPN Manager", "Show main window")
 	go func() {
-		for range t.tailscaleConnectItem.ClickedCh {
-			t.connectTailscale()
-		}
-	}()
-
-	// Disconnect (hidden when not connected)
-	t.tailscaleDisconnectItem = systray.AddMenuItem("⏹  Disconnect Tailscale", "Disconnect from Tailscale")
-	t.tailscaleDisconnectItem.Hide()
-	go func() {
-		for range t.tailscaleDisconnectItem.ClickedCh {
-			t.disconnectTailscale()
-		}
-	}()
-
-	// Initial Tailscale status check
-	go t.refreshTailscaleStatus()
-
-	systray.AddSeparator()
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// APP SECTION
-	// ═══════════════════════════════════════════════════════════════════════
-
-	// Show window
-	showItem := systray.AddMenuItem("Open VPN Manager", "Show main window")
-	go func() {
-		for range showItem.ClickedCh {
+		for range t.openAppItem.ClickedCh {
 			t.app.showWindow()
 		}
 	}()
 
-	systray.AddSeparator()
-
-	// Quit
-	quitItem := systray.AddMenuItem("Quit", "Close VPN Manager")
+	t.quitItem = systray.AddMenuItem("Quit", "Exit VPN Manager")
 	go func() {
-		for range quitItem.ClickedCh {
+		for range t.quitItem.ClickedCh {
 			t.app.Quit()
 			systray.Quit()
 		}
 	}()
-
-	// Show quick connect if we have profiles
-	t.updateQuickConnect()
 }
 
 // onExit is called when the systray is about to exit.
 func (t *TrayIndicator) onExit() {
-	// Stop uptime counter if running
 	t.stopUptimeCounter()
 
-	// Disconnect any active VPN connections gracefully
+	// Gracefully disconnect active VPN connections
 	if t.app != nil && t.app.vpnManager != nil {
 		connections := t.app.vpnManager.ListConnections()
 		for _, conn := range connections {
@@ -200,137 +131,86 @@ func (t *TrayIndicator) onExit() {
 		}
 	}
 
-	app.LogInfo("Tray indicator cleanup completed")
+	app.LogInfo("Tray indicator shutdown complete")
 }
 
-// refreshProfiles updates the profile menu items.
-func (t *TrayIndicator) refreshProfiles() {
-	profiles := t.app.vpnManager.ProfileManager().List()
-
-	for _, profile := range profiles {
-		if _, exists := t.connectItems[profile.ID]; exists {
-			continue
-		}
-
-		// Add profile with icon
-		displayName := fmt.Sprintf("%s", profile.Name)
-		item := systray.AddMenuItem(displayName, fmt.Sprintf("Connect to %s", profile.Name))
-		t.connectItems[profile.ID] = item
-
-		// Handle clicks
-		go func(p *vpn.Profile, menuItem *systray.MenuItem) {
-			for range menuItem.ClickedCh {
-				t.toggleConnection(p)
-			}
-		}(profile, item)
-	}
-}
-
-// toggleConnection connects or disconnects a VPN profile.
-// Respects RequiresOTP setting for intelligent OTP handling.
-func (t *TrayIndicator) toggleConnection(profile *vpn.Profile) {
-	conn, exists := t.app.vpnManager.GetConnection(profile.ID)
-	if exists && (conn.GetStatus() == vpn.StatusConnected || conn.GetStatus() == vpn.StatusConnecting) {
-		// Disconnect
-		t.app.vpnManager.Disconnect(profile.ID)
-		t.SetDisconnected()
-		// Update window UI in GTK main thread
-		glib.IdleAdd(func() {
-			if t.app.window != nil && t.app.window.openvpnPanel != nil {
-				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusDisconnected)
-				t.app.window.SetStatus("Disconnected")
-			}
-		})
-	} else {
-		// Check if we have saved credentials
-		if profile.SavePassword && profile.Username != "" {
-			savedPassword, err := keyring.Get(profile.ID)
-			if err == nil && savedPassword != "" {
-				// Check if OTP is required
-				if profile.RequiresOTP {
-					// Show floating OTP dialog
-					glib.IdleAdd(func() {
-						t.showFloatingOTPDialog(profile, profile.Username, savedPassword)
-					})
-				} else {
-					// No OTP required - connect directly
-					t.connectFromTray(profile, profile.Username, savedPassword)
-				}
-				return
-			}
-		}
-		// No saved credentials - show floating password dialog
-		glib.IdleAdd(func() {
-			t.showFloatingPasswordDialog(profile)
-		})
-	}
-}
+// ════════════════════════════════════════════════════════════════════════════
+// PUBLIC STATE METHODS
+// ════════════════════════════════════════════════════════════════════════════
 
 // SetConnected updates the tray to show connected state.
 func (t *TrayIndicator) SetConnected(profileName string) {
 	systray.SetIcon(iconConnected)
-	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected to %s", profileName))
+	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected: %s", profileName))
+
 	t.connectedProfile = profileName
 	t.connectTime = time.Now()
 
 	if t.statusItem != nil {
-		t.statusItem.SetTitle(fmt.Sprintf("●  Connected: %s", profileName))
+		t.statusItem.SetTitle(fmt.Sprintf("● Connected: %s", profileName))
 	}
-	if t.connectionInfo != nil {
-		t.connectionInfo.SetTitle("    🌐 Secure Connection")
-		t.connectionInfo.Show()
-	}
+
 	if t.uptimeItem != nil {
-		t.uptimeItem.SetTitle("    ⏱ Uptime: 00:00:00")
+		t.uptimeItem.SetTitle("⏱ Session: 00:00:00")
 		t.uptimeItem.Show()
 		t.startUptimeCounter()
 	}
+
 	if t.disconnectItem != nil {
 		t.disconnectItem.Show()
-	}
-	if t.quickConnectItem != nil {
-		t.quickConnectItem.Hide()
 	}
 }
 
 // SetDisconnected updates the tray to show disconnected state.
 func (t *TrayIndicator) SetDisconnected() {
 	systray.SetIcon(iconDisconnected)
-	systray.SetTooltip("VPN Manager - Disconnected")
+	systray.SetTooltip("VPN Manager - Not Connected")
+
 	t.connectedProfile = ""
 	t.connectedID = ""
 
 	if t.statusItem != nil {
-		t.statusItem.SetTitle("○  Not Connected")
+		t.statusItem.SetTitle("○ Not Connected")
 	}
-	if t.connectionInfo != nil {
-		t.connectionInfo.Hide()
-	}
+
 	if t.uptimeItem != nil {
 		t.uptimeItem.Hide()
 		t.stopUptimeCounter()
 	}
+
 	if t.disconnectItem != nil {
 		t.disconnectItem.Hide()
 	}
-	t.updateQuickConnect()
 }
 
-// startUptimeCounter starts the uptime display ticker.
+// SetConnecting updates the tray to show connecting state.
+func (t *TrayIndicator) SetConnecting(profileName string) {
+	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connecting to %s...", profileName))
+
+	if t.statusItem != nil {
+		t.statusItem.SetTitle(fmt.Sprintf("◌ Connecting: %s...", profileName))
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PRIVATE METHODS
+// ════════════════════════════════════════════════════════════════════════════
+
+// startUptimeCounter starts the session timer display.
 func (t *TrayIndicator) startUptimeCounter() {
-	t.stopUptimeCounter() // Stop any existing ticker
+	t.stopUptimeCounter()
 
 	t.uptimeTicker = time.NewTicker(1 * time.Second)
 	go func() {
 		for {
 			select {
 			case <-t.uptimeTicker.C:
-				uptime := time.Since(t.connectTime)
-				hours := int(uptime.Hours())
-				minutes := int(uptime.Minutes()) % 60
-				seconds := int(uptime.Seconds()) % 60
+				elapsed := time.Since(t.connectTime)
+				h := int(elapsed.Hours())
+				m := int(elapsed.Minutes()) % 60
+				s := int(elapsed.Seconds()) % 60
 				if t.uptimeItem != nil {
-					t.uptimeItem.SetTitle(fmt.Sprintf("    ⏱ Uptime: %02d:%02d:%02d", hours, minutes, seconds))
+					t.uptimeItem.SetTitle(fmt.Sprintf("⏱ Session: %02d:%02d:%02d", h, m, s))
 				}
 			case <-t.uptimeStop:
 				return
@@ -339,67 +219,29 @@ func (t *TrayIndicator) startUptimeCounter() {
 	}()
 }
 
-// stopUptimeCounter stops the uptime display ticker.
+// stopUptimeCounter stops the session timer.
 func (t *TrayIndicator) stopUptimeCounter() {
 	if t.uptimeTicker != nil {
 		t.uptimeTicker.Stop()
 		t.uptimeTicker = nil
 	}
-	// Non-blocking send to stop goroutine
 	select {
 	case t.uptimeStop <- true:
 	default:
 	}
 }
 
-// updateQuickConnect updates the quick connect button visibility.
-func (t *TrayIndicator) updateQuickConnect() {
-	profiles := t.app.vpnManager.ProfileManager().List()
-	if len(profiles) > 0 && t.connectedProfile == "" {
-		// Show quick connect to first/last profile
-		lastProfile := profiles[0]
-		// Try to find last used profile
-		for _, p := range profiles {
-			if !p.LastUsed.IsZero() && (lastProfile.LastUsed.IsZero() || p.LastUsed.After(lastProfile.LastUsed)) {
-				lastProfile = p
-			}
-		}
-		if t.quickConnectItem != nil {
-			t.quickConnectItem.SetTitle(fmt.Sprintf("Quick Connect: %s", lastProfile.Name))
-			t.quickConnectItem.Show()
-		}
-	} else if t.quickConnectItem != nil {
-		t.quickConnectItem.Hide()
-	}
-}
-
-// quickConnect connects to the last used profile.
-func (t *TrayIndicator) quickConnect() {
-	profiles := t.app.vpnManager.ProfileManager().List()
-	if len(profiles) == 0 {
-		return
-	}
-
-	// Find last used profile
-	lastProfile := profiles[0]
-	for _, p := range profiles {
-		if !p.LastUsed.IsZero() && (lastProfile.LastUsed.IsZero() || p.LastUsed.After(lastProfile.LastUsed)) {
-			lastProfile = p
-		}
-	}
-
-	t.toggleConnection(lastProfile)
-}
-
-// disconnectCurrent disconnects the currently connected VPN.
+// disconnectCurrent disconnects the active VPN connection.
 func (t *TrayIndicator) disconnectCurrent() {
 	profiles := t.app.vpnManager.ProfileManager().List()
 	for _, profile := range profiles {
 		if conn, exists := t.app.vpnManager.GetConnection(profile.ID); exists {
-			if conn.GetStatus() == vpn.StatusConnected || conn.GetStatus() == vpn.StatusConnecting {
+			status := conn.GetStatus()
+			if status == vpn.StatusConnected || status == vpn.StatusConnecting {
 				profileID := profile.ID
 				t.app.vpnManager.Disconnect(profileID)
-				// Update window UI in GTK main thread
+
+				// Update main window UI
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.openvpnPanel != nil {
 						t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusDisconnected)
@@ -408,8 +250,9 @@ func (t *TrayIndicator) disconnectCurrent() {
 			}
 		}
 	}
+
 	t.SetDisconnected()
-	// Update status bar in GTK main thread
+
 	glib.IdleAdd(func() {
 		if t.app.window != nil {
 			t.app.window.SetStatus("Disconnected")
@@ -417,263 +260,49 @@ func (t *TrayIndicator) disconnectCurrent() {
 	})
 }
 
-// SetConnecting updates the tray to show connecting state.
-func (t *TrayIndicator) SetConnecting(profileName string) {
-	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connecting to %s...", profileName))
-	if t.statusItem != nil {
-		t.statusItem.SetTitle(fmt.Sprintf("⟳ Connecting: %s...", profileName))
-	}
-}
+// ════════════════════════════════════════════════════════════════════════════
+// TRAY CONNECTION METHODS (called from main window)
+// ════════════════════════════════════════════════════════════════════════════
 
-// showFloatingOTPDialog shows an independent floating OTP dialog.
-func (t *TrayIndicator) showFloatingOTPDialog(profile *vpn.Profile, username, password string) {
-	window := gtk.NewWindow()
-	window.SetTitle("OTP Verification - VPN Manager")
-	window.SetModal(false)
-	window.SetDefaultSize(380, 220)
-	window.SetResizable(false)
-
-	// Main container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
-
-	// Content
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 16)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
-
-	// Header with icon
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignCenter)
-
-	lockIcon := gtk.NewImage()
-	lockIcon.SetFromIconName("security-high-symbolic")
-	lockIcon.SetPixelSize(32)
-	headerBox.Append(lockIcon)
-
-	titleLabel := gtk.NewLabel(profile.Name)
-	titleLabel.AddCSSClass("title-3")
-	headerBox.Append(titleLabel)
-	contentBox.Append(headerBox)
-
-	// Info
-	infoLabel := gtk.NewLabel("Enter your authenticator code")
-	infoLabel.AddCSSClass("dim-label")
-	infoLabel.SetMarginBottom(8)
-	contentBox.Append(infoLabel)
-
-	// OTP code entry
-	otpEntry := gtk.NewEntry()
-	otpEntry.SetPlaceholderText("000000")
-	otpEntry.SetMaxLength(6)
-	otpEntry.SetHAlign(gtk.AlignCenter)
-	otpEntry.SetWidthChars(8)
-	otpEntry.AddCSSClass("title-1")
-	contentBox.Append(otpEntry)
-
-	mainBox.Append(contentBox)
-
-	// Button bar
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	buttonBox.Append(cancelBtn)
-
-	connectBtn := gtk.NewButtonWithLabel("Connect")
-	connectBtn.AddCSSClass("suggested-action")
-	connectBtn.ConnectClicked(func() {
-		otp := otpEntry.Text()
-		fullPassword := password + otp
-		window.Close()
-		t.connectFromTray(profile, username, fullPassword)
-	})
-	buttonBox.Append(connectBtn)
-
-	otpEntry.ConnectActivate(func() {
-		connectBtn.Activate()
-	})
-
-	mainBox.Append(buttonBox)
-	window.SetChild(mainBox)
-	window.Show()
-	otpEntry.GrabFocus()
-}
-
-// showFloatingPasswordDialog shows an independent floating credentials dialog.
-func (t *TrayIndicator) showFloatingPasswordDialog(profile *vpn.Profile) {
-	window := gtk.NewWindow()
-	window.SetTitle("VPN Credentials - VPN Manager")
-	window.SetModal(false)
-	window.SetDefaultSize(400, 340)
-	window.SetResizable(false)
-
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
-
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 8)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
-
-	// Header
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerIcon := gtk.NewImage()
-	headerIcon.SetFromIconName("network-vpn-symbolic")
-	headerIcon.SetPixelSize(28)
-	headerBox.Append(headerIcon)
-
-	titleLabel := gtk.NewLabel(profile.Name)
-	titleLabel.AddCSSClass("title-2")
-	headerBox.Append(titleLabel)
-	contentBox.Append(headerBox)
-
-	separator := gtk.NewSeparator(gtk.OrientationHorizontal)
-	separator.SetMarginTop(12)
-	separator.SetMarginBottom(12)
-	contentBox.Append(separator)
-
-	// Username
-	usernameLabel := gtk.NewLabel("Username")
-	usernameLabel.SetXAlign(0)
-	usernameLabel.AddCSSClass("dim-label")
-	contentBox.Append(usernameLabel)
-
-	usernameEntry := gtk.NewEntry()
-	usernameEntry.SetPlaceholderText("username")
-	if profile.Username != "" {
-		usernameEntry.SetText(profile.Username)
-	}
-	usernameEntry.SetMarginBottom(12)
-	contentBox.Append(usernameEntry)
-
-	// Password
-	passwordLabel := gtk.NewLabel("Password")
-	passwordLabel.SetXAlign(0)
-	passwordLabel.AddCSSClass("dim-label")
-	contentBox.Append(passwordLabel)
-
-	passwordEntry := gtk.NewPasswordEntry()
-	passwordEntry.SetShowPeekIcon(true)
-	passwordEntry.SetMarginBottom(12)
-	contentBox.Append(passwordEntry)
-
-	// Save checkbox
-	saveCheck := gtk.NewCheckButtonWithLabel("Save credentials")
-	saveCheck.SetMarginTop(8)
-	contentBox.Append(saveCheck)
-
-	mainBox.Append(contentBox)
-
-	// Buttons
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	buttonBox.Append(cancelBtn)
-
-	nextBtn := gtk.NewButtonWithLabel("Next")
-	nextBtn.AddCSSClass("suggested-action")
-	nextBtn.ConnectClicked(func() {
-		username := usernameEntry.Text()
-		password := passwordEntry.Text()
-
-		if username == "" || password == "" {
-			return
-		}
-
-		saveCredentials := saveCheck.Active()
-		window.Close()
-
-		// Save if requested
-		if saveCredentials {
-			profile.Username = username
-			profile.SavePassword = true
-			if err := keyring.Store(profile.ID, password); err != nil {
-				profile.SavePassword = false
-			}
-			t.app.vpnManager.ProfileManager().Save()
-		}
-
-		// Check if OTP is required
-		if profile.RequiresOTP {
-			// Show OTP dialog
-			t.showFloatingOTPDialog(profile, username, password)
-		} else {
-			// No OTP required - connect directly
-			t.connectFromTray(profile, username, password)
-		}
-	})
-	buttonBox.Append(nextBtn)
-
-	mainBox.Append(buttonBox)
-	window.SetChild(mainBox)
-	window.Show()
-
-	if profile.Username != "" {
-		passwordEntry.GrabFocus()
-	} else {
-		usernameEntry.GrabFocus()
-	}
-}
-
-// connectFromTray connects to VPN from tray and updates the UI.
-// It sets up an auth failure callback for intelligent OTP fallback.
-func (t *TrayIndicator) connectFromTray(profile *vpn.Profile, username, password string) {
+// ConnectFromTray connects to a VPN profile from the tray.
+// This is called when connecting via dialogs or external triggers.
+func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password string) {
 	t.SetConnecting(profile.Name)
 
 	// Update window UI if visible
-	if t.app.window != nil && t.app.window.openvpnPanel != nil {
-		t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusConnecting)
-		t.app.window.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
-	}
+	glib.IdleAdd(func() {
+		if t.app.window != nil && t.app.window.openvpnPanel != nil {
+			t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusConnecting)
+			t.app.window.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
+		}
+	})
 
-	// Start connection
 	if err := t.app.vpnManager.Connect(profile.ID, username, password); err != nil {
 		t.SetDisconnected()
-		if t.app.window != nil && t.app.window.openvpnPanel != nil {
-			t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusDisconnected)
-		}
+		glib.IdleAdd(func() {
+			if t.app.window != nil && t.app.window.openvpnPanel != nil {
+				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusDisconnected)
+			}
+		})
 		return
 	}
 
-	// Get the connection and set up auth failure callback for OTP fallback
+	// Setup auth failure callback for OTP fallback
 	conn, exists := t.app.vpnManager.GetConnection(profile.ID)
 	if exists && !profile.RequiresOTP {
-		// Capture credentials for potential OTP retry
 		savedUsername := username
 		savedPassword := password
 
 		conn.SetOnAuthFailed(func(failedProfile *vpn.Profile, needsOTP bool) {
 			if needsOTP {
-				// Auto-enable OTP for this profile (learned from server)
 				failedProfile.RequiresOTP = true
-				failedProfile.OTPAutoDetected = false
 				t.app.vpnManager.ProfileManager().Save()
-
-				// Disconnect failed connection first
 				t.app.vpnManager.Disconnect(failedProfile.ID)
 				t.SetDisconnected()
 
-				// Show OTP dialog on GTK main thread
 				glib.IdleAdd(func() {
 					if t.app.window != nil {
-						t.app.window.SetStatus(fmt.Sprintf("%s requires OTP - please enter code", failedProfile.Name))
+						t.app.window.SetStatus(fmt.Sprintf("%s requires OTP", failedProfile.Name))
 					}
 					t.showFloatingOTPDialog(failedProfile, savedUsername, savedPassword)
 				})
@@ -681,12 +310,11 @@ func (t *TrayIndicator) connectFromTray(profile *vpn.Profile, username, password
 		})
 	}
 
-	// Monitor connection
-	go t.monitorTrayConnection(profile.ID)
+	go t.monitorConnection(profile.ID)
 }
 
-// monitorTrayConnection monitors VPN connection from tray.
-func (t *TrayIndicator) monitorTrayConnection(profileID string) {
+// monitorConnection monitors VPN connection state.
+func (t *TrayIndicator) monitorConnection(profileID string) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -698,14 +326,14 @@ func (t *TrayIndicator) monitorTrayConnection(profileID string) {
 
 		status := conn.GetStatus()
 
-		// Update window UI in GTK thread
 		glib.IdleAdd(func() {
 			if t.app.window != nil && t.app.window.openvpnPanel != nil {
 				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, status)
 			}
 		})
 
-		if status == vpn.StatusConnected {
+		switch status {
+		case vpn.StatusConnected:
 			profile := conn.Profile
 			t.SetConnected(profile.Name)
 			glib.IdleAdd(func() {
@@ -714,153 +342,196 @@ func (t *TrayIndicator) monitorTrayConnection(profileID string) {
 				}
 			})
 			NotifyConnected(profile.Name)
-			break
-		} else if status == vpn.StatusError || status == vpn.StatusDisconnected {
+			return
+		case vpn.StatusError, vpn.StatusDisconnected:
 			t.SetDisconnected()
-			break
+			return
 		}
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TAILSCALE TRAY METHODS
-// ═══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// FLOATING DIALOGS (for tray-initiated connections)
+// ════════════════════════════════════════════════════════════════════════════
 
-// refreshTailscaleStatus updates the Tailscale status in the tray.
-func (t *TrayIndicator) refreshTailscaleStatus() {
-	registry := t.app.vpnManager.ProviderRegistry()
-	if registry == nil {
-		return
-	}
+// showFloatingOTPDialog shows an OTP entry dialog.
+func (t *TrayIndicator) showFloatingOTPDialog(profile *vpn.Profile, username, password string) {
+	window := gtk.NewWindow()
+	window.SetTitle("VPN Authentication")
+	window.SetModal(false)
+	window.SetDefaultSize(360, 200)
+	window.SetResizable(false)
 
-	provider, exists := registry.Get("tailscale")
-	if !exists || provider == nil {
-		if t.tailscaleStatusItem != nil {
-			t.tailscaleStatusItem.SetTitle("○  Not Installed")
-		}
-		if t.tailscaleConnectItem != nil {
-			t.tailscaleConnectItem.Disable()
-		}
-		return
-	}
+	content := gtk.NewBox(gtk.OrientationVertical, 16)
+	content.SetMarginTop(24)
+	content.SetMarginBottom(24)
+	content.SetMarginStart(24)
+	content.SetMarginEnd(24)
 
-	ctx := context.Background()
-	status, err := provider.Status(ctx)
-	if err != nil {
-		if t.tailscaleStatusItem != nil {
-			t.tailscaleStatusItem.SetTitle("○  Error")
-		}
-		return
-	}
+	// Header
+	header := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	header.SetHAlign(gtk.AlignCenter)
 
-	switch status.BackendState {
-	case "Running":
-		if t.tailscaleStatusItem != nil {
-			nodeName := "Tailscale"
-			if status.ConnectionInfo != nil && status.ConnectionInfo.LocalIP != "" {
-				nodeName = status.ConnectionInfo.LocalIP
-			}
-			t.tailscaleStatusItem.SetTitle(fmt.Sprintf("●  Connected: %s", nodeName))
+	icon := gtk.NewImage()
+	icon.SetFromIconName("dialog-password-symbolic")
+	icon.SetPixelSize(24)
+	header.Append(icon)
+
+	title := gtk.NewLabel(profile.Name)
+	title.AddCSSClass("title-3")
+	header.Append(title)
+	content.Append(header)
+
+	// Info label
+	info := gtk.NewLabel("Enter your authenticator code")
+	info.AddCSSClass("dim-label")
+	content.Append(info)
+
+	// OTP entry
+	otpEntry := gtk.NewEntry()
+	otpEntry.SetPlaceholderText("000000")
+	otpEntry.SetMaxLength(6)
+	otpEntry.SetHAlign(gtk.AlignCenter)
+	otpEntry.SetWidthChars(10)
+	content.Append(otpEntry)
+
+	// Buttons
+	btnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	btnBox.SetHAlign(gtk.AlignCenter)
+	btnBox.SetMarginTop(8)
+
+	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.ConnectClicked(func() {
+		window.Close()
+	})
+	btnBox.Append(cancelBtn)
+
+	connectBtn := gtk.NewButtonWithLabel("Connect")
+	connectBtn.AddCSSClass("suggested-action")
+	connectBtn.ConnectClicked(func() {
+		otp := otpEntry.Text()
+		if otp == "" {
+			return
 		}
-		if t.tailscaleConnectItem != nil {
-			t.tailscaleConnectItem.Hide()
-		}
-		if t.tailscaleDisconnectItem != nil {
-			t.tailscaleDisconnectItem.Show()
-		}
-	case "NeedsLogin":
-		if t.tailscaleStatusItem != nil {
-			t.tailscaleStatusItem.SetTitle("○  Needs Login")
-		}
-		if t.tailscaleConnectItem != nil {
-			t.tailscaleConnectItem.SetTitle("🔐  Login to Tailscale")
-			t.tailscaleConnectItem.Show()
-			t.tailscaleConnectItem.Enable()
-		}
-		if t.tailscaleDisconnectItem != nil {
-			t.tailscaleDisconnectItem.Hide()
-		}
-	default:
-		if t.tailscaleStatusItem != nil {
-			t.tailscaleStatusItem.SetTitle("○  Disconnected")
-		}
-		if t.tailscaleConnectItem != nil {
-			t.tailscaleConnectItem.SetTitle("▶  Connect Tailscale")
-			t.tailscaleConnectItem.Show()
-			t.tailscaleConnectItem.Enable()
-		}
-		if t.tailscaleDisconnectItem != nil {
-			t.tailscaleDisconnectItem.Hide()
-		}
-	}
+		window.Close()
+		t.ConnectFromTray(profile, username, password+otp)
+	})
+	btnBox.Append(connectBtn)
+
+	otpEntry.ConnectActivate(func() {
+		connectBtn.Activate()
+	})
+
+	content.Append(btnBox)
+	window.SetChild(content)
+	window.Show()
+	otpEntry.GrabFocus()
 }
 
-// connectTailscale connects to Tailscale via the tray.
-func (t *TrayIndicator) connectTailscale() {
-	registry := t.app.vpnManager.ProviderRegistry()
-	if registry == nil {
-		return
-	}
+// ShowFloatingPasswordDialog shows a credentials entry dialog.
+func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
+	window := gtk.NewWindow()
+	window.SetTitle("VPN Credentials")
+	window.SetModal(false)
+	window.SetDefaultSize(380, 300)
+	window.SetResizable(false)
 
-	provider, exists := registry.Get("tailscale")
-	if !exists || provider == nil {
-		return
-	}
+	content := gtk.NewBox(gtk.OrientationVertical, 12)
+	content.SetMarginTop(24)
+	content.SetMarginBottom(24)
+	content.SetMarginStart(24)
+	content.SetMarginEnd(24)
 
-	// Connect in background
-	go func() {
-		ctx := context.Background()
-		// Check current status to see if login is needed
-		status, err := provider.Status(ctx)
-		if err == nil && status.BackendState == "NeedsLogin" {
-			// Trigger login - this will open browser
-			if loginProvider, ok := provider.(interface{ Login() error }); ok {
-				loginProvider.Login()
-			}
+	// Header
+	header := gtk.NewBox(gtk.OrientationHorizontal, 12)
+
+	icon := gtk.NewImage()
+	icon.SetFromIconName("network-vpn-symbolic")
+	icon.SetPixelSize(24)
+	header.Append(icon)
+
+	title := gtk.NewLabel(profile.Name)
+	title.AddCSSClass("title-3")
+	header.Append(title)
+	content.Append(header)
+
+	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
+	sep.SetMarginTop(8)
+	sep.SetMarginBottom(8)
+	content.Append(sep)
+
+	// Username
+	usernameLabel := gtk.NewLabel("Username")
+	usernameLabel.SetXAlign(0)
+	usernameLabel.AddCSSClass("dim-label")
+	content.Append(usernameLabel)
+
+	usernameEntry := gtk.NewEntry()
+	if profile.Username != "" {
+		usernameEntry.SetText(profile.Username)
+	}
+	content.Append(usernameEntry)
+
+	// Password
+	passwordLabel := gtk.NewLabel("Password")
+	passwordLabel.SetXAlign(0)
+	passwordLabel.AddCSSClass("dim-label")
+	passwordLabel.SetMarginTop(8)
+	content.Append(passwordLabel)
+
+	passwordEntry := gtk.NewPasswordEntry()
+	passwordEntry.SetShowPeekIcon(true)
+	content.Append(passwordEntry)
+
+	// Save checkbox
+	saveCheck := gtk.NewCheckButtonWithLabel("Remember credentials")
+	saveCheck.SetMarginTop(12)
+	content.Append(saveCheck)
+
+	// Buttons
+	btnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	btnBox.SetHAlign(gtk.AlignEnd)
+	btnBox.SetMarginTop(16)
+
+	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.ConnectClicked(func() {
+		window.Close()
+	})
+	btnBox.Append(cancelBtn)
+
+	connectBtn := gtk.NewButtonWithLabel("Connect")
+	connectBtn.AddCSSClass("suggested-action")
+	connectBtn.ConnectClicked(func() {
+		username := usernameEntry.Text()
+		password := passwordEntry.Text()
+		if username == "" || password == "" {
 			return
 		}
 
-		// Normal connect - Tailscale doesn't need profile/auth for basic connect
-		err = provider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
-		if err != nil {
-			app.LogError("Tray: Tailscale connect failed: %v", err)
+		if saveCheck.Active() {
+			profile.Username = username
+			profile.SavePassword = true
+			keyring.Store(profile.ID, password)
+			t.app.vpnManager.ProfileManager().Save()
 		}
-		t.refreshTailscaleStatus()
 
-		// Update window UI if visible
-		glib.IdleAdd(func() {
-			if t.app.window != nil && t.app.window.tailscalePanel != nil {
-				t.app.window.tailscalePanel.updateStatus()
-			}
-		})
-	}()
-}
+		window.Close()
 
-// disconnectTailscale disconnects from Tailscale via the tray.
-func (t *TrayIndicator) disconnectTailscale() {
-	registry := t.app.vpnManager.ProviderRegistry()
-	if registry == nil {
-		return
-	}
-
-	provider, exists := registry.Get("tailscale")
-	if !exists || provider == nil {
-		return
-	}
-
-	go func() {
-		ctx := context.Background()
-		err := provider.Disconnect(ctx, nil)
-		if err != nil {
-			app.LogError("Tray: Tailscale disconnect failed: %v", err)
+		if profile.RequiresOTP {
+			t.showFloatingOTPDialog(profile, username, password)
+		} else {
+			t.ConnectFromTray(profile, username, password)
 		}
-		t.refreshTailscaleStatus()
+	})
+	btnBox.Append(connectBtn)
 
-		// Update window UI if visible
-		glib.IdleAdd(func() {
-			if t.app.window != nil && t.app.window.tailscalePanel != nil {
-				t.app.window.tailscalePanel.updateStatus()
-			}
-		})
-	}()
+	content.Append(btnBox)
+	window.SetChild(content)
+	window.Show()
+
+	if profile.Username != "" {
+		passwordEntry.GrabFocus()
+	} else {
+		usernameEntry.GrabFocus()
+	}
 }
