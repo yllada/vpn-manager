@@ -242,7 +242,7 @@ func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error
 	}
 
 	// Create output chain with drop policy
-	chainCmd := fmt.Sprintf("add chain inet vpn_killswitch output { type filter hook output priority 0; policy drop; }")
+	chainCmd := "add chain inet vpn_killswitch output { type filter hook output priority 0; policy drop; }"
 	if err := ks.runCmd("nft", chainCmd); err != nil {
 		// Try to flush if exists
 		ks.runCmd("nft", "flush", "chain", "inet", "vpn_killswitch", "output")
