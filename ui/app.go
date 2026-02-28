@@ -177,12 +177,13 @@ func (a *Application) GetTray() *TrayIndicator {
 // connectFromTray starts connection from tray with saved credentials.
 // Respects RequiresOTP setting - shows OTP dialog only when needed.
 func (a *Application) connectFromTray(profile *vpn.Profile, savedPassword string) {
-	if a.window != nil && a.window.profileList != nil {
+	if a.window != nil && a.window.openvpnPanel != nil {
+		pl := a.window.openvpnPanel.GetProfileList()
 		if profile.RequiresOTP {
-			a.window.profileList.showOTPDialog(profile, profile.Username, savedPassword, false)
+			pl.showOTPDialog(profile, profile.Username, savedPassword, false)
 		} else {
 			// No OTP required - connect directly
-			a.window.profileList.connectWithCredentials(profile, profile.Username, savedPassword)
+			pl.connectWithCredentials(profile, profile.Username, savedPassword)
 		}
 	}
 }
@@ -208,8 +209,8 @@ func (a *Application) setupHealthChecker() {
 	hc.SetOnHealthChange(func(profileID string, oldState, newState vpn.HealthState) {
 		// Update UI on health state change
 		glib.IdleAdd(func() {
-			if a.window != nil && a.window.profileList != nil {
-				a.window.profileList.updateHealthIndicator(profileID, newState)
+			if a.window != nil && a.window.openvpnPanel != nil {
+				a.window.openvpnPanel.GetProfileList().updateHealthIndicator(profileID, newState)
 			}
 		})
 
@@ -246,8 +247,8 @@ func (a *Application) setupHealthChecker() {
 				profile, _ := a.vpnManager.ProfileManager().Get(profileID)
 				if profile != nil {
 					a.window.SetStatus(fmt.Sprintf("Failed to reconnect to %s", profile.Name))
-					if a.window.profileList != nil {
-						a.window.profileList.updateRowStatus(profileID, vpn.StatusError)
+					if a.window.openvpnPanel != nil {
+						a.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusError)
 					}
 				}
 			}

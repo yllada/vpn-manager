@@ -354,6 +354,11 @@ button.login-button image {
     color: white;
     -gtk-icon-style: symbolic;
 }
+
+/* Success label for connected status */
+.success-label {
+    color: #57e389;
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.

@@ -12,6 +12,125 @@ import (
 	"github.com/yllada/vpn-manager/vpn"
 )
 
+// OpenVPNPanel represents the OpenVPN management panel.
+// Provides a consistent UI matching WireGuard and Tailscale panels.
+type OpenVPNPanel struct {
+	mainWindow  *MainWindow
+	box         *gtk.Box
+	profileList *ProfileList
+
+	// Status area
+	statusIcon  *gtk.Image
+	statusLabel *gtk.Label
+}
+
+// NewOpenVPNPanel creates a new OpenVPN panel.
+func NewOpenVPNPanel(mainWindow *MainWindow) *OpenVPNPanel {
+	panel := &OpenVPNPanel{
+		mainWindow: mainWindow,
+	}
+	panel.createLayout()
+	return panel
+}
+
+// GetWidget returns the panel widget.
+func (op *OpenVPNPanel) GetWidget() gtk.Widgetter {
+	return op.box
+}
+
+// GetProfileList returns the inner profile list.
+func (op *OpenVPNPanel) GetProfileList() *ProfileList {
+	return op.profileList
+}
+
+// createLayout builds the OpenVPN panel UI.
+func (op *OpenVPNPanel) createLayout() {
+	op.box = gtk.NewBox(gtk.OrientationVertical, 12)
+	op.box.SetMarginTop(12)
+	op.box.SetMarginBottom(12)
+	op.box.SetMarginStart(12)
+	op.box.SetMarginEnd(12)
+
+	// Header - matching WireGuard/Tailscale style
+	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	headerBox.SetHAlign(gtk.AlignCenter)
+
+	logoIcon := gtk.NewImage()
+	logoIcon.SetFromIconName("network-vpn-symbolic")
+	logoIcon.SetPixelSize(48)
+	headerBox.Append(logoIcon)
+
+	titleLabel := gtk.NewLabel("OpenVPN")
+	titleLabel.AddCSSClass("title-1")
+	headerBox.Append(titleLabel)
+
+	op.box.Append(headerBox)
+
+	// Status box
+	statusBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	statusBox.SetHAlign(gtk.AlignCenter)
+	statusBox.SetMarginTop(8)
+
+	op.statusIcon = gtk.NewImage()
+	op.statusIcon.SetFromIconName("network-offline-symbolic")
+	statusBox.Append(op.statusIcon)
+
+	op.statusLabel = gtk.NewLabel("Disconnected")
+	op.statusLabel.AddCSSClass("dim-label")
+	statusBox.Append(op.statusLabel)
+
+	op.box.Append(statusBox)
+
+	// Profiles section label
+	profilesLabel := gtk.NewLabel("PROFILES")
+	profilesLabel.AddCSSClass("heading")
+	profilesLabel.SetXAlign(0)
+	profilesLabel.SetMarginTop(16)
+	op.box.Append(profilesLabel)
+
+	// Create profile list
+	op.profileList = NewProfileList(op.mainWindow)
+	op.box.Append(op.profileList.GetWidget())
+
+	// Import button at bottom
+	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	buttonBox.SetMarginTop(12)
+	buttonBox.SetHAlign(gtk.AlignEnd)
+
+	importBtn := gtk.NewButton()
+	importBtn.SetLabel("Import")
+	importBtn.SetIconName("document-open-symbolic")
+	importBtn.ConnectClicked(op.onImportProfile)
+	buttonBox.Append(importBtn)
+
+	op.box.Append(buttonBox)
+}
+
+// onImportProfile handles adding a new OpenVPN profile.
+func (op *OpenVPNPanel) onImportProfile() {
+	op.mainWindow.onAddProfile()
+}
+
+// LoadProfiles loads the profiles into the list.
+func (op *OpenVPNPanel) LoadProfiles() {
+	op.profileList.LoadProfiles()
+}
+
+// UpdateStatus updates the global status display.
+func (op *OpenVPNPanel) UpdateStatus(connected bool, profileName string) {
+	if connected {
+		op.statusIcon.SetFromIconName("network-vpn-symbolic")
+		op.statusLabel.SetText("Connected: " + profileName)
+		op.statusLabel.RemoveCSSClass("dim-label")
+		op.statusLabel.AddCSSClass("success-label")
+	} else {
+		op.statusIcon.SetFromIconName("network-offline-symbolic")
+		op.statusLabel.SetText("Disconnected")
+		op.statusLabel.RemoveCSSClass("success-label")
+		op.statusLabel.AddCSSClass("dim-label")
+	}
+}
+
 // ProfileList represents the VPN profile list.
 // Manages the display and interactions with connection profiles.
 type ProfileList struct {
@@ -141,7 +260,7 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 
 	// Profile icon
 	icon := gtk.NewImage()
-	icon.SetFromIconName("network-vpn-symbolic")
+	icon.SetFromIconName("vpn-manager")
 	icon.SetPixelSize(32)
 	icon.AddCSSClass("profile-icon")
 	mainBox.Append(icon)

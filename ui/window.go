@@ -18,14 +18,13 @@ type MainWindow struct {
 	app            *Application
 	window         *gtk.ApplicationWindow
 	headerBar      *gtk.HeaderBar
-	profileList    *ProfileList
+	openvpnPanel   *OpenVPNPanel
 	tailscalePanel *TailscalePanel
 	wireguardPanel *WireGuardPanel
 	stack          *gtk.Stack
 	stackSwitcher  *gtk.StackSwitcher
 	statusBar      *gtk.Box
 	statusLabel    *gtk.Label
-	addButton      *gtk.Button
 }
 
 // NewMainWindow creates a new main window.
@@ -56,13 +55,6 @@ func (mw *MainWindow) createLayout() {
 	// Create GTK4 header bar
 	mw.headerBar = gtk.NewHeaderBar()
 
-	// Button to add new profile (only visible for OpenVPN)
-	mw.addButton = gtk.NewButton()
-	mw.addButton.SetIconName("list-add-symbolic")
-	mw.addButton.SetTooltipText("Add VPN profile")
-	mw.addButton.ConnectClicked(mw.onAddProfile)
-	mw.headerBar.PackStart(mw.addButton)
-
 	// Menu button
 	menuButton := gtk.NewMenuButton()
 	menuButton.SetIconName("open-menu-symbolic")
@@ -85,10 +77,10 @@ func (mw *MainWindow) createLayout() {
 	mw.stack.SetTransitionDuration(200)
 
 	// OpenVPN page
-	mw.profileList = NewProfileList(mw)
+	mw.openvpnPanel = NewOpenVPNPanel(mw)
 	scrolledOpenVPN := gtk.NewScrolledWindow()
 	scrolledOpenVPN.SetVExpand(true)
-	scrolledOpenVPN.SetChild(mw.profileList.GetWidget())
+	scrolledOpenVPN.SetChild(mw.openvpnPanel.GetWidget())
 	mw.stack.AddTitled(scrolledOpenVPN, "openvpn", "OpenVPN")
 
 	// Tailscale page (only if available)
@@ -102,13 +94,6 @@ func (mw *MainWindow) createLayout() {
 	mw.stackSwitcher.SetStack(mw.stack)
 	mw.headerBar.SetTitleWidget(mw.stackSwitcher)
 
-	// Note: Add button visibility managed manually when switching
-	// GTK4 Stack doesn't have ConnectNotify, we use property notify
-	mw.stack.Connect("notify::visible-child-name", func() {
-		visiblePage := mw.stack.VisibleChildName()
-		mw.addButton.SetVisible(visiblePage == "openvpn")
-	})
-
 	mainBox.Append(mw.stack)
 
 	// Status bar
@@ -119,7 +104,7 @@ func (mw *MainWindow) createLayout() {
 	mw.window.SetChild(mainBox)
 
 	// Load profiles
-	mw.profileList.LoadProfiles()
+	mw.openvpnPanel.LoadProfiles()
 }
 
 // createTailscalePage creates the Tailscale page if available.
@@ -241,7 +226,7 @@ func (mw *MainWindow) setupActions() {
 	// Reload profiles action (F5)
 	refreshAction := gio.NewSimpleAction("refresh", nil)
 	refreshAction.ConnectActivate(func(_ *glib.Variant) {
-		mw.profileList.LoadProfiles()
+		mw.openvpnPanel.LoadProfiles()
 		mw.SetStatus("Profiles reloaded")
 	})
 	mw.app.app.AddAction(refreshAction)
@@ -392,7 +377,7 @@ func (mw *MainWindow) showAddProfileDialog(configPath string) {
 		if err := mw.app.vpnManager.ProfileManager().Add(profile); err != nil {
 			mw.showError("Error adding profile", err.Error())
 		} else {
-			mw.profileList.LoadProfiles()
+			mw.openvpnPanel.LoadProfiles()
 			mw.SetStatus(fmt.Sprintf("Profile '%s' added", name))
 		}
 	})
@@ -633,7 +618,7 @@ func (mw *MainWindow) onImportProfiles() {
 				}
 
 				// Reload the profile list
-				mw.profileList.LoadProfiles()
+				mw.openvpnPanel.LoadProfiles()
 
 				mw.showInfo("Import Complete",
 					fmt.Sprintf("Successfully imported %d profile(s).\n\nNote: You'll need to re-enter credentials for imported profiles.", count))

@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -157,27 +156,56 @@ func (at *AppTunnel) Enable(vpnInterface, vpnGateway string) error {
 	at.vpnInterface = vpnInterface
 	at.vpnGateway = vpnGateway
 
-	// Step 1: Create cgroup
-	if err := at.setupCgroup(); err != nil {
-		return fmt.Errorf("failed to setup cgroup: %w", err)
-	}
-
-	// Step 2: Setup iptables marking
-	if err := at.setupIptables(); err != nil {
-		at.cleanupCgroup()
-		return fmt.Errorf("failed to setup iptables: %w", err)
-	}
-
-	// Step 3: Setup policy routing
-	if err := at.setupRouting(); err != nil {
-		at.cleanupIptables()
-		at.cleanupCgroup()
-		return fmt.Errorf("failed to setup routing: %w", err)
+	// Build batched script for all privileged operations (single pkexec)
+	script := at.buildEnableScript()
+	if err := runPrivilegedScript(script); err != nil {
+		return fmt.Errorf("failed to enable app tunneling: %w", err)
 	}
 
 	at.enabled = true
 	log.Printf("AppTunnel: Enabled for interface %s (mode: %s)", vpnInterface, at.mode)
 	return nil
+}
+
+// buildEnableScript builds a bash script for all enable operations.
+func (at *AppTunnel) buildEnableScript() string {
+	var script strings.Builder
+	script.WriteString("set -e\n") // Exit on error
+
+	// Cgroup setup
+	if at.IsCgroupV2() {
+		script.WriteString(fmt.Sprintf("mkdir -p %s\n", at.cgroupPath))
+		controllersPath := filepath.Dir(at.cgroupPath) + "/cgroup.subtree_control"
+		script.WriteString(fmt.Sprintf("echo '+cpu +memory' > %s 2>/dev/null || true\n", controllersPath))
+	} else {
+		cgroupPath := "/sys/fs/cgroup/net_cls/vpn_tunnel"
+		script.WriteString(fmt.Sprintf("mkdir -p %s\n", cgroupPath))
+		classIDPath := cgroupPath + "/net_cls.classid"
+		script.WriteString(fmt.Sprintf("echo %d > %s\n", at.classID, classIDPath))
+		at.cgroupPath = cgroupPath
+	}
+
+	// Iptables setup
+	if at.IsCgroupV2() {
+		script.WriteString(fmt.Sprintf(
+			"iptables -t mangle -A OUTPUT -m cgroup --path %s -j MARK --set-mark 0x%x\n",
+			at.cgroupPath, at.fwmark))
+	} else {
+		script.WriteString(fmt.Sprintf(
+			"iptables -t mangle -A OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x\n",
+			at.classID, at.fwmark))
+	}
+
+	// Routing setup
+	script.WriteString(fmt.Sprintf(
+		"ip route add default via %s dev %s table %d 2>/dev/null || ip route replace default via %s dev %s table %d\n",
+		at.vpnGateway, at.vpnInterface, at.routingTable,
+		at.vpnGateway, at.vpnInterface, at.routingTable))
+	script.WriteString(fmt.Sprintf(
+		"ip rule add fwmark 0x%x table %d 2>/dev/null || true\n",
+		at.fwmark, at.routingTable))
+
+	return script.String()
 }
 
 // Disable deactivates per-app tunneling.
@@ -189,10 +217,12 @@ func (at *AppTunnel) Disable() error {
 		return nil
 	}
 
-	// Cleanup in reverse order
-	at.cleanupRouting()
-	at.cleanupIptables()
-	at.cleanupCgroup()
+	// Build batched script for cleanup (single pkexec)
+	script := at.buildDisableScript()
+	if err := runPrivilegedScript(script); err != nil {
+		log.Printf("AppTunnel: Warning during disable: %v", err)
+		// Continue anyway to reset state
+	}
 
 	at.enabled = false
 	at.vpnInterface = ""
@@ -202,139 +232,46 @@ func (at *AppTunnel) Disable() error {
 	return nil
 }
 
+// buildDisableScript builds a bash script for all disable operations.
+func (at *AppTunnel) buildDisableScript() string {
+	var script strings.Builder
+	// Don't exit on error for cleanup - try all commands
+	script.WriteString("#!/bin/bash\n")
+
+	// Cleanup routing
+	script.WriteString(fmt.Sprintf(
+		"ip rule del fwmark 0x%x table %d 2>/dev/null || true\n",
+		at.fwmark, at.routingTable))
+	script.WriteString(fmt.Sprintf(
+		"ip route flush table %d 2>/dev/null || true\n",
+		at.routingTable))
+
+	// Cleanup iptables
+	if at.IsCgroupV2() {
+		script.WriteString(fmt.Sprintf(
+			"iptables -t mangle -D OUTPUT -m cgroup --path %s -j MARK --set-mark 0x%x 2>/dev/null || true\n",
+			at.cgroupPath, at.fwmark))
+	} else {
+		script.WriteString(fmt.Sprintf(
+			"iptables -t mangle -D OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x 2>/dev/null || true\n",
+			at.classID, at.fwmark))
+	}
+
+	// Cleanup cgroup - move processes to root cgroup first
+	procsPath := at.cgroupPath + "/cgroup.procs"
+	script.WriteString(fmt.Sprintf(
+		"for pid in $(cat %s 2>/dev/null); do echo $pid > /sys/fs/cgroup/cgroup.procs 2>/dev/null || true; done\n",
+		procsPath))
+	script.WriteString(fmt.Sprintf("rmdir %s 2>/dev/null || true\n", at.cgroupPath))
+
+	return script.String()
+}
+
 // IsEnabled returns whether app tunneling is currently active.
 func (at *AppTunnel) IsEnabled() bool {
 	at.mu.Lock()
 	defer at.mu.Unlock()
 	return at.enabled
-}
-
-// setupCgroup creates the cgroup for VPN-routed processes.
-func (at *AppTunnel) setupCgroup() error {
-	if at.IsCgroupV2() {
-		return at.setupCgroupV2()
-	}
-	return at.setupCgroupV1()
-}
-
-// setupCgroupV2 sets up cgroup v2 for process tracking.
-func (at *AppTunnel) setupCgroupV2() error {
-	// Create cgroup directory
-	if err := runPrivileged("mkdir", "-p", at.cgroupPath); err != nil {
-		return err
-	}
-
-	// Enable cgroup controllers
-	controllersPath := filepath.Dir(at.cgroupPath) + "/cgroup.subtree_control"
-	runPrivileged("sh", "-c", fmt.Sprintf("echo '+cpu +memory' > %s 2>/dev/null || true", controllersPath))
-
-	log.Printf("AppTunnel: Created cgroup v2 at %s", at.cgroupPath)
-	return nil
-}
-
-// setupCgroupV1 sets up cgroup v1 net_cls for packet classification.
-func (at *AppTunnel) setupCgroupV1() error {
-	cgroupPath := "/sys/fs/cgroup/net_cls/vpn_tunnel"
-
-	// Create cgroup
-	if err := runPrivileged("mkdir", "-p", cgroupPath); err != nil {
-		return err
-	}
-
-	// Set class ID for packet marking
-	classIDPath := cgroupPath + "/net_cls.classid"
-	if err := runPrivileged("sh", "-c", fmt.Sprintf("echo %d > %s", at.classID, classIDPath)); err != nil {
-		return err
-	}
-
-	at.cgroupPath = cgroupPath
-	log.Printf("AppTunnel: Created cgroup v1 net_cls at %s with classid 0x%x", cgroupPath, at.classID)
-	return nil
-}
-
-// cleanupCgroup removes the cgroup.
-func (at *AppTunnel) cleanupCgroup() {
-	// Remove all processes from cgroup first
-	procsPath := at.cgroupPath + "/cgroup.procs"
-	if data, err := os.ReadFile(procsPath); err == nil {
-		for _, pid := range strings.Fields(string(data)) {
-			// Move to root cgroup
-			runPrivileged("sh", "-c", fmt.Sprintf("echo %s > /sys/fs/cgroup/cgroup.procs 2>/dev/null || true", pid))
-		}
-	}
-
-	runPrivileged("rmdir", at.cgroupPath)
-}
-
-// setupIptables creates iptables rules for packet marking.
-func (at *AppTunnel) setupIptables() error {
-	// For cgroup v1, use net_cls matching
-	// For cgroup v2, we use cgroup path matching
-
-	if at.IsCgroupV2() {
-		// Mark packets from processes in our cgroup using cgroup match
-		if err := runPrivileged("iptables", "-t", "mangle", "-A", "OUTPUT",
-			"-m", "cgroup", "--path", at.cgroupPath,
-			"-j", "MARK", "--set-mark", fmt.Sprintf("0x%x", at.fwmark)); err != nil {
-			return err
-		}
-	} else {
-		// Mark packets with our class ID
-		if err := runPrivileged("iptables", "-t", "mangle", "-A", "OUTPUT",
-			"-m", "cgroup", "--cgroup", fmt.Sprintf("0x%x", at.classID),
-			"-j", "MARK", "--set-mark", fmt.Sprintf("0x%x", at.fwmark)); err != nil {
-			return err
-		}
-	}
-
-	log.Printf("AppTunnel: Created iptables marking rule (fwmark: 0x%x)", at.fwmark)
-	return nil
-}
-
-// cleanupIptables removes iptables rules.
-func (at *AppTunnel) cleanupIptables() {
-	if at.IsCgroupV2() {
-		runPrivileged("iptables", "-t", "mangle", "-D", "OUTPUT",
-			"-m", "cgroup", "--path", at.cgroupPath,
-			"-j", "MARK", "--set-mark", fmt.Sprintf("0x%x", at.fwmark))
-	} else {
-		runPrivileged("iptables", "-t", "mangle", "-D", "OUTPUT",
-			"-m", "cgroup", "--cgroup", fmt.Sprintf("0x%x", at.classID),
-			"-j", "MARK", "--set-mark", fmt.Sprintf("0x%x", at.fwmark))
-	}
-}
-
-// setupRouting creates policy routing rules.
-func (at *AppTunnel) setupRouting() error {
-	// Add routing table entry
-	if err := runPrivileged("ip", "route", "add", "default",
-		"via", at.vpnGateway,
-		"dev", at.vpnInterface,
-		"table", strconv.Itoa(at.routingTable)); err != nil {
-		// Table might already exist, try replacing
-		runPrivileged("ip", "route", "replace", "default",
-			"via", at.vpnGateway,
-			"dev", at.vpnInterface,
-			"table", strconv.Itoa(at.routingTable))
-	}
-
-	// Add ip rule to use our table for marked packets
-	if err := runPrivileged("ip", "rule", "add",
-		"fwmark", fmt.Sprintf("0x%x", at.fwmark),
-		"table", strconv.Itoa(at.routingTable)); err != nil {
-		// Rule might exist
-		log.Printf("AppTunnel: Warning adding ip rule: %v", err)
-	}
-
-	log.Printf("AppTunnel: Created routing table %d for marked packets", at.routingTable)
-	return nil
-}
-
-// cleanupRouting removes policy routing rules.
-func (at *AppTunnel) cleanupRouting() {
-	runPrivileged("ip", "rule", "del", "fwmark", fmt.Sprintf("0x%x", at.fwmark),
-		"table", strconv.Itoa(at.routingTable))
-	runPrivileged("ip", "route", "flush", "table", strconv.Itoa(at.routingTable))
 }
 
 // LaunchApp launches an application within the VPN cgroup.
@@ -504,6 +441,16 @@ func runPrivileged(name string, args ...string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s: %v - %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// runPrivilegedScript runs a bash script with elevated privileges (single pkexec call).
+func runPrivilegedScript(script string) error {
+	cmd := exec.Command("pkexec", "bash", "-c", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("script failed: %v - %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

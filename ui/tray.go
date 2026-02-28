@@ -236,8 +236,8 @@ func (t *TrayIndicator) toggleConnection(profile *vpn.Profile) {
 		t.SetDisconnected()
 		// Update window UI in GTK main thread
 		glib.IdleAdd(func() {
-			if t.app.window != nil && t.app.window.profileList != nil {
-				t.app.window.profileList.updateRowStatus(profile.ID, vpn.StatusDisconnected)
+			if t.app.window != nil && t.app.window.openvpnPanel != nil {
+				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusDisconnected)
 				t.app.window.SetStatus("Disconnected")
 			}
 		})
@@ -401,8 +401,8 @@ func (t *TrayIndicator) disconnectCurrent() {
 				t.app.vpnManager.Disconnect(profileID)
 				// Update window UI in GTK main thread
 				glib.IdleAdd(func() {
-					if t.app.window != nil && t.app.window.profileList != nil {
-						t.app.window.profileList.updateRowStatus(profileID, vpn.StatusDisconnected)
+					if t.app.window != nil && t.app.window.openvpnPanel != nil {
+						t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusDisconnected)
 					}
 				})
 			}
@@ -638,16 +638,16 @@ func (t *TrayIndicator) connectFromTray(profile *vpn.Profile, username, password
 	t.SetConnecting(profile.Name)
 
 	// Update window UI if visible
-	if t.app.window != nil && t.app.window.profileList != nil {
-		t.app.window.profileList.updateRowStatus(profile.ID, vpn.StatusConnecting)
+	if t.app.window != nil && t.app.window.openvpnPanel != nil {
+		t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusConnecting)
 		t.app.window.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
 	}
 
 	// Start connection
 	if err := t.app.vpnManager.Connect(profile.ID, username, password); err != nil {
 		t.SetDisconnected()
-		if t.app.window != nil && t.app.window.profileList != nil {
-			t.app.window.profileList.updateRowStatus(profile.ID, vpn.StatusDisconnected)
+		if t.app.window != nil && t.app.window.openvpnPanel != nil {
+			t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusDisconnected)
 		}
 		return
 	}
@@ -700,8 +700,8 @@ func (t *TrayIndicator) monitorTrayConnection(profileID string) {
 
 		// Update window UI in GTK thread
 		glib.IdleAdd(func() {
-			if t.app.window != nil && t.app.window.profileList != nil {
-				t.app.window.profileList.updateRowStatus(profileID, status)
+			if t.app.window != nil && t.app.window.openvpnPanel != nil {
+				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, status)
 			}
 		})
 
