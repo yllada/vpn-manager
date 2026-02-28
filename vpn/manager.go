@@ -28,39 +28,18 @@ var (
 	ErrConnectionFailed = app.ErrConnectionFailed
 )
 
-// ConnectionStatus represents the current state of a VPN connection.
-type ConnectionStatus int
+// ConnectionStatus is an alias for app.ConnectionStatus.
+// Using alias allows local code to use the type without package prefix.
+type ConnectionStatus = app.ConnectionStatus
 
+// Status constants aliased from app package.
 const (
-	// StatusDisconnected indicates no active connection.
-	StatusDisconnected ConnectionStatus = iota
-	// StatusConnecting indicates a connection is being established.
-	StatusConnecting
-	// StatusConnected indicates an active, established connection.
-	StatusConnected
-	// StatusDisconnecting indicates the connection is being terminated.
-	StatusDisconnecting
-	// StatusError indicates the connection failed or encountered an error.
-	StatusError
+	StatusDisconnected  = app.StatusDisconnected
+	StatusConnecting    = app.StatusConnecting
+	StatusConnected     = app.StatusConnected
+	StatusDisconnecting = app.StatusDisconnecting
+	StatusError         = app.StatusError
 )
-
-// String returns a human-readable representation of the connection status.
-func (s ConnectionStatus) String() string {
-	switch s {
-	case StatusDisconnected:
-		return "Disconnected"
-	case StatusConnecting:
-		return "Connecting..."
-	case StatusConnected:
-		return "Connected"
-	case StatusDisconnecting:
-		return "Disconnecting..."
-	case StatusError:
-		return "Error"
-	default:
-		return "Unknown"
-	}
-}
 
 // Connection represents an active VPN connection.
 // It tracks connection state, statistics, and provides methods for management.
@@ -188,7 +167,9 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 	}
 
 	// Mark profile as used
-	_ = m.profileManager.MarkUsed(profileID)
+	if err := m.profileManager.MarkUsed(profileID); err != nil {
+		log.Printf("VPN: Warning: Failed to mark profile as used: %v", err)
+	}
 
 	// Create new connection
 	conn := &Connection{
@@ -226,7 +207,9 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	// Terminate the OpenVPN process if running
 	if conn.cmd != nil && conn.cmd.Process != nil {
-		_ = conn.cmd.Process.Kill()
+		if err := conn.cmd.Process.Kill(); err != nil {
+			log.Printf("VPN: Warning: Failed to kill process: %v", err)
+		}
 	}
 
 	// Update status
@@ -753,8 +736,11 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 
 	// Show final routes
 	cmd = exec.Command("ip", "route", "show")
-	output, _ = cmd.Output()
-	log.Printf("VPN: Routes after split tunneling:\n%s", string(output))
+	routeOutput, routeErr := cmd.Output()
+	if routeErr != nil {
+		log.Printf("VPN: Warning: Failed to get routes: %v", routeErr)
+	}
+	log.Printf("VPN: Routes after split tunneling:\n%s", string(routeOutput))
 }
 
 // applySplitTunnelExcludeMode configures "exclude" mode where everything goes through VPN except listed routes

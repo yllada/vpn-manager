@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,8 +88,11 @@ func initLocalStorage() {
 	// Load or create cryptographically secure salt
 	salt, isNewSalt, err := loadOrCreateSalt()
 	if err != nil {
-		// Critical error - cannot proceed without salt
-		panic("keyring: failed to initialize salt: " + err.Error())
+		// Critical error - log and continue with empty store
+		// Credential operations will fail gracefully
+		log.Printf("keyring: failed to initialize salt: %v - credential storage disabled", err)
+		localStore = make(map[string]string)
+		return
 	}
 
 	// Derive encryption key using Argon2id

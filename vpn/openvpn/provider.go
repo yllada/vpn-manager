@@ -46,34 +46,17 @@ type Connection struct {
 	authFailedCalled bool
 }
 
-// ConnectionStatus represents the state of an OpenVPN connection.
-type ConnectionStatus int
+// ConnectionStatus is an alias for app.ConnectionStatus.
+type ConnectionStatus = app.ConnectionStatus
 
+// Status constants aliased from app package.
 const (
-	StatusDisconnected ConnectionStatus = iota
-	StatusConnecting
-	StatusConnected
-	StatusDisconnecting
-	StatusError
+	StatusDisconnected  = app.StatusDisconnected
+	StatusConnecting    = app.StatusConnecting
+	StatusConnected     = app.StatusConnected
+	StatusDisconnecting = app.StatusDisconnecting
+	StatusError         = app.StatusError
 )
-
-// String returns a human-readable status.
-func (s ConnectionStatus) String() string {
-	switch s {
-	case StatusDisconnected:
-		return "Disconnected"
-	case StatusConnecting:
-		return "Connecting..."
-	case StatusConnected:
-		return "Connected"
-	case StatusDisconnecting:
-		return "Disconnecting..."
-	case StatusError:
-		return "Error"
-	default:
-		return "Unknown"
-	}
-}
 
 // Client wraps OpenVPN CLI operations.
 type Client struct {

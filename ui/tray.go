@@ -194,7 +194,9 @@ func (t *TrayIndicator) onExit() {
 		connections := t.app.vpnManager.ListConnections()
 		for _, conn := range connections {
 			app.LogInfo("Tray: Disconnecting VPN %s on exit", conn.Profile.Name)
-			_ = t.app.vpnManager.Disconnect(conn.Profile.ID)
+			if err := t.app.vpnManager.Disconnect(conn.Profile.ID); err != nil {
+				app.LogWarn("Tray: Failed to disconnect %s: %v", conn.Profile.Name, err)
+			}
 		}
 	}
 

@@ -110,7 +110,12 @@ func main() {
 
 	// Start the GTK application (GUI mode)
 	app.LogInfo("Starting %s v%s", app.AppName, appVersion)
-	application := ui.NewApplication(app.AppID, appVersion)
+	application, err := ui.NewApplication(app.AppID, appVersion)
+	if err != nil {
+		app.LogError("Failed to initialize application: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 	exitCode := application.Run(os.Args)
 
 	if exitCode != 0 {

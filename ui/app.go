@@ -23,21 +23,23 @@ type Application struct {
 	tray       *TrayIndicator
 }
 
-// NewApplication creates a new application
-func NewApplication(appID, version string) *Application {
+// NewApplication creates a new application.
+// Returns an error if the VPN manager cannot be initialized.
+func NewApplication(appID, version string) (*Application, error) {
 	// Create GTK4 application
 	gtkApp := gtk.NewApplication(appID, gio.ApplicationDefaultFlags)
 
 	// Create VPN manager
 	vpnManager, err := vpn.NewManager()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create VPN manager: %w", err)
 	}
 
 	// Load configuration
 	cfg, err := app.Load()
 	if err != nil {
 		// Use default configuration if there's an error
+		app.LogWarn("Failed to load config, using defaults: %v", err)
 		cfg = app.DefaultConfig()
 	}
 
@@ -51,7 +53,7 @@ func NewApplication(appID, version string) *Application {
 	// Connect activation signal
 	gtkApp.ConnectActivate(application.onActivate)
 
-	return application
+	return application, nil
 }
 
 // Run runs the application
