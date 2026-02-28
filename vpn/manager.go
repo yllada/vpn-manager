@@ -76,6 +76,7 @@ type Manager struct {
 	connections      map[string]*Connection
 	healthChecker    *HealthChecker
 	killSwitch       *KillSwitch
+	appTunnel        *AppTunnel
 	providerRegistry *app.ProviderRegistry
 	mu               sync.RWMutex
 }
@@ -93,6 +94,7 @@ func NewManager() (*Manager, error) {
 		connections:      make(map[string]*Connection),
 		providerRegistry: app.NewProviderRegistry(),
 		killSwitch:       NewKillSwitch(),
+		appTunnel:        NewAppTunnel(),
 	}
 
 	// Initialize health checker with default config
@@ -219,6 +221,13 @@ func (m *Manager) Disconnect(profileID string) error {
 	if len(m.connections) <= 1 {
 		if err := m.killSwitch.Disable(); err != nil {
 			log.Printf("KillSwitch: Warning: failed to disable: %v", err)
+		}
+	}
+
+	// Disable per-app tunneling if no other connections remain
+	if len(m.connections) <= 1 && m.appTunnel.enabled {
+		if err := m.appTunnel.Disable(); err != nil {
+			log.Printf("AppTunnel: Warning: failed to disable: %v", err)
 		}
 	}
 
@@ -457,6 +466,18 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 				vpnServerIP := m.getVPNServerIP(conn.Profile)
 				if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
 					log.Printf("KillSwitch: Warning: failed to enable: %v", err)
+				}
+			}
+
+			// Enable per-app tunneling if configured
+			if conn.Profile.SplitTunnelAppsEnabled && len(conn.Profile.SplitTunnelApps) > 0 {
+				tunIface := m.detectTunInterface()
+				gateway := m.getDefaultGateway()
+				if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
+					log.Printf("AppTunnel: Warning: failed to enable: %v", err)
+				} else {
+					log.Printf("AppTunnel: Enabled for %d apps (mode: %s)",
+						len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode)
 				}
 			}
 
@@ -759,6 +780,31 @@ func (m *Manager) getVPNGateway(tunInterface string) string {
 	}
 
 	return ""
+}
+
+// getDefaultGateway returns the default gateway for the main network interface.
+func (m *Manager) getDefaultGateway() string {
+	cmd := exec.Command("ip", "route", "show", "default")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("VPN: Warning: failed to get default gateway: %v", err)
+		return ""
+	}
+
+	// Parse: "default via X.X.X.X dev ethX ..."
+	fields := strings.Fields(string(output))
+	for i, field := range fields {
+		if field == "via" && i+1 < len(fields) {
+			return fields[i+1]
+		}
+	}
+
+	return ""
+}
+
+// AppTunnel returns the per-app tunnel manager.
+func (m *Manager) AppTunnel() *AppTunnel {
+	return m.appTunnel
 }
 
 // applySplitTunnelIncludeMode configures "include" mode where only listed routes go through VPN

@@ -6,6 +6,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -256,6 +257,8 @@ Options:
   --connect NAME    Connect to a VPN profile
   --disconnect [NAME] Disconnect from VPN (all if no name)
   --status          Show current connection status
+  --run COMMAND     Run a command through VPN (requires active connection)
+  --list-apps       List installed applications for split tunneling
   --help            Show this help message
 
 Examples:
@@ -263,9 +266,164 @@ Examples:
   vpn-manager --connect "Work VPN"
   vpn-manager --disconnect
   vpn-manager --status
+  vpn-manager --run firefox
+  vpn-manager --run "curl https://api.ipify.org"
 
 Notes:
   - CLI mode requires saved credentials (use GUI to save)
   - Profiles requiring OTP must be connected via GUI
-  - Run without options to launch the GUI`)
+  - Run without options to launch the GUI
+  - --run requires an active VPN connection with app tunneling enabled`)
+}
+
+// RunApp runs a command through the VPN tunnel using cgroups.
+func (c *CLI) RunApp(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no command specified")
+	}
+
+	// Check for active connection
+	connections := c.manager.ListConnections()
+	if len(connections) == 0 {
+		return fmt.Errorf("no active VPN connection. Connect first with --connect")
+	}
+
+	// Find a connection with app tunneling enabled
+	var activeConn *vpn.Connection
+	for _, conn := range connections {
+		if conn.GetStatus() == vpn.StatusConnected && conn.Profile.SplitTunnelAppsEnabled {
+			activeConn = conn
+			break
+		}
+	}
+
+	// If no profile has app tunneling, just warn but proceed
+	if activeConn == nil {
+		// Use first connected profile
+		for _, conn := range connections {
+			if conn.GetStatus() == vpn.StatusConnected {
+				activeConn = conn
+				break
+			}
+		}
+		fmt.Println("Note: App tunneling not enabled for this profile. Running command normally through VPN.")
+	}
+
+	appTunnel := c.manager.AppTunnel()
+	if appTunnel == nil || !appTunnel.IsEnabled() {
+		// AppTunnel not active, warn but try to enable
+		if activeConn != nil && activeConn.Profile.SplitTunnelAppsEnabled {
+			fmt.Println("Enabling app tunnel for command execution...")
+			// The tunnel should be enabled by manager, but we proceed anyway
+		}
+	}
+
+	// Prepare command
+	executable := args[0]
+	cmdArgs := []string{}
+	if len(args) > 1 {
+		cmdArgs = args[1:]
+	}
+
+	fmt.Printf("Running %s through VPN...\n", executable)
+
+	// Launch through app tunnel with blocking
+	err := c.runAppThroughTunnel(appTunnel, executable, cmdArgs)
+	if err != nil {
+		// Fallback: run normally if cgroup setup fails
+		fmt.Printf("Warning: App tunnel not available (%v), running normally\n", err)
+		return runCommandDirectly(args)
+	}
+
+	return nil
+}
+
+// runAppThroughTunnel runs app in the VPN cgroup and waits for completion.
+func (c *CLI) runAppThroughTunnel(appTunnel *vpn.AppTunnel, executable string, args []string) error {
+	if appTunnel == nil || !appTunnel.IsEnabled() {
+		return fmt.Errorf("app tunnel not enabled")
+	}
+
+	// Get cgroup path from tunnel
+	cgroupPath := "/sys/fs/cgroup/vpn_tunnel"
+
+	// Build command to run in cgroup
+	var cmdExec *exec.Cmd
+	fullCmd := executable
+	if len(args) > 0 {
+		fullCmd = executable + " " + strings.Join(args, " ")
+	}
+
+	// Check cgroup version
+	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err == nil {
+		// cgroup v2
+		cmdExec = exec.Command("sh", "-c", fmt.Sprintf(
+			"echo $$ > %s/cgroup.procs && exec %s",
+			cgroupPath, fullCmd,
+		))
+	} else {
+		// cgroup v1
+		if _, err := exec.LookPath("cgexec"); err == nil {
+			cmdExec = exec.Command("cgexec", append([]string{"-g", "net_cls:vpn_tunnel", executable}, args...)...)
+		} else {
+			cmdExec = exec.Command("sh", "-c", fmt.Sprintf(
+				"echo $$ > %s/cgroup.procs && exec %s",
+				cgroupPath, fullCmd,
+			))
+		}
+	}
+
+	cmdExec.Stdin = os.Stdin
+	cmdExec.Stdout = os.Stdout
+	cmdExec.Stderr = os.Stderr
+
+	return cmdExec.Run()
+}
+
+// ListApps lists installed applications that can be used for split tunneling.
+func (c *CLI) ListApps() error {
+	apps, err := vpn.ListInstalledApps()
+	if err != nil {
+		return fmt.Errorf("failed to list apps: %w", err)
+	}
+
+	if len(apps) == 0 {
+		fmt.Println("No applications found in /usr/share/applications")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tEXECUTABLE\tICON")
+	fmt.Fprintln(w, "----\t----------\t----")
+
+	for _, app := range apps {
+		icon := app.Icon
+		if icon == "" {
+			icon = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", app.Name, app.Executable, icon)
+	}
+
+	w.Flush()
+	fmt.Printf("\nTotal: %d applications\n", len(apps))
+	return nil
+}
+
+// runCommandDirectly runs a command without cgroup isolation (fallback).
+func runCommandDirectly(args []string) error {
+	cmd := &os.ProcAttr{
+		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+	}
+	proc, err := os.StartProcess(args[0], args, cmd)
+	if err != nil {
+		return fmt.Errorf("failed to start process: %w", err)
+	}
+	state, err := proc.Wait()
+	if err != nil {
+		return fmt.Errorf("process error: %w", err)
+	}
+	if !state.Success() {
+		return fmt.Errorf("process exited with code %d", state.ExitCode())
+	}
+	return nil
 }

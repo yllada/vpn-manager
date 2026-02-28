@@ -51,6 +51,8 @@ var (
 	connectProfile = flag.String("connect", "", "Connect to a VPN profile by name")
 	disconnectVPN  = flag.String("disconnect", "", "Disconnect from VPN (use 'all' or profile name)")
 	showStatus     = flag.Bool("status", false, "Show current connection status")
+	runApp         = flag.Bool("run", false, "Run a command through VPN (remaining args are the command)")
+	listApps       = flag.Bool("list-apps", false, "List installed applications for split tunneling")
 )
 
 func main() {
@@ -103,7 +105,7 @@ func main() {
 	}
 
 	// Check if any CLI mode flag is set
-	if *listProfiles || *connectProfile != "" || *disconnectVPN != "" || *showStatus {
+	if *listProfiles || *connectProfile != "" || *disconnectVPN != "" || *showStatus || *runApp || *listApps {
 		runCLI(ctx)
 		return
 	}
@@ -156,6 +158,16 @@ func runCLI(ctx context.Context) {
 		}
 	case *showStatus:
 		cliErr = cliApp.Status()
+	case *runApp:
+		// Remaining args after --run are the command to execute
+		args := flag.Args()
+		if len(args) == 0 {
+			cliErr = fmt.Errorf("no command specified. Usage: vpn-manager --run <command> [args...]")
+		} else {
+			cliErr = cliApp.RunApp(args)
+		}
+	case *listApps:
+		cliErr = cliApp.ListApps()
 	}
 
 	if cliErr != nil {

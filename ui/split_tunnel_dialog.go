@@ -24,6 +24,13 @@ type SplitTunnelDialog struct {
 	dnsCheck     *gtk.CheckButton
 	routesList   *gtk.ListBox
 	routes       []string
+
+	// Per-app tunneling
+	appsEnabledCheck *gtk.CheckButton
+	appModeDropDown  *gtk.DropDown
+	appModeIDs       []string
+	appsList         *gtk.ListBox
+	apps             []string
 }
 
 // NewSplitTunnelDialog creates a new split tunneling configuration dialog.
@@ -32,11 +39,17 @@ func NewSplitTunnelDialog(mainWindow *MainWindow, profile *vpn.Profile) *SplitTu
 		mainWindow: mainWindow,
 		profile:    profile,
 		routes:     make([]string, 0),
+		apps:       make([]string, 0),
 	}
 
 	// Copy existing routes
 	if profile.SplitTunnelRoutes != nil {
 		std.routes = append(std.routes, profile.SplitTunnelRoutes...)
+	}
+
+	// Copy existing apps
+	if profile.SplitTunnelApps != nil {
+		std.apps = append(std.apps, profile.SplitTunnelApps...)
 	}
 
 	std.build()
@@ -289,6 +302,114 @@ func (std *SplitTunnelDialog) build() {
 	routesSection.Append(routesCard)
 	optionsBox.Append(routesSection)
 
+	// ═══════════════════════════════════════════════════════════════════
+	// PER-APP TUNNELING SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	appSection := std.createSection("Per-Application Routing", "application-x-executable-symbolic")
+	appCard := std.createCard()
+
+	// Enable per-app tunneling
+	std.appsEnabledCheck = gtk.NewCheckButton()
+	std.appsEnabledCheck.SetActive(std.profile.SplitTunnelAppsEnabled)
+
+	appEnableRow := std.createSettingRowWithCheckbox(
+		"Enable App Routing",
+		"Route specific applications through VPN",
+		std.appsEnabledCheck,
+	)
+	appCard.Append(appEnableRow)
+
+	appSection.Append(appCard)
+	optionsBox.Append(appSection)
+
+	// App options container
+	appOptionsBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	appOptionsBox.SetMarginTop(8)
+
+	// App mode selection
+	appModeCard := std.createCard()
+
+	appModeRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	appModeRow.SetMarginTop(14)
+	appModeRow.SetMarginBottom(14)
+	appModeRow.SetMarginStart(16)
+	appModeRow.SetMarginEnd(16)
+
+	appModeTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	appModeTextBox.SetHExpand(true)
+
+	appModeTitleLabel := gtk.NewLabel("App Routing Mode")
+	appModeTitleLabel.SetXAlign(0)
+	appModeTitleLabel.AddCSSClass("settings-title")
+	appModeTextBox.Append(appModeTitleLabel)
+
+	appModeDescLabel := gtk.NewLabel("Choose which apps use VPN")
+	appModeDescLabel.SetXAlign(0)
+	appModeDescLabel.AddCSSClass("dim-label")
+	appModeDescLabel.AddCSSClass("caption")
+	appModeTextBox.Append(appModeDescLabel)
+
+	appModeRow.Append(appModeTextBox)
+
+	std.appModeIDs = []string{"include", "exclude"}
+	appModeLabels := []string{"Only selected apps", "All except selected"}
+	appModeModel := gtk.NewStringList(appModeLabels)
+	std.appModeDropDown = gtk.NewDropDown(appModeModel, nil)
+	std.appModeDropDown.SetSelected(std.findAppModeIndex(std.profile.SplitTunnelAppMode))
+	std.appModeDropDown.SetVAlign(gtk.AlignCenter)
+	std.appModeDropDown.AddCSSClass("flat")
+	appModeRow.Append(std.appModeDropDown)
+
+	appModeCard.Append(appModeRow)
+	appOptionsBox.Append(appModeCard)
+
+	// Apps list
+	appsListCard := std.createCard()
+	appsListInner := gtk.NewBox(gtk.OrientationVertical, 12)
+	appsListInner.SetMarginTop(14)
+	appsListInner.SetMarginBottom(14)
+	appsListInner.SetMarginStart(16)
+	appsListInner.SetMarginEnd(16)
+
+	appsHelpLabel := gtk.NewLabel("Select applications to route through VPN")
+	appsHelpLabel.SetXAlign(0)
+	appsHelpLabel.AddCSSClass("dim-label")
+	appsHelpLabel.AddCSSClass("caption")
+	appsHelpLabel.SetWrap(true)
+	appsListInner.Append(appsHelpLabel)
+
+	// Add app button
+	addAppBtn := gtk.NewButtonWithLabel("Add Application...")
+	addAppBtn.AddCSSClass("suggested-action")
+	addAppBtn.ConnectClicked(func() {
+		std.showAppSelector()
+	})
+	appsListInner.Append(addAppBtn)
+
+	// Apps list
+	appsFrame := gtk.NewFrame("")
+
+	std.appsList = gtk.NewListBox()
+	std.appsList.AddCSSClass("boxed-list")
+	std.appsList.SetSelectionMode(gtk.SelectionNone)
+	appsFrame.SetChild(std.appsList)
+
+	appsListInner.Append(appsFrame)
+
+	// Refresh apps list
+	std.refreshAppsList()
+
+	appsListCard.Append(appsListInner)
+	appOptionsBox.Append(appsListCard)
+
+	optionsBox.Append(appOptionsBox)
+
+	// Update sensitivity based on apps enabled checkbox
+	std.appsEnabledCheck.ConnectToggled(func() {
+		appOptionsBox.SetSensitive(std.appsEnabledCheck.Active())
+	})
+	appOptionsBox.SetSensitive(std.appsEnabledCheck.Active())
+
 	contentBox.Append(optionsBox)
 
 	// Update sensitivity based on enabled checkbox
@@ -525,6 +646,258 @@ func (std *SplitTunnelDialog) findModeIndex(modeID string) uint {
 	return 0
 }
 
+// findAppModeIndex returns the index of an app mode ID, or 0 if not found.
+func (std *SplitTunnelDialog) findAppModeIndex(modeID string) uint {
+	if modeID == "" {
+		return 0 // default to "include"
+	}
+	for i, id := range std.appModeIDs {
+		if id == modeID {
+			return uint(i)
+		}
+	}
+	return 0
+}
+
+// refreshAppsList updates the apps list display.
+func (std *SplitTunnelDialog) refreshAppsList() {
+	// Clear existing
+	for std.appsList.FirstChild() != nil {
+		std.appsList.Remove(std.appsList.FirstChild())
+	}
+
+	if len(std.apps) == 0 {
+		emptyRow := gtk.NewListBoxRow()
+		emptyLabel := gtk.NewLabel("No applications configured")
+		emptyLabel.AddCSSClass("dim-label")
+		emptyLabel.SetMarginTop(12)
+		emptyLabel.SetMarginBottom(12)
+		emptyRow.SetChild(emptyLabel)
+		emptyRow.SetSelectable(false)
+		std.appsList.Append(emptyRow)
+		return
+	}
+
+	for _, app := range std.apps {
+		appCopy := app
+		row := std.createAppRowWithCallback(appCopy, func() {
+			std.removeApp(appCopy)
+		})
+		std.appsList.Append(row)
+	}
+}
+
+// createAppRowWithCallback creates a row for an application with delete callback.
+func (std *SplitTunnelDialog) createAppRowWithCallback(executable string, onDelete func()) *gtk.ListBoxRow {
+	row := gtk.NewListBoxRow()
+	row.SetSelectable(false)
+	row.SetActivatable(false)
+
+	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	box.SetMarginTop(8)
+	box.SetMarginBottom(8)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	// App icon
+	icon := gtk.NewImage()
+	icon.SetFromIconName("application-x-executable-symbolic")
+	icon.SetPixelSize(24)
+	box.Append(icon)
+
+	// App name (executable basename)
+	parts := strings.Split(executable, "/")
+	name := parts[len(parts)-1]
+
+	nameLabel := gtk.NewLabel(name)
+	nameLabel.SetXAlign(0)
+	nameLabel.SetHExpand(true)
+	box.Append(nameLabel)
+
+	// Delete button
+	deleteBtn := gtk.NewButton()
+	deleteBtn.SetIconName("edit-delete-symbolic")
+	deleteBtn.AddCSSClass("flat")
+	deleteBtn.AddCSSClass("circular")
+	deleteBtn.SetTooltipText("Remove application")
+	deleteBtn.ConnectClicked(func() {
+		if onDelete != nil {
+			onDelete()
+		}
+	})
+	box.Append(deleteBtn)
+
+	row.SetChild(box)
+	return row
+}
+
+// addApp adds an application to the list.
+func (std *SplitTunnelDialog) addApp(executable string) {
+	// Check for duplicates
+	for _, app := range std.apps {
+		if app == executable {
+			return
+		}
+	}
+
+	std.apps = append(std.apps, executable)
+	std.refreshAppsList()
+}
+
+// removeApp removes an application from the list.
+func (std *SplitTunnelDialog) removeApp(executable string) {
+	newApps := make([]string, 0, len(std.apps))
+	for _, app := range std.apps {
+		if app != executable {
+			newApps = append(newApps, app)
+		}
+	}
+	std.apps = newApps
+	std.refreshAppsList()
+}
+
+// showAppSelector shows a dialog to select an application.
+func (std *SplitTunnelDialog) showAppSelector() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Select Application")
+	dialog.SetTransientFor(std.window)
+	dialog.SetModal(true)
+	dialog.SetDefaultSize(400, 500)
+
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	mainBox.SetMarginTop(12)
+	mainBox.SetMarginBottom(12)
+	mainBox.SetMarginStart(12)
+	mainBox.SetMarginEnd(12)
+
+	// Search entry
+	searchEntry := gtk.NewSearchEntry()
+	searchEntry.SetPlaceholderText("Search applications...")
+	mainBox.Append(searchEntry)
+
+	// Scrolled list
+	scrolled := gtk.NewScrolledWindow()
+	scrolled.SetVExpand(true)
+	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+
+	appList := gtk.NewListBox()
+	appList.AddCSSClass("boxed-list")
+	appList.SetSelectionMode(gtk.SelectionSingle)
+
+	// Load installed apps
+	apps, err := vpn.ListInstalledApps()
+	if err != nil {
+		apps = []vpn.AppConfig{}
+	}
+
+	// Map rows to executables
+	rowExecutables := make(map[*gtk.ListBoxRow]string)
+
+	// Create rows for each app
+	for _, app := range apps {
+		appCopy := app
+		row := gtk.NewListBoxRow()
+
+		rowBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
+		rowBox.SetMarginTop(8)
+		rowBox.SetMarginBottom(8)
+		rowBox.SetMarginStart(12)
+		rowBox.SetMarginEnd(12)
+
+		// App icon
+		icon := gtk.NewImage()
+		if app.Icon != "" {
+			icon.SetFromIconName(app.Icon)
+		} else {
+			icon.SetFromIconName("application-x-executable-symbolic")
+		}
+		icon.SetPixelSize(32)
+		rowBox.Append(icon)
+
+		// App info
+		infoBox := gtk.NewBox(gtk.OrientationVertical, 2)
+		infoBox.SetHExpand(true)
+
+		nameLabel := gtk.NewLabel(app.Name)
+		nameLabel.SetXAlign(0)
+		nameLabel.AddCSSClass("heading")
+		infoBox.Append(nameLabel)
+
+		execLabel := gtk.NewLabel(app.Executable)
+		execLabel.SetXAlign(0)
+		execLabel.AddCSSClass("dim-label")
+		execLabel.AddCSSClass("caption")
+		infoBox.Append(execLabel)
+
+		rowBox.Append(infoBox)
+		row.SetChild(rowBox)
+
+		// Store app info in row name for filtering and executable retrieval
+		row.SetName(strings.ToLower(app.Name+" "+app.Executable) + "|" + app.Executable)
+		rowExecutables[row] = appCopy.Executable
+
+		row.ConnectActivate(func() {
+			std.addApp(appCopy.Executable)
+			dialog.Close()
+		})
+
+		appList.Append(row)
+	}
+
+	// Filter function using SetFilterFunc
+	var currentQuery string
+	appList.SetFilterFunc(func(row *gtk.ListBoxRow) bool {
+		if currentQuery == "" {
+			return true
+		}
+		name := row.Name()
+		// Extract search part (before |)
+		if idx := strings.Index(name, "|"); idx > 0 {
+			name = name[:idx]
+		}
+		return strings.Contains(name, currentQuery)
+	})
+
+	searchEntry.ConnectSearchChanged(func() {
+		currentQuery = strings.ToLower(searchEntry.Text())
+		appList.InvalidateFilter()
+	})
+
+	scrolled.SetChild(appList)
+	mainBox.Append(scrolled)
+
+	// Button bar
+	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	buttonBar.SetHAlign(gtk.AlignEnd)
+
+	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.AddCSSClass("flat")
+	cancelBtn.ConnectClicked(func() {
+		dialog.Close()
+	})
+	buttonBar.Append(cancelBtn)
+
+	selectBtn := gtk.NewButtonWithLabel("Select")
+	selectBtn.AddCSSClass("suggested-action")
+	selectBtn.ConnectClicked(func() {
+		if selected := appList.SelectedRow(); selected != nil {
+			// Extract executable from row name (after |)
+			name := selected.Name()
+			if idx := strings.Index(name, "|"); idx >= 0 && idx+1 < len(name) {
+				executable := name[idx+1:]
+				std.addApp(executable)
+				dialog.Close()
+			}
+		}
+	})
+	buttonBar.Append(selectBtn)
+
+	mainBox.Append(buttonBar)
+
+	dialog.SetChild(mainBox)
+	dialog.Present()
+}
+
 // saveSettings saves the profile configuration including authentication and split tunnel settings.
 func (std *SplitTunnelDialog) saveSettings() {
 	// Save authentication settings
@@ -545,6 +918,20 @@ func (std *SplitTunnelDialog) saveSettings() {
 
 	std.profile.SplitTunnelDNS = std.dnsCheck.Active()
 	std.profile.SplitTunnelRoutes = std.routes
+
+	// Save per-app tunneling settings
+	if std.appsEnabledCheck != nil {
+		std.profile.SplitTunnelAppsEnabled = std.appsEnabledCheck.Active()
+
+		if std.appModeDropDown != nil {
+			appModeIdx := std.appModeDropDown.Selected()
+			if int(appModeIdx) < len(std.appModeIDs) {
+				std.profile.SplitTunnelAppMode = std.appModeIDs[appModeIdx]
+			}
+		}
+
+		std.profile.SplitTunnelApps = std.apps
+	}
 
 	// Save profile
 	if err := std.mainWindow.app.vpnManager.ProfileManager().Save(); err != nil {

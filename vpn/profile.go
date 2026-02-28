@@ -27,17 +27,17 @@ var (
 // dangerousDirectives contains OpenVPN directives that can execute arbitrary code.
 // These directives are blocked to prevent malicious .ovpn files from compromising the system.
 var dangerousDirectives = []string{
-	"script-security",     // Allows script execution
-	"up ",                 // Script executed on connect
-	"down ",               // Script executed on disconnect
-	"plugin ",             // Loads external plugins
+	"script-security",       // Allows script execution
+	"up ",                   // Script executed on connect
+	"down ",                 // Script executed on disconnect
+	"plugin ",               // Loads external plugins
 	"auth-user-pass-verify", // Authentication verification script
-	"client-connect",      // Script on client connection
-	"client-disconnect",   // Script on client disconnection
-	"tls-verify",          // TLS verification script
-	"ipchange",            // Script when IP changes
-	"route-up",            // Script after routes are added
-	"route-pre-down",      // Script before routes are removed
+	"client-connect",        // Script on client connection
+	"client-disconnect",     // Script on client disconnection
+	"tls-verify",            // TLS verification script
+	"ipchange",              // Script when IP changes
+	"route-up",              // Script after routes are added
+	"route-pre-down",        // Script before routes are removed
 }
 
 // Profile represents a VPN connection profile.
@@ -81,6 +81,16 @@ type Profile struct {
 	SplitTunnelRoutes []string `json:"split_tunnel_routes,omitempty" yaml:"split_tunnel_routes,omitempty"`
 	// SplitTunnelDNS specifies whether DNS queries should go through VPN
 	SplitTunnelDNS bool `json:"split_tunnel_dns" yaml:"split_tunnel_dns"`
+
+	// Per-Application Split Tunneling
+	// SplitTunnelAppsEnabled enables per-application routing
+	SplitTunnelAppsEnabled bool `json:"split_tunnel_apps_enabled" yaml:"split_tunnel_apps_enabled"`
+	// SplitTunnelAppMode defines app routing behavior:
+	// "include" - Only listed apps go through VPN
+	// "exclude" - All apps except listed go through VPN
+	SplitTunnelAppMode string `json:"split_tunnel_app_mode,omitempty" yaml:"split_tunnel_app_mode,omitempty"`
+	// SplitTunnelApps contains the list of application executables
+	SplitTunnelApps []string `json:"split_tunnel_apps,omitempty" yaml:"split_tunnel_apps,omitempty"`
 }
 
 // ProfileManager manages VPN profiles.
@@ -409,10 +419,10 @@ func (p *Profile) Validate() error {
 // ExportData represents the exported backup data structure.
 // It includes profiles metadata but excludes sensitive data like passwords.
 type ExportData struct {
-	Version     string     `yaml:"version" json:"version"`
-	ExportedAt  time.Time  `yaml:"exported_at" json:"exported_at"`
-	ProfileCount int       `yaml:"profile_count" json:"profile_count"`
-	Profiles    []ExportedProfile `yaml:"profiles" json:"profiles"`
+	Version      string            `yaml:"version" json:"version"`
+	ExportedAt   time.Time         `yaml:"exported_at" json:"exported_at"`
+	ProfileCount int               `yaml:"profile_count" json:"profile_count"`
+	Profiles     []ExportedProfile `yaml:"profiles" json:"profiles"`
 }
 
 // ExportedProfile is a profile without sensitive credentials.
