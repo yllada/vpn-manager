@@ -46,6 +46,11 @@ type Profile struct {
 	SplitTunnelMode    string   // "include" or "exclude"
 	SplitTunnelRoutes  []string // CIDRs to include/exclude
 	RouteDNS           bool     // Route DNS through VPN
+
+	// Per-Application Split Tunneling
+	SplitTunnelAppsEnabled bool     // Enable per-app routing
+	SplitTunnelAppMode     string   // "include" or "exclude"
+	SplitTunnelApps        []string // App executables
 }
 
 // NewProfile creates a new WireGuard profile.
@@ -99,6 +104,11 @@ type profileMetadata struct {
 	AutoConnect        bool     `json:"auto_connect"`
 	CreatedAt          int64    `json:"created_at"`
 	LastUsed           int64    `json:"last_used"`
+
+	// Per-app tunneling
+	SplitTunnelAppsEnabled bool     `json:"split_tunnel_apps_enabled"`
+	SplitTunnelAppMode     string   `json:"split_tunnel_app_mode"`
+	SplitTunnelApps        []string `json:"split_tunnel_apps"`
 }
 
 // metadataPath returns the path for the metadata JSON file.
@@ -124,6 +134,11 @@ func (p *Profile) LoadSettings() error {
 	p.RouteDNS = meta.RouteDNS
 	p.autoConnect = meta.AutoConnect
 
+	// Load per-app tunneling settings
+	p.SplitTunnelAppsEnabled = meta.SplitTunnelAppsEnabled
+	p.SplitTunnelAppMode = meta.SplitTunnelAppMode
+	p.SplitTunnelApps = meta.SplitTunnelApps
+
 	if meta.CreatedAt > 0 {
 		p.createdAt = time.Unix(meta.CreatedAt, 0)
 	}
@@ -137,13 +152,16 @@ func (p *Profile) LoadSettings() error {
 // SaveSettings saves additional settings to the metadata JSON file.
 func (p *Profile) SaveSettings() error {
 	meta := profileMetadata{
-		SplitTunnelEnabled: p.SplitTunnelEnabled,
-		SplitTunnelMode:    p.SplitTunnelMode,
-		SplitTunnelRoutes:  p.SplitTunnelRoutes,
-		RouteDNS:           p.RouteDNS,
-		AutoConnect:        p.autoConnect,
-		CreatedAt:          p.createdAt.Unix(),
-		LastUsed:           p.lastUsed.Unix(),
+		SplitTunnelEnabled:     p.SplitTunnelEnabled,
+		SplitTunnelMode:        p.SplitTunnelMode,
+		SplitTunnelRoutes:      p.SplitTunnelRoutes,
+		RouteDNS:               p.RouteDNS,
+		AutoConnect:            p.autoConnect,
+		CreatedAt:              p.createdAt.Unix(),
+		LastUsed:               p.lastUsed.Unix(),
+		SplitTunnelAppsEnabled: p.SplitTunnelAppsEnabled,
+		SplitTunnelAppMode:     p.SplitTunnelAppMode,
+		SplitTunnelApps:        p.SplitTunnelApps,
 	}
 
 	data, err := json.MarshalIndent(meta, "", "  ")

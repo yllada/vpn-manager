@@ -8,6 +8,7 @@ import (
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
+	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
@@ -23,6 +24,13 @@ type WireGuardSettingsDialog struct {
 	dnsCheck     *gtk.CheckButton
 	routesList   *gtk.ListBox
 	routes       []string
+
+	// Per-app tunneling
+	appsEnabledCheck *gtk.CheckButton
+	appModeDropDown  *gtk.DropDown
+	appModeIDs       []string
+	appsList         *gtk.ListBox
+	apps             []string
 }
 
 // NewWireGuardSettingsDialog creates a new WireGuard settings dialog.
@@ -32,11 +40,17 @@ func NewWireGuardSettingsDialog(mainWindow *MainWindow, profile *wireguard.Profi
 		profile:    profile,
 		onSave:     onSave,
 		routes:     make([]string, 0),
+		apps:       make([]string, 0),
 	}
 
 	// Copy existing routes
 	if profile.SplitTunnelRoutes != nil {
 		d.routes = append(d.routes, profile.SplitTunnelRoutes...)
+	}
+
+	// Copy existing apps
+	if profile.SplitTunnelApps != nil {
+		d.apps = append(d.apps, profile.SplitTunnelApps...)
 	}
 
 	d.build()
@@ -257,6 +271,105 @@ func (d *WireGuardSettingsDialog) build() {
 	routesSection.Append(routesCard)
 	optionsBox.Append(routesSection)
 
+	// ═══════════════════════════════════════════════════════════════════
+	// PER-APP TUNNELING SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	appSection := d.createSection("Per-Application Routing", "application-x-executable-symbolic")
+	appCard := d.createCard()
+
+	// Enable per-app tunneling
+	d.appsEnabledCheck = gtk.NewCheckButton()
+	d.appsEnabledCheck.SetActive(d.profile.SplitTunnelAppsEnabled)
+
+	appEnableRow := d.createSettingRowWithCheckbox(
+		"Enable App Routing",
+		"Route specific applications through VPN",
+		d.appsEnabledCheck,
+	)
+	appCard.Append(appEnableRow)
+	appSection.Append(appCard)
+	optionsBox.Append(appSection)
+
+	// App options container
+	appOptionsBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	appOptionsBox.SetMarginTop(8)
+
+	// App mode selection
+	appModeCard := d.createCard()
+	appModeRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	appModeRow.SetMarginTop(14)
+	appModeRow.SetMarginBottom(14)
+	appModeRow.SetMarginStart(16)
+	appModeRow.SetMarginEnd(16)
+
+	appModeTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	appModeTextBox.SetHExpand(true)
+
+	appModeTitleLabel := gtk.NewLabel("App Routing Mode")
+	appModeTitleLabel.SetXAlign(0)
+	appModeTitleLabel.AddCSSClass("settings-title")
+	appModeTextBox.Append(appModeTitleLabel)
+
+	appModeDescLabel := gtk.NewLabel("Choose which apps use VPN")
+	appModeDescLabel.SetXAlign(0)
+	appModeDescLabel.AddCSSClass("dim-label")
+	appModeDescLabel.AddCSSClass("caption")
+	appModeTextBox.Append(appModeDescLabel)
+	appModeRow.Append(appModeTextBox)
+
+	d.appModeIDs = []string{"include", "exclude"}
+	appModeLabels := []string{"Only selected apps", "All except selected"}
+	appModeModel := gtk.NewStringList(appModeLabels)
+	d.appModeDropDown = gtk.NewDropDown(appModeModel, nil)
+	d.appModeDropDown.SetSelected(d.findAppModeIndex(d.profile.SplitTunnelAppMode))
+	d.appModeDropDown.SetVAlign(gtk.AlignCenter)
+	d.appModeDropDown.AddCSSClass("flat")
+	appModeRow.Append(d.appModeDropDown)
+
+	appModeCard.Append(appModeRow)
+	appOptionsBox.Append(appModeCard)
+
+	// Apps list
+	appsListCard := d.createCard()
+	appsListInner := gtk.NewBox(gtk.OrientationVertical, 12)
+	appsListInner.SetMarginTop(14)
+	appsListInner.SetMarginBottom(14)
+	appsListInner.SetMarginStart(16)
+	appsListInner.SetMarginEnd(16)
+
+	appsHelpLabel := gtk.NewLabel("Select applications to route through VPN")
+	appsHelpLabel.SetXAlign(0)
+	appsHelpLabel.AddCSSClass("dim-label")
+	appsHelpLabel.AddCSSClass("caption")
+	appsHelpLabel.SetWrap(true)
+	appsListInner.Append(appsHelpLabel)
+
+	d.appsList = gtk.NewListBox()
+	d.appsList.AddCSSClass("boxed-list")
+	d.appsList.SetSelectionMode(gtk.SelectionNone)
+	d.refreshAppsList()
+	appsListInner.Append(d.appsList)
+
+	// Add app button
+	addAppBtn := gtk.NewButtonWithLabel("Add Application")
+	addAppBtn.AddCSSClass("flat")
+	addAppBtn.SetIconName("list-add-symbolic")
+	addAppBtn.SetHAlign(gtk.AlignStart)
+	addAppBtn.ConnectClicked(func() {
+		d.showAppSelector()
+	})
+	appsListInner.Append(addAppBtn)
+
+	appsListCard.Append(appsListInner)
+	appOptionsBox.Append(appsListCard)
+	optionsBox.Append(appOptionsBox)
+
+	// Toggle app options visibility
+	d.appsEnabledCheck.ConnectToggled(func() {
+		appOptionsBox.SetSensitive(d.appsEnabledCheck.Active())
+	})
+	appOptionsBox.SetSensitive(d.appsEnabledCheck.Active())
+
 	contentBox.Append(optionsBox)
 
 	// Update sensitivity based on enabled checkbox
@@ -311,6 +424,16 @@ func (d *WireGuardSettingsDialog) save() {
 
 	d.profile.RouteDNS = d.dnsCheck.Active()
 	d.profile.SplitTunnelRoutes = d.routes
+
+	// Save per-app tunneling settings
+	if d.appsEnabledCheck != nil {
+		d.profile.SplitTunnelAppsEnabled = d.appsEnabledCheck.Active()
+		appModeIdx := d.appModeDropDown.Selected()
+		if int(appModeIdx) < len(d.appModeIDs) {
+			d.profile.SplitTunnelAppMode = d.appModeIDs[appModeIdx]
+		}
+		d.profile.SplitTunnelApps = d.apps
+	}
 
 	// Save to metadata file
 	if err := d.profile.SaveSettings(); err != nil {
@@ -500,4 +623,249 @@ func (d *WireGuardSettingsDialog) refreshRoutesList() {
 		row.SetChild(rowBox)
 		d.routesList.Append(row)
 	}
+}
+
+// findAppModeIndex returns the index for the given app mode.
+func (d *WireGuardSettingsDialog) findAppModeIndex(mode string) uint {
+	for i, m := range d.appModeIDs {
+		if m == mode {
+			return uint(i)
+		}
+	}
+	return 0
+}
+
+// refreshAppsList updates the apps list display.
+func (d *WireGuardSettingsDialog) refreshAppsList() {
+	// Clear existing
+	for d.appsList.FirstChild() != nil {
+		d.appsList.Remove(d.appsList.FirstChild())
+	}
+
+	if len(d.apps) == 0 {
+		emptyRow := gtk.NewListBoxRow()
+		emptyLabel := gtk.NewLabel("No applications configured")
+		emptyLabel.AddCSSClass("dim-label")
+		emptyLabel.SetMarginTop(12)
+		emptyLabel.SetMarginBottom(12)
+		emptyRow.SetChild(emptyLabel)
+		emptyRow.SetSelectable(false)
+		d.appsList.Append(emptyRow)
+		return
+	}
+
+	for _, app := range d.apps {
+		appCopy := app
+		row := d.createAppRowWithCallback(appCopy, func() {
+			d.removeApp(appCopy)
+		})
+		d.appsList.Append(row)
+	}
+}
+
+// createAppRowWithCallback creates a row for an application with delete callback.
+func (d *WireGuardSettingsDialog) createAppRowWithCallback(executable string, onDelete func()) *gtk.ListBoxRow {
+	row := gtk.NewListBoxRow()
+	row.SetSelectable(false)
+	row.SetActivatable(false)
+
+	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	box.SetMarginTop(8)
+	box.SetMarginBottom(8)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	// App icon
+	icon := gtk.NewImage()
+	icon.SetFromIconName("application-x-executable-symbolic")
+	icon.SetPixelSize(24)
+	box.Append(icon)
+
+	// App name (executable basename)
+	parts := strings.Split(executable, "/")
+	name := parts[len(parts)-1]
+
+	nameLabel := gtk.NewLabel(name)
+	nameLabel.SetXAlign(0)
+	nameLabel.SetHExpand(true)
+	box.Append(nameLabel)
+
+	// Delete button
+	deleteBtn := gtk.NewButton()
+	deleteBtn.SetIconName("edit-delete-symbolic")
+	deleteBtn.AddCSSClass("flat")
+	deleteBtn.AddCSSClass("circular")
+	deleteBtn.SetTooltipText("Remove application")
+	deleteBtn.ConnectClicked(func() {
+		if onDelete != nil {
+			onDelete()
+		}
+	})
+	box.Append(deleteBtn)
+
+	row.SetChild(box)
+	return row
+}
+
+// addApp adds an application to the list.
+func (d *WireGuardSettingsDialog) addApp(executable string) {
+	// Check for duplicates
+	for _, app := range d.apps {
+		if app == executable {
+			return
+		}
+	}
+
+	d.apps = append(d.apps, executable)
+	d.refreshAppsList()
+}
+
+// removeApp removes an application from the list.
+func (d *WireGuardSettingsDialog) removeApp(executable string) {
+	newApps := make([]string, 0, len(d.apps))
+	for _, app := range d.apps {
+		if app != executable {
+			newApps = append(newApps, app)
+		}
+	}
+	d.apps = newApps
+	d.refreshAppsList()
+}
+
+// showAppSelector shows a dialog to select an application.
+func (d *WireGuardSettingsDialog) showAppSelector() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Select Application")
+	dialog.SetTransientFor(d.window)
+	dialog.SetModal(true)
+	dialog.SetDefaultSize(400, 500)
+
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	mainBox.SetMarginTop(12)
+	mainBox.SetMarginBottom(12)
+	mainBox.SetMarginStart(12)
+	mainBox.SetMarginEnd(12)
+
+	// Search entry
+	searchEntry := gtk.NewSearchEntry()
+	searchEntry.SetPlaceholderText("Search applications...")
+	mainBox.Append(searchEntry)
+
+	// Scrolled list
+	scrolled := gtk.NewScrolledWindow()
+	scrolled.SetVExpand(true)
+	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+
+	appList := gtk.NewListBox()
+	appList.AddCSSClass("boxed-list")
+	appList.SetSelectionMode(gtk.SelectionSingle)
+
+	// Load installed apps
+	apps, err := vpn.ListInstalledApps()
+	if err != nil {
+		apps = []vpn.AppConfig{}
+	}
+
+	// Create rows for each app
+	for _, app := range apps {
+		appCopy := app
+		row := gtk.NewListBoxRow()
+
+		rowBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
+		rowBox.SetMarginTop(8)
+		rowBox.SetMarginBottom(8)
+		rowBox.SetMarginStart(12)
+		rowBox.SetMarginEnd(12)
+
+		// App icon
+		icon := gtk.NewImage()
+		if app.Icon != "" {
+			icon.SetFromIconName(app.Icon)
+		} else {
+			icon.SetFromIconName("application-x-executable-symbolic")
+		}
+		icon.SetPixelSize(32)
+		rowBox.Append(icon)
+
+		// App info
+		infoBox := gtk.NewBox(gtk.OrientationVertical, 2)
+		infoBox.SetHExpand(true)
+
+		nameLabel := gtk.NewLabel(app.Name)
+		nameLabel.SetXAlign(0)
+		nameLabel.AddCSSClass("heading")
+		infoBox.Append(nameLabel)
+
+		execLabel := gtk.NewLabel(app.Executable)
+		execLabel.SetXAlign(0)
+		execLabel.AddCSSClass("dim-label")
+		execLabel.AddCSSClass("caption")
+		infoBox.Append(execLabel)
+
+		rowBox.Append(infoBox)
+		row.SetChild(rowBox)
+
+		// Store app info in row name for filtering and executable retrieval
+		row.SetName(strings.ToLower(app.Name+" "+app.Executable) + "|" + app.Executable)
+
+		row.ConnectActivate(func() {
+			d.addApp(appCopy.Executable)
+			dialog.Close()
+		})
+
+		appList.Append(row)
+	}
+
+	// Filter function using SetFilterFunc
+	var currentQuery string
+	appList.SetFilterFunc(func(row *gtk.ListBoxRow) bool {
+		if currentQuery == "" {
+			return true
+		}
+		name := row.Name()
+		// Extract search part (before |)
+		if idx := strings.Index(name, "|"); idx > 0 {
+			name = name[:idx]
+		}
+		return strings.Contains(name, currentQuery)
+	})
+
+	searchEntry.ConnectSearchChanged(func() {
+		currentQuery = strings.ToLower(searchEntry.Text())
+		appList.InvalidateFilter()
+	})
+
+	scrolled.SetChild(appList)
+	mainBox.Append(scrolled)
+
+	// Button bar
+	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	buttonBar.SetHAlign(gtk.AlignEnd)
+
+	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.AddCSSClass("flat")
+	cancelBtn.ConnectClicked(func() {
+		dialog.Close()
+	})
+	buttonBar.Append(cancelBtn)
+
+	selectBtn := gtk.NewButtonWithLabel("Select")
+	selectBtn.AddCSSClass("suggested-action")
+	selectBtn.ConnectClicked(func() {
+		if selected := appList.SelectedRow(); selected != nil {
+			// Extract executable from row name (after |)
+			name := selected.Name()
+			if idx := strings.Index(name, "|"); idx >= 0 && idx+1 < len(name) {
+				executable := name[idx+1:]
+				d.addApp(executable)
+				dialog.Close()
+			}
+		}
+	})
+	buttonBar.Append(selectBtn)
+
+	mainBox.Append(buttonBar)
+
+	dialog.SetChild(mainBox)
+	dialog.Present()
 }
