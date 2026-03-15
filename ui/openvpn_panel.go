@@ -201,8 +201,20 @@ func (pl *ProfileList) LoadProfiles() {
 	}
 
 	// Add each profile to the list
+	connectedProfile := ""
 	for _, profile := range profiles {
 		pl.addProfileRow(profile)
+		// Check if this profile is connected and update header
+		if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
+			if conn.GetStatus() == vpn.StatusConnected {
+				connectedProfile = profile.Name
+			}
+		}
+	}
+
+	// Update panel header if there's a connected profile
+	if connectedProfile != "" && pl.mainWindow.openvpnPanel != nil {
+		pl.mainWindow.openvpnPanel.UpdateStatus(true, connectedProfile)
 	}
 }
 
@@ -482,6 +494,10 @@ func (pl *ProfileList) onConnectClicked(profile *vpn.Profile) {
 			} else {
 				pl.updateRowStatus(profile.ID, vpn.StatusDisconnected)
 				pl.mainWindow.SetStatus(fmt.Sprintf("Disconnected from %s", profile.Name))
+				// Update panel header status
+				if pl.mainWindow.openvpnPanel != nil {
+					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
+				}
 				// Disconnect notification
 				NotifyDisconnected(profile.Name)
 			}
@@ -807,9 +823,18 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
+	wasConnected := false
+
 	for range ticker.C {
 		conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profileID)
 		if !exists {
+			// Connection removed - update UI to disconnected
+			glib.IdleAdd(func() {
+				pl.updateRowStatus(profileID, vpn.StatusDisconnected)
+				if pl.mainWindow.openvpnPanel != nil {
+					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
+				}
+			})
 			break
 		}
 
@@ -825,14 +850,33 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 		})
 
 		if status == vpn.StatusConnected {
-			profile := conn.Profile
-			// Capture profile name for the closure
-			profileName := profile.Name
+			if !wasConnected {
+				wasConnected = true
+				profile := conn.Profile
+				// Capture profile name for the closure
+				profileName := profile.Name
+				glib.IdleAdd(func() {
+					pl.mainWindow.SetStatus(fmt.Sprintf("Connected to %s", profileName))
+					// Update panel header status
+					if pl.mainWindow.openvpnPanel != nil {
+						pl.mainWindow.openvpnPanel.UpdateStatus(true, profileName)
+					}
+				})
+			}
+			// Keep monitoring - don't break, wait for disconnect
+		} else if status == vpn.StatusError {
 			glib.IdleAdd(func() {
-				pl.mainWindow.SetStatus(fmt.Sprintf("Connected to %s", profileName))
+				if pl.mainWindow.openvpnPanel != nil {
+					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
+				}
 			})
 			break
-		} else if status == vpn.StatusError || status == vpn.StatusDisconnected {
+		} else if status == vpn.StatusDisconnected {
+			glib.IdleAdd(func() {
+				if pl.mainWindow.openvpnPanel != nil {
+					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
+				}
+			})
 			break
 		}
 	}

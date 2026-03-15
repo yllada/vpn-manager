@@ -245,6 +245,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.openvpnPanel != nil {
 						t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusDisconnected)
+						t.app.window.openvpnPanel.UpdateStatus(false, "")
 					}
 				})
 			}
@@ -335,16 +336,25 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 		switch status {
 		case vpn.StatusConnected:
 			profile := conn.Profile
-			t.SetConnected(profile.Name)
+			profileName := profile.Name
+			t.SetConnected(profileName)
 			glib.IdleAdd(func() {
 				if t.app.window != nil {
-					t.app.window.SetStatus(fmt.Sprintf("Connected to %s", profile.Name))
+					t.app.window.SetStatus(fmt.Sprintf("Connected to %s", profileName))
+					if t.app.window.openvpnPanel != nil {
+						t.app.window.openvpnPanel.UpdateStatus(true, profileName)
+					}
 				}
 			})
-			NotifyConnected(profile.Name)
+			NotifyConnected(profileName)
 			return
 		case vpn.StatusError, vpn.StatusDisconnected:
 			t.SetDisconnected()
+			glib.IdleAdd(func() {
+				if t.app.window != nil && t.app.window.openvpnPanel != nil {
+					t.app.window.openvpnPanel.UpdateStatus(false, "")
+				}
+			})
 			return
 		}
 	}
