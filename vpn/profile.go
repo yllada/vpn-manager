@@ -91,6 +91,13 @@ type Profile struct {
 	SplitTunnelAppMode string `json:"split_tunnel_app_mode,omitempty" yaml:"split_tunnel_app_mode,omitempty"`
 	// SplitTunnelApps contains the list of application executables
 	SplitTunnelApps []string `json:"split_tunnel_apps,omitempty" yaml:"split_tunnel_apps,omitempty"`
+
+	// NetworkManager Integration
+	// UseNetworkManager uses NetworkManager to connect instead of direct OpenVPN.
+	// This shows the VPN icon in the system panel.
+	UseNetworkManager bool `json:"use_network_manager" yaml:"use_network_manager"`
+	// NMConnectionName is the NetworkManager connection name (set after import).
+	NMConnectionName string `json:"nm_connection_name,omitempty" yaml:"nm_connection_name,omitempty"`
 }
 
 // ProfileManager manages VPN profiles.

@@ -78,6 +78,7 @@ type Manager struct {
 	killSwitch       *KillSwitch
 	appTunnel        *AppTunnel
 	providerRegistry *app.ProviderRegistry
+	nmBackend        *NMBackend // NetworkManager backend for system VPN icon
 	mu               sync.RWMutex
 }
 
@@ -95,6 +96,7 @@ func NewManager() (*Manager, error) {
 		providerRegistry: app.NewProviderRegistry(),
 		killSwitch:       NewKillSwitch(),
 		appTunnel:        NewAppTunnel(),
+		nmBackend:        NewNMBackend(),
 	}
 
 	// Initialize health checker with default config
@@ -147,6 +149,11 @@ func (m *Manager) AvailableProviders() []app.VPNProvider {
 	return m.providerRegistry.Available()
 }
 
+// NetworkManagerAvailable returns true if NetworkManager backend is available.
+func (m *Manager) NetworkManagerAvailable() bool {
+	return m.nmBackend != nil && m.nmBackend.IsAvailable()
+}
+
 // Connect initiates a VPN connection for the specified profile.
 // Returns an error if a connection is already active for this profile.
 func (m *Manager) Connect(profileID string, username string, password string) error {
@@ -186,8 +193,13 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 
 	m.connections[profileID] = conn
 
-	// Start connection in goroutine
-	go m.runConnection(conn, username, password)
+	// Use NetworkManager if enabled and available
+	if profile.UseNetworkManager && m.nmBackend.IsAvailable() {
+		go m.runNMConnection(conn, username, password)
+	} else {
+		// Start connection in goroutine (direct OpenVPN)
+		go m.runConnection(conn, username, password)
+	}
 
 	return nil
 }
@@ -206,8 +218,12 @@ func (m *Manager) Disconnect(profileID string) error {
 	conn.mu.Lock()
 	conn.Status = StatusDisconnecting
 	configPath := ""
+	useNM := false
+	nmConnName := ""
 	if conn.Profile != nil {
 		configPath = conn.Profile.ConfigPath
+		useNM = conn.Profile.UseNetworkManager
+		nmConnName = conn.Profile.NMConnectionName
 	}
 	conn.mu.Unlock()
 
@@ -219,35 +235,42 @@ func (m *Manager) Disconnect(profileID string) error {
 		close(conn.stopChan)
 	}
 
-	// Terminate the OpenVPN process - it runs as root via pkexec, so we need pkexec to kill it
-	useOpenVPN3 := checkCommandExists("openvpn3")
-
-	if useOpenVPN3 {
-		// OpenVPN3: use session-manage to disconnect
-		if configPath != "" {
-			cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
-			if err := cmd.Run(); err != nil {
-				log.Printf("VPN: Warning: openvpn3 disconnect failed: %v", err)
-			}
+	// Use NetworkManager to disconnect if that was used for connection
+	if useNM && m.nmBackend.IsAvailable() && nmConnName != "" {
+		if err := m.nmBackend.Disconnect(nmConnName); err != nil {
+			log.Printf("VPN: NM disconnect failed: %v, trying fallback", err)
 		}
 	} else {
-		// Classic OpenVPN: the process runs as root via pkexec
-		// First try to kill the specific process by config file pattern
-		if configPath != "" {
-			pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
-			cmd := exec.Command("pkexec", "pkill", "-f", pattern)
-			if err := cmd.Run(); err != nil {
-				log.Printf("VPN: pkill by pattern failed: %v", err)
+		// Terminate the OpenVPN process - it runs as root via pkexec, so we need pkexec to kill it
+		useOpenVPN3 := checkCommandExists("openvpn3")
+
+		if useOpenVPN3 {
+			// OpenVPN3: use session-manage to disconnect
+			if configPath != "" {
+				cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
+				if err := cmd.Run(); err != nil {
+					log.Printf("VPN: Warning: openvpn3 disconnect failed: %v", err)
+				}
 			}
-		}
+		} else {
+			// Classic OpenVPN: the process runs as root via pkexec
+			// First try to kill the specific process by config file pattern
+			if configPath != "" {
+				pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
+				cmd := exec.Command("pkexec", "pkill", "-f", pattern)
+				if err := cmd.Run(); err != nil {
+					log.Printf("VPN: pkill by pattern failed: %v", err)
+				}
+			}
 
-		// Also kill the parent pkexec process
-		if conn.cmd != nil && conn.cmd.Process != nil {
-			_ = conn.cmd.Process.Kill()
-		}
+			// Also kill the parent pkexec process
+			if conn.cmd != nil && conn.cmd.Process != nil {
+				_ = conn.cmd.Process.Kill()
+			}
 
-		// Fallback: kill any remaining openvpn processes
-		exec.Command("pkexec", "killall", "-q", "openvpn").Run()
+			// Fallback: kill any remaining openvpn processes
+			exec.Command("pkexec", "killall", "-q", "openvpn").Run()
+		}
 	}
 
 	// Wait a moment for cleanup
@@ -298,6 +321,73 @@ func (m *Manager) ListConnections() []*Connection {
 	}
 
 	return connections
+}
+
+// runNMConnection executes VPN connection via NetworkManager.
+// This shows the VPN icon in the system panel.
+func (m *Manager) runNMConnection(conn *Connection, username, password string) {
+	log.Printf("VPN: Starting NetworkManager connection to %s", conn.Profile.Name)
+
+	// First, ensure the profile is imported to NetworkManager
+	connName := conn.Profile.NMConnectionName
+	if connName == "" {
+		// Import the profile
+		var err error
+		connName, err = m.nmBackend.ImportProfile(conn.Profile.ConfigPath, conn.Profile.Name)
+		if err != nil {
+			log.Printf("VPN ERROR: Failed to import profile to NetworkManager: %v", err)
+			m.handleConnectionError(conn, fmt.Errorf("failed to import to NetworkManager: %w", err))
+			return
+		}
+
+		// Save the connection name to the profile
+		conn.Profile.NMConnectionName = connName
+		m.profileManager.Save()
+		log.Printf("VPN: Imported to NetworkManager as '%s'", connName)
+	}
+
+	// Connect using NetworkManager
+	var err error
+	if conn.Profile.RequiresOTP {
+		// For OTP, password includes OTP appended
+		err = m.nmBackend.ConnectWithSecrets(connName, username, password, "")
+	} else {
+		err = m.nmBackend.Connect(connName, username, password)
+	}
+
+	if err != nil {
+		log.Printf("VPN ERROR: NetworkManager connection failed: %v", err)
+		m.handleConnectionError(conn, err)
+		return
+	}
+
+	// Monitor connection status
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.After(60 * time.Second)
+
+	for {
+		select {
+		case <-conn.stopChan:
+			// Disconnection requested
+			return
+		case <-timeout:
+			log.Printf("VPN ERROR: Connection timeout")
+			m.handleConnectionError(conn, fmt.Errorf("connection timeout"))
+			return
+		case <-ticker.C:
+			connected, name, ip := m.nmBackend.GetStatus()
+			if connected && (name == connName || strings.Contains(name, conn.Profile.Name)) {
+				conn.mu.Lock()
+				conn.Status = StatusConnected
+				conn.IPAddress = ip
+				conn.mu.Unlock()
+				log.Printf("VPN: Connected via NetworkManager - IP: %s", ip)
+				return
+			}
+		}
+	}
 }
 
 // runConnection executes the VPN connection

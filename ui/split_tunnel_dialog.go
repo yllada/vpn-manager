@@ -31,6 +31,9 @@ type SplitTunnelDialog struct {
 	appModeIDs       []string
 	appsList         *gtk.ListBox
 	apps             []string
+
+	// System integration
+	useNMCheck *gtk.CheckButton
 }
 
 // NewSplitTunnelDialog creates a new split tunneling configuration dialog.
@@ -417,6 +420,40 @@ func (std *SplitTunnelDialog) build() {
 		optionsBox.SetSensitive(std.enabledCheck.Active())
 	})
 	optionsBox.SetSensitive(std.enabledCheck.Active())
+
+	// ═══════════════════════════════════════════════════════════════════
+	// SYSTEM INTEGRATION SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	nmAvailable := std.mainWindow.app.vpnManager.NetworkManagerAvailable()
+	if nmAvailable {
+		sysSection := std.createSection("System Integration", "preferences-system-symbolic")
+		sysCard := std.createCard()
+
+		// NetworkManager row
+		std.useNMCheck = gtk.NewCheckButton()
+		std.useNMCheck.SetActive(std.profile.UseNetworkManager)
+
+		nmRow := std.createSettingRowWithCheckbox(
+			"Use NetworkManager",
+			"Shows VPN icon in system panel when connected",
+			std.useNMCheck,
+		)
+		sysCard.Append(nmRow)
+
+		// Info label
+		infoLabel := gtk.NewLabel("When enabled, the connection is managed by NetworkManager\nand the system will show the VPN indicator icon.")
+		infoLabel.SetXAlign(0)
+		infoLabel.AddCSSClass("dim-label")
+		infoLabel.AddCSSClass("caption")
+		infoLabel.SetMarginTop(8)
+		infoLabel.SetMarginStart(16)
+		infoLabel.SetMarginEnd(16)
+		infoLabel.SetMarginBottom(12)
+		sysCard.Append(infoLabel)
+
+		sysSection.Append(sysCard)
+		contentBox.Append(sysSection)
+	}
 
 	scrolled.SetChild(contentBox)
 	rootBox.Append(scrolled)
@@ -931,6 +968,11 @@ func (std *SplitTunnelDialog) saveSettings() {
 		}
 
 		std.profile.SplitTunnelApps = std.apps
+	}
+
+	// Save NetworkManager setting
+	if std.useNMCheck != nil {
+		std.profile.UseNetworkManager = std.useNMCheck.Active()
 	}
 
 	// Save profile
