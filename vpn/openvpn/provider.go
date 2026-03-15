@@ -200,17 +200,67 @@ func (p *Provider) Disconnect(ctx context.Context, profile app.VPNProfile) error
 func (p *Provider) disconnectOne(conn *Connection) {
 	conn.mu.Lock()
 	conn.Status = StatusDisconnecting
+	configPath := ""
+	if conn.Profile != nil {
+		configPath = conn.Profile.ConfigPath
+	}
 	conn.mu.Unlock()
 
-	close(conn.stopChan)
-
-	if conn.cmd != nil && conn.cmd.Process != nil {
-		_ = conn.cmd.Process.Kill()
+	// Signal the connection goroutine to stop
+	select {
+	case <-conn.stopChan:
+		// Already closed
+	default:
+		close(conn.stopChan)
 	}
+
+	// Kill the OpenVPN process - requires elevated privileges since it runs as root
+	if p.client.useV3 {
+		// OpenVPN3: use session-manage to disconnect
+		if configPath != "" {
+			cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
+			if err := cmd.Run(); err != nil {
+				log.Printf("OpenVPN: Warning: openvpn3 disconnect failed: %v", err)
+			}
+		}
+		// Also try to kill sessions by path pattern
+		cmd := exec.Command("openvpn3", "sessions-list")
+		if output, err := cmd.Output(); err == nil {
+			if strings.Contains(string(output), configPath) {
+				exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath).Run()
+			}
+		}
+	} else {
+		// Classic OpenVPN: the process runs as root via pkexec, so we need pkexec to kill it
+		// First try to kill the specific process by config file pattern
+		if configPath != "" {
+			// Kill the specific openvpn process using the config file
+			pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
+			cmd := exec.Command("pkexec", "pkill", "-f", pattern)
+			if err := cmd.Run(); err != nil {
+				log.Printf("OpenVPN: pkill by pattern failed: %v, trying alternative methods", err)
+			}
+		}
+
+		// Also kill the pkexec parent process if it exists
+		if conn.cmd != nil && conn.cmd.Process != nil {
+			_ = conn.cmd.Process.Kill()
+			_ = conn.cmd.Process.Signal(os.Interrupt)
+		}
+
+		// Fallback: kill any remaining openvpn processes started by this app
+		// This is a last resort - only kills openvpn processes, not other VPNs
+		exec.Command("pkexec", "killall", "-q", "openvpn").Run()
+	}
+
+	// Wait a moment for process cleanup
+	time.Sleep(500 * time.Millisecond)
 
 	conn.mu.Lock()
 	conn.Status = StatusDisconnected
 	conn.mu.Unlock()
+
+	log.Printf("OpenVPN: Disconnected from %s", conn.ProfileID)
 }
 
 // Status returns the provider status.

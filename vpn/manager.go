@@ -205,17 +205,53 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	conn.mu.Lock()
 	conn.Status = StatusDisconnecting
+	configPath := ""
+	if conn.Profile != nil {
+		configPath = conn.Profile.ConfigPath
+	}
 	conn.mu.Unlock()
 
 	// Signal the connection to stop
-	close(conn.stopChan)
-
-	// Terminate the OpenVPN process if running
-	if conn.cmd != nil && conn.cmd.Process != nil {
-		if err := conn.cmd.Process.Kill(); err != nil {
-			log.Printf("VPN: Warning: Failed to kill process: %v", err)
-		}
+	select {
+	case <-conn.stopChan:
+		// Already closed
+	default:
+		close(conn.stopChan)
 	}
+
+	// Terminate the OpenVPN process - it runs as root via pkexec, so we need pkexec to kill it
+	useOpenVPN3 := checkCommandExists("openvpn3")
+
+	if useOpenVPN3 {
+		// OpenVPN3: use session-manage to disconnect
+		if configPath != "" {
+			cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
+			if err := cmd.Run(); err != nil {
+				log.Printf("VPN: Warning: openvpn3 disconnect failed: %v", err)
+			}
+		}
+	} else {
+		// Classic OpenVPN: the process runs as root via pkexec
+		// First try to kill the specific process by config file pattern
+		if configPath != "" {
+			pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
+			cmd := exec.Command("pkexec", "pkill", "-f", pattern)
+			if err := cmd.Run(); err != nil {
+				log.Printf("VPN: pkill by pattern failed: %v", err)
+			}
+		}
+
+		// Also kill the parent pkexec process
+		if conn.cmd != nil && conn.cmd.Process != nil {
+			_ = conn.cmd.Process.Kill()
+		}
+
+		// Fallback: kill any remaining openvpn processes
+		exec.Command("pkexec", "killall", "-q", "openvpn").Run()
+	}
+
+	// Wait a moment for cleanup
+	time.Sleep(500 * time.Millisecond)
 
 	// Disable kill switch if no other connections remain
 	if len(m.connections) <= 1 {
@@ -238,6 +274,7 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	delete(m.connections, profileID)
 
+	log.Printf("VPN: Disconnected from %s", profileID)
 	return nil
 }
 
