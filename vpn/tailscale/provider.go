@@ -35,6 +35,42 @@ func NewProvider() (*Provider, error) {
 	}, nil
 }
 
+// EnsureOperator ensures the current user is configured as Tailscale operator.
+// This allows running tailscale commands without admin password prompts.
+// The function is idempotent - it only prompts for password if not already configured.
+func (p *Provider) EnsureOperator() error {
+	if p.client == nil {
+		return fmt.Errorf("tailscale client not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	configured, err := p.client.EnsureOperator(ctx)
+	if err != nil {
+		return err
+	}
+
+	if configured {
+		// Log that we configured it
+		fmt.Println("[Tailscale] Configured current user as operator - future commands won't require password")
+	}
+
+	return nil
+}
+
+// IsOperator checks if the current user can run Tailscale commands without password.
+func (p *Provider) IsOperator() bool {
+	if p.client == nil {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return p.client.IsOperator(ctx)
+}
+
 // Type returns the provider type identifier.
 func (p *Provider) Type() app.VPNProviderType {
 	return app.ProviderTailscale
@@ -821,16 +857,16 @@ func (c *Client) ExitNodes(ctx context.Context) ([]ExitNode, error) {
 
 // ExitNodeListEntry represents an exit node from `tailscale exit-node list --json`.
 type ExitNodeListEntry struct {
-	ID            string   `json:"ID"`
-	Name          string   `json:"Name"`
-	Location      *string  `json:"Location,omitempty"`
-	Country       string   `json:"Country,omitempty"`
-	CountryCode   string   `json:"CountryCode,omitempty"`
-	City          string   `json:"City,omitempty"`
-	Online        bool     `json:"Online"`
-	Mullvad       bool     `json:"Mullvad,omitempty"`
-	TailscaleIPs  []string `json:"TailscaleIPs,omitempty"`
-	Selected      bool     `json:"Selected,omitempty"`
+	ID           string   `json:"ID"`
+	Name         string   `json:"Name"`
+	Location     *string  `json:"Location,omitempty"`
+	Country      string   `json:"Country,omitempty"`
+	CountryCode  string   `json:"CountryCode,omitempty"`
+	City         string   `json:"City,omitempty"`
+	Online       bool     `json:"Online"`
+	Mullvad      bool     `json:"Mullvad,omitempty"`
+	TailscaleIPs []string `json:"TailscaleIPs,omitempty"`
+	Selected     bool     `json:"Selected,omitempty"`
 }
 
 // ExitNodeList returns available exit nodes using the modern CLI command.
@@ -956,7 +992,7 @@ func (c *Client) setExitNodeWithPkexec(ctx context.Context, nodeID string) error
 // See: https://tailscale.com/kb/1080/cli#set
 func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allowLANAccess bool) error {
 	args := []string{"set", "--exit-node=" + nodeID}
-	
+
 	if allowLANAccess {
 		args = append(args, "--exit-node-allow-lan-access=true")
 	} else {
@@ -984,7 +1020,7 @@ func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allo
 // setExitNodeWithOptionsPkexec attempts to set exit node with options using pkexec.
 func (c *Client) setExitNodeWithOptionsPkexec(ctx context.Context, nodeID string, allowLANAccess bool) error {
 	args := []string{c.binaryPath, "set", "--exit-node=" + nodeID}
-	
+
 	if allowLANAccess {
 		args = append(args, "--exit-node-allow-lan-access=true")
 	} else {
@@ -1431,4 +1467,120 @@ func (c *Client) WhoIs(ctx context.Context, target string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPERATOR MANAGEMENT (Passwordless Operation)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// IsOperator checks if the current user is configured as the Tailscale operator.
+// When configured as operator, the user can run tailscale commands without sudo.
+func (c *Client) IsOperator(ctx context.Context) bool {
+	// Try a simple command that would fail without operator status
+	cmd := exec.CommandContext(ctx, c.binaryPath, "status")
+	err := cmd.Run()
+	if err != nil {
+		// If basic status fails, check if it's access denied
+		return false
+	}
+
+	// Try a command that requires write access
+	// We use "debug prefs" to check without making changes
+	cmd = exec.CommandContext(ctx, c.binaryPath, "debug", "prefs")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.ToLower(string(output))
+		// If we get access denied, we're not an operator
+		return !strings.Contains(outputStr, "access denied") &&
+			!strings.Contains(outputStr, "permission denied")
+	}
+
+	return true
+}
+
+// GetCurrentOperator returns the currently configured operator username, if any.
+func (c *Client) GetCurrentOperator(ctx context.Context) string {
+	// Get prefs to check operator
+	cmd := exec.CommandContext(ctx, c.binaryPath, "debug", "prefs")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+
+	// Parse output for OperatorUser field
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "OperatorUser") {
+			// Format: OperatorUser: username
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	return ""
+}
+
+// SetOperator configures the specified user as the Tailscale operator.
+// This requires elevated privileges (will use pkexec) but only needs to be done once.
+// After this, the user can run tailscale commands without password prompts.
+func (c *Client) SetOperator(ctx context.Context, username string) error {
+	if username == "" {
+		// Get current user
+		username = os.Getenv("USER")
+		if username == "" {
+			return fmt.Errorf("cannot determine current user")
+		}
+	}
+
+	// Try without pkexec first (in case already has permission)
+	cmd := exec.CommandContext(ctx, c.binaryPath, "set", "--operator="+username)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+
+	outputStr := strings.ToLower(string(output))
+	if !strings.Contains(outputStr, "access denied") &&
+		!strings.Contains(outputStr, "permission denied") {
+		return fmt.Errorf("set operator failed: %w: %s", err, string(output))
+	}
+
+	// Need elevated privileges - use pkexec
+	cmd = exec.CommandContext(ctx, "pkexec", c.binaryPath, "set", "--operator="+username)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("set operator (pkexec) failed: %w: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// EnsureOperator ensures the current user is configured as operator.
+// This is idempotent - if already configured, it does nothing.
+// Returns true if the operator was newly configured, false if already set.
+func (c *Client) EnsureOperator(ctx context.Context) (bool, error) {
+	username := os.Getenv("USER")
+	if username == "" {
+		return false, fmt.Errorf("cannot determine current user")
+	}
+
+	// Check if already configured
+	currentOp := c.GetCurrentOperator(ctx)
+	if currentOp == username {
+		return false, nil // Already configured
+	}
+
+	// Try to run a simple command to see if we already have access
+	if c.IsOperator(ctx) {
+		return false, nil // Already have access somehow
+	}
+
+	// Configure operator
+	if err := c.SetOperator(ctx, username); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

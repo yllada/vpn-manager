@@ -121,6 +121,16 @@ func (mw *MainWindow) createTailscalePage() {
 		return
 	}
 
+	// Ensure current user is configured as Tailscale operator
+	// This allows running tailscale commands without password prompts
+	// Only prompts for password once if not already configured
+	go func() {
+		if err := provider.EnsureOperator(); err != nil {
+			// Log but don't fail - user can still use pkexec fallback
+			fmt.Printf("[Tailscale] Warning: Could not configure operator: %v\n", err)
+		}
+	}()
+
 	// Register provider with manager
 	mw.app.vpnManager.RegisterProvider(provider)
 

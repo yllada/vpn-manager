@@ -127,6 +127,10 @@ func NewManager() (*Manager, error) {
 	// Register shutdown hooks
 	m.registerShutdownHooks()
 
+	// Fix password-flags for all existing VPN connections
+	// This ensures reconnection works without asking for password
+	m.FixAllVPNConnections()
+
 	return m, nil
 }
 
@@ -227,6 +231,25 @@ func (m *Manager) AvailableProviders() []app.VPNProvider {
 // NetworkManagerAvailable returns true if NetworkManager backend is available.
 func (m *Manager) NetworkManagerAvailable() bool {
 	return m.nmBackend != nil && m.nmBackend.IsAvailable()
+}
+
+// FixAllVPNConnections fixes password-flags for all existing VPN connections.
+// This ensures that reconnection works without asking for password again.
+// Should be called at startup to fix any legacy connections.
+func (m *Manager) FixAllVPNConnections() {
+	if m.nmBackend == nil || !m.nmBackend.IsAvailable() {
+		return
+	}
+
+	fixed, err := m.nmBackend.FixAllVPNConnections()
+	if err != nil {
+		log.Printf("VPN: Warning: Failed to fix VPN connections: %v", err)
+		return
+	}
+
+	if fixed > 0 {
+		log.Printf("VPN: Fixed password-flags for %d connection(s) - reconnection will now work without password", fixed)
+	}
 }
 
 // Connect initiates a VPN connection for the specified profile.
@@ -445,9 +468,13 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 		conn.Profile.NMConnectionName = connName
 		m.profileManager.Save()
 		log.Printf("VPN: Imported to NetworkManager as '%s'", connName)
+	} else {
+		// Connection exists - ensure password storage is enabled
+		// This fixes existing connections that have password-flags=1
+		m.nmBackend.FixPasswordFlags(connName)
 	}
 
-	// Connect using NetworkManager
+	// Connect using NetworkManager (this also saves credentials permanently)
 	var err error
 	if conn.Profile.RequiresOTP {
 		// For OTP, password includes OTP appended
