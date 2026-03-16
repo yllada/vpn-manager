@@ -5,6 +5,7 @@ package vpn
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -79,6 +80,14 @@ type Manager struct {
 	appTunnel        *AppTunnel
 	providerRegistry *app.ProviderRegistry
 	nmBackend        *NMBackend // NetworkManager backend for system VPN icon
+	
+	// Security features
+	dnsProtection    *DNSProtection
+	ipv6Protection   *IPv6Protection
+	
+	// Resilience
+	circuitBreaker   *app.CircuitBreaker
+	
 	mu               sync.RWMutex
 }
 
@@ -90,6 +99,16 @@ func NewManager() (*Manager, error) {
 		return nil, fmt.Errorf("failed to initialize profile manager: %w", err)
 	}
 
+	// Create circuit breaker for connection resilience
+	cbConfig := app.DefaultCircuitBreakerConfig()
+	cbConfig.OnStateChange = func(from, to app.CircuitState) {
+		app.LogInfo("VPN Circuit Breaker: %s -> %s", from, to)
+		app.Emit(app.EventStatusChanged, "CircuitBreaker", map[string]string{
+			"from": from.String(),
+			"to":   to.String(),
+		})
+	}
+
 	m := &Manager{
 		profileManager:   pm,
 		connections:      make(map[string]*Connection),
@@ -97,12 +116,68 @@ func NewManager() (*Manager, error) {
 		killSwitch:       NewKillSwitch(),
 		appTunnel:        NewAppTunnel(),
 		nmBackend:        NewNMBackend(),
+		dnsProtection:    NewDNSProtection(),
+		ipv6Protection:   NewIPv6Protection(),
+		circuitBreaker:   app.NewCircuitBreaker(cbConfig),
 	}
 
 	// Initialize health checker with default config
 	m.healthChecker = NewHealthChecker(m, DefaultHealthConfig())
+	
+	// Register shutdown hooks
+	m.registerShutdownHooks()
 
 	return m, nil
+}
+
+// registerShutdownHooks registers cleanup functions for graceful shutdown.
+func (m *Manager) registerShutdownHooks() {
+	sm := app.GetShutdownManager()
+	
+	// Disconnect all VPNs first
+	sm.Register("vpn-disconnect-all", app.PriorityFirst, func(ctx context.Context) error {
+		app.LogInfo("Shutdown: Disconnecting all VPN connections")
+		return m.DisconnectAll()
+	})
+	
+	// Restore DNS settings
+	sm.Register("dns-restore", app.PriorityLow, func(ctx context.Context) error {
+		app.LogInfo("Shutdown: Restoring DNS settings")
+		return m.dnsProtection.Disable()
+	})
+	
+	// Restore IPv6 settings
+	sm.Register("ipv6-restore", app.PriorityLow, func(ctx context.Context) error {
+		app.LogInfo("Shutdown: Restoring IPv6 settings")
+		return m.ipv6Protection.Disable()
+	})
+	
+	// Disable kill switch
+	sm.Register("killswitch-disable", app.PriorityLow, func(ctx context.Context) error {
+		app.LogInfo("Shutdown: Disabling kill switch")
+		return m.killSwitch.Disable()
+	})
+	
+	// Stop health checker
+	sm.Register("health-checker-stop", app.PriorityNormal, func(ctx context.Context) error {
+		m.StopHealthChecker()
+		return nil
+	})
+}
+
+// DNSProtection returns the DNS protection manager.
+func (m *Manager) DNSProtection() *DNSProtection {
+	return m.dnsProtection
+}
+
+// IPv6Protection returns the IPv6 protection manager.
+func (m *Manager) IPv6Protection() *IPv6Protection {
+	return m.ipv6Protection
+}
+
+// CircuitBreaker returns the circuit breaker.
+func (m *Manager) CircuitBreaker() *app.CircuitBreaker {
+	return m.circuitBreaker
 }
 
 // HealthChecker returns the health checker instance.
@@ -298,7 +373,33 @@ func (m *Manager) Disconnect(profileID string) error {
 	delete(m.connections, profileID)
 
 	log.Printf("VPN: Disconnected from %s", profileID)
+	
+	// Emit event
+	app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
+		ProfileID: profileID,
+	})
+	
 	return nil
+}
+
+// DisconnectAll disconnects all active VPN connections.
+// Used during graceful shutdown.
+func (m *Manager) DisconnectAll() error {
+	m.mu.Lock()
+	profileIDs := make([]string, 0, len(m.connections))
+	for id := range m.connections {
+		profileIDs = append(profileIDs, id)
+	}
+	m.mu.Unlock()
+
+	var errors app.ErrorList
+	for _, id := range profileIDs {
+		if err := m.Disconnect(id); err != nil {
+			errors.Add(err)
+		}
+	}
+
+	return errors.Combined()
 }
 
 // GetConnection gets information about a connection
