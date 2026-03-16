@@ -883,38 +883,62 @@ func (tp *TailscalePanel) onLogoutClicked() {
 }
 
 func (tp *TailscalePanel) onExitNodeApply() {
-	ctx := context.Background()
-
 	selected := tp.exitNodeCombo.Selected()
 	if selected == gtk.InvalidListPosition {
 		return
 	}
 
-	// Index 0 is "None (Direct)" - clear exit node
-	if selected == 0 {
-		if err := tp.provider.SetExitNode(ctx, ""); err != nil {
-			tp.mainWindow.showError("Exit Node Error", err.Error())
+	// Disable button to prevent multiple clicks
+	tp.exitNodeBtn.SetSensitive(false)
+	tp.mainWindow.SetStatus("Changing exit node...")
+
+	// Run in goroutine to avoid blocking UI (especially for pkexec dialogs)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		// Index 0 is "None (Direct)" - clear exit node
+		if selected == 0 {
+			if err := tp.provider.SetExitNode(ctx, ""); err != nil {
+				glib.IdleAdd(func() {
+					tp.exitNodeBtn.SetSensitive(true)
+					tp.mainWindow.showError("Exit Node Error", err.Error())
+				})
+				return
+			}
+			glib.IdleAdd(func() {
+				tp.exitNodeBtn.SetSensitive(true)
+				tp.mainWindow.SetStatus("Exit node disabled (direct connection)")
+				tp.updateStatus()
+			})
 			return
 		}
-		tp.mainWindow.SetStatus("Exit node disabled (direct connection)")
-		tp.updateStatus()
-		return
-	}
 
-	// Adjust index for actual exit nodes array (subtract 1 for "None" entry)
-	nodeIndex := int(selected) - 1
-	if nodeIndex >= len(tp.exitNodes) {
-		return
-	}
+		// Adjust index for actual exit nodes array (subtract 1 for "None" entry)
+		nodeIndex := int(selected) - 1
+		if nodeIndex >= len(tp.exitNodes) {
+			glib.IdleAdd(func() {
+				tp.exitNodeBtn.SetSensitive(true)
+			})
+			return
+		}
 
-	exitNode := tp.exitNodes[nodeIndex]
-	if err := tp.provider.SetExitNode(ctx, exitNode.ID); err != nil {
-		tp.mainWindow.showError("Exit Node Error", err.Error())
-		return
-	}
+		exitNode := tp.exitNodes[nodeIndex]
+		if err := tp.provider.SetExitNode(ctx, exitNode.ID); err != nil {
+			glib.IdleAdd(func() {
+				tp.exitNodeBtn.SetSensitive(true)
+				tp.mainWindow.showError("Exit Node Error", err.Error())
+			})
+			return
+		}
 
-	tp.mainWindow.SetStatus(fmt.Sprintf("Exit node set to %s", exitNode.Name))
-	tp.updateStatus()
+		exitNodeName := exitNode.Name // Capture for closure
+		glib.IdleAdd(func() {
+			tp.exitNodeBtn.SetSensitive(true)
+			tp.mainWindow.SetStatus(fmt.Sprintf("Exit node set to %s", exitNodeName))
+			tp.updateStatus()
+		})
+	}()
 }
 
 // updateStatus fetches and displays current Tailscale status.

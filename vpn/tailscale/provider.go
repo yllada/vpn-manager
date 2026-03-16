@@ -778,7 +778,29 @@ func (c *Client) SetExitNode(ctx context.Context, nodeID string) error {
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to set exit node: %w: %s", err, string(output))
+		outputStr := string(output)
+		outputLower := strings.ToLower(outputStr)
+		// Check for access denied - need elevated privileges
+		if strings.Contains(outputLower, "access denied") ||
+			strings.Contains(outputLower, "permission denied") ||
+			strings.Contains(outputLower, "operation not permitted") {
+			// Try with pkexec for elevated privileges
+			return c.setExitNodeWithPkexec(ctx, nodeID)
+		}
+		return fmt.Errorf("failed to set exit node: %w: %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// setExitNodeWithPkexec attempts to set exit node using pkexec for elevated privileges.
+func (c *Client) setExitNodeWithPkexec(ctx context.Context, nodeID string) error {
+	args := []string{c.binaryPath, "set", "--exit-node=" + nodeID}
+
+	cmd := exec.CommandContext(ctx, "pkexec", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tailscale set exit-node (pkexec) failed: %w: %s", err, string(output))
 	}
 
 	return nil
@@ -1122,7 +1144,30 @@ func (c *Client) Set(ctx context.Context, opts SetOptions) error {
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("tailscale set failed: %w: %s", err, string(output))
+		outputStr := string(output)
+		outputLower := strings.ToLower(outputStr)
+		// Check for access denied - need elevated privileges
+		if strings.Contains(outputLower, "access denied") ||
+			strings.Contains(outputLower, "permission denied") ||
+			strings.Contains(outputLower, "operation not permitted") {
+			// Try with pkexec for elevated privileges
+			return c.setWithPkexec(ctx, args[1:]) // Skip "set" as we'll add it in setWithPkexec
+		}
+		return fmt.Errorf("tailscale set failed: %w: %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// setWithPkexec attempts tailscale set using pkexec for elevated privileges.
+func (c *Client) setWithPkexec(ctx context.Context, extraArgs []string) error {
+	args := []string{c.binaryPath, "set"}
+	args = append(args, extraArgs...)
+
+	cmd := exec.CommandContext(ctx, "pkexec", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tailscale set (pkexec) failed: %w: %s", err, string(output))
 	}
 
 	return nil
