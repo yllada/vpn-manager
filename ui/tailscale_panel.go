@@ -1169,7 +1169,11 @@ func (tp *TailscalePanel) updatePeers() {
 		return
 	}
 
-	for _, peer := range tsStatus.Peer {
+	for peerID, peer := range tsStatus.Peer {
+		// Ensure peer has the ID (map key is the authoritative ID)
+		if peer.ID == "" {
+			peer.ID = peerID
+		}
 		row := tp.createPeerRow(peer)
 		tp.peersBox.Append(row)
 	}
@@ -1264,16 +1268,91 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBox
 
 	box.Append(infoBox)
 
-	// Exit node indicator
+	// Exit node controls - show different UI based on state
 	if peer.ExitNode {
-		exitLabel := gtk.NewLabel("Exit Node")
-		exitLabel.AddCSSClass("accent")
-		exitLabel.AddCSSClass("caption")
-		box.Append(exitLabel)
+		// This peer IS currently the active exit node (gateway)
+		activeLabel := gtk.NewLabel("🌐 Active Gateway")
+		activeLabel.AddCSSClass("success")
+		activeLabel.AddCSSClass("caption")
+		box.Append(activeLabel)
+
+		// Button to stop using as exit node
+		stopBtn := gtk.NewButton()
+		stopBtn.SetIconName("process-stop-symbolic")
+		stopBtn.SetTooltipText("Stop using as gateway")
+		stopBtn.AddCSSClass("flat")
+		stopBtn.AddCSSClass("destructive-action")
+		stopBtn.ConnectClicked(func() {
+			tp.setExitNodeFromPeer("", peer.HostName, false) // Clear exit node
+		})
+		box.Append(stopBtn)
+	} else if peer.ExitNodeOption && peer.Online {
+		// This peer CAN be used as exit node and is online
+		useBtn := gtk.NewButton()
+		useBtn.SetIconName("go-next-symbolic")
+		useBtn.SetTooltipText("Use as gateway (exit node)")
+		useBtn.AddCSSClass("flat")
+		useBtn.AddCSSClass("suggested-action")
+		
+		// Capture peer ID and name for closure
+		peerID := peer.ID
+		peerName := peer.HostName
+		useBtn.ConnectClicked(func() {
+			tp.setExitNodeFromPeer(peerID, peerName, true)
+		})
+		box.Append(useBtn)
+	} else if peer.ExitNodeOption && !peer.Online {
+		// Exit node available but peer is offline
+		offlineLabel := gtk.NewLabel("Gateway (offline)")
+		offlineLabel.AddCSSClass("dim-label")
+		offlineLabel.AddCSSClass("caption")
+		box.Append(offlineLabel)
 	}
 
 	row.SetChild(box)
 	return row
+}
+
+// setExitNodeFromPeer sets or clears the exit node from the peers list.
+func (tp *TailscalePanel) setExitNodeFromPeer(peerID, peerName string, enable bool) {
+	tp.mainWindow.SetStatus("Changing gateway...")
+
+	// Get current LAN access setting
+	allowLANAccess := tp.allowLANSwitch.Active()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		var err error
+		if enable {
+			err = tp.provider.SetExitNodeWithOptions(ctx, peerID, allowLANAccess)
+		} else {
+			err = tp.provider.SetExitNodeWithOptions(ctx, "", false)
+		}
+
+		if err != nil {
+			glib.IdleAdd(func() {
+				tp.mainWindow.showError("Gateway Error", err.Error())
+			})
+			return
+		}
+
+		glib.IdleAdd(func() {
+			if enable {
+				lanStatus := ""
+				if allowLANAccess {
+					lanStatus = " (LAN access enabled)"
+				}
+				tp.mainWindow.SetStatus(fmt.Sprintf("Now using %s as gateway%s", peerName, lanStatus))
+				NotifyConnected(fmt.Sprintf("Gateway: %s", peerName))
+			} else {
+				tp.mainWindow.SetStatus("Gateway disabled - direct connection")
+				NotifyDisconnected("Gateway")
+			}
+			tp.updateStatus()
+		})
+	}()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
