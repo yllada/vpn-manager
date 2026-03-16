@@ -190,7 +190,7 @@ func TestRemoveFromSlice(t *testing.T) {
 	}
 }
 
-func TestWrapError(t *testing.T) {
+func TestWrapError_WithConnectionFailed(t *testing.T) {
 	originalErr := ErrConnectionFailed
 	wrapped := WrapError(originalErr, "additional context")
 

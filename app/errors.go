@@ -344,10 +344,17 @@ func IsRecoverable(err error) bool {
 func IsRetryable(err error) bool {
 	var vpnErr *VPNError
 	if errors.As(err, &vpnErr) {
+		// Network errors are always retryable
+		if vpnErr.Category == CategoryNetwork {
+			return true
+		}
+		// Security violations are never retryable
+		if vpnErr.Category == CategorySecurity {
+			return false
+		}
 		return vpnErr.Retryable
 	}
-	// Network errors are generally retryable
-	return IsNetworkError(err)
+	return false
 }
 
 // GetErrorCode extracts the error code from an error.
