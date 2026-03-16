@@ -263,6 +263,32 @@ func (a *Application) setupHealthChecker() {
 		}
 	})
 
+	// Handle OTP-required reconnections
+	hc.SetOnOTPRequired(func(profileID string, username string, savedPassword string) {
+		glib.IdleAdd(func() {
+			profile, err := a.vpnManager.ProfileManager().Get(profileID)
+			if err != nil {
+				app.LogError("Failed to get profile for OTP reconnect: %v", err)
+				return
+			}
+
+			if a.window != nil {
+				a.window.SetStatus(fmt.Sprintf("OTP required to reconnect to %s", profile.Name))
+				
+				// Show OTP dialog for reconnection
+				if a.window.openvpnPanel != nil {
+					pl := a.window.openvpnPanel.GetProfileList()
+					pl.showOTPDialog(profile, username, savedPassword, false)
+				}
+			}
+
+			// Also notify user
+			if a.config.ShowNotifications {
+				NotifyError(profile.Name, "Connection lost - OTP required to reconnect")
+			}
+		})
+	})
+
 	// Start the health checker
 	a.vpnManager.StartHealthChecker()
 }

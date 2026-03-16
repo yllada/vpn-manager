@@ -80,6 +80,7 @@ type HealthChecker struct {
 	onHealthChange    func(profileID string, oldState, newState HealthState)
 	onReconnecting    func(profileID string, attempt int)
 	onReconnectFailed func(profileID string, err error)
+	onOTPRequired     func(profileID string, username string, savedPassword string)
 }
 
 // ConnectionHealth tracks the health of a specific connection.
@@ -122,6 +123,15 @@ func (hc *HealthChecker) SetOnReconnectFailed(callback func(profileID string, er
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 	hc.onReconnectFailed = callback
+}
+
+// SetOnOTPRequired sets a callback for when OTP is required for reconnection.
+// This is called instead of auto-reconnect for profiles that have RequiresOTP enabled,
+// allowing the UI to prompt the user for a new OTP code.
+func (hc *HealthChecker) SetOnOTPRequired(callback func(profileID string, username string, savedPassword string)) {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+	hc.onOTPRequired = callback
 }
 
 // Start begins the health checking loop.
@@ -309,6 +319,35 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 
 	profile := conn.Profile
 	password := ""
+
+	// Check if profile requires OTP - cannot auto-reconnect with expired OTP codes
+	if profile.RequiresOTP {
+		app.LogInfo("Profile %s requires OTP - requesting user input for reconnection", profile.Name)
+		
+		// Try to get saved password for OTP dialog
+		savedPassword := ""
+		if profile.SavePassword {
+			if pwd, err := keyring.Get(profile.ID); err == nil {
+				savedPassword = pwd
+			}
+		}
+		
+		// Reset reconnect attempts since user will manually reconnect
+		hc.mu.Lock()
+		health.ReconnectAttempts = 0
+		hc.mu.Unlock()
+		
+		// Notify UI that OTP is required for reconnection
+		if hc.onOTPRequired != nil {
+			hc.onOTPRequired(profile.ID, profile.Username, savedPassword)
+		} else {
+			// No OTP handler - report as failed
+			if hc.onReconnectFailed != nil {
+				hc.onReconnectFailed(profile.ID, fmt.Errorf("OTP required for reconnection - please reconnect manually"))
+			}
+		}
+		return
+	}
 
 	// Obtener credenciales del keyring si están guardadas
 	if profile.SavePassword {
