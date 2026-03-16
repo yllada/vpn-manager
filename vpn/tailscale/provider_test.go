@@ -268,3 +268,151 @@ func BenchmarkParseStatus(b *testing.B) {
 		_ = json.Unmarshal([]byte(jsonStatus), &status)
 	}
 }
+
+// TestUpOptionsWithNewFlags tests the new UpOptions flags.
+func TestUpOptionsWithNewFlags(t *testing.T) {
+	opts := UpOptions{
+		ExitNode:               "exit-server",
+		ExitNodeAllowLANAccess: true,
+		AcceptRoutes:           true,
+		AcceptDNS:              true,
+		ShieldsUp:              false,
+		StatefulFiltering:      true,
+		AdvertiseExitNode:      false,
+	}
+
+	// Verify all fields are set correctly
+	if opts.ExitNode != "exit-server" {
+		t.Errorf("expected ExitNode 'exit-server', got '%s'", opts.ExitNode)
+	}
+	if !opts.ExitNodeAllowLANAccess {
+		t.Error("expected ExitNodeAllowLANAccess to be true")
+	}
+	if !opts.StatefulFiltering {
+		t.Error("expected StatefulFiltering to be true")
+	}
+}
+
+// TestSetOptionsWithNewFlags tests the new SetOptions flags.
+func TestSetOptionsWithNewFlags(t *testing.T) {
+	allowLAN := true
+	stateful := true
+	autoUpdate := false
+
+	opts := SetOptions{
+		ExitNodeAllowLANAccess: &allowLAN,
+		StatefulFiltering:      &stateful,
+		AutoUpdate:             &autoUpdate,
+	}
+
+	// Verify all pointer fields are set correctly
+	if opts.ExitNodeAllowLANAccess == nil || !*opts.ExitNodeAllowLANAccess {
+		t.Error("expected ExitNodeAllowLANAccess to be true")
+	}
+	if opts.StatefulFiltering == nil || !*opts.StatefulFiltering {
+		t.Error("expected StatefulFiltering to be true")
+	}
+	if opts.AutoUpdate == nil || *opts.AutoUpdate {
+		t.Error("expected AutoUpdate to be false")
+	}
+}
+
+// TestParseExitNodeListEntry tests parsing of exit-node list JSON.
+func TestParseExitNodeListEntry(t *testing.T) {
+	jsonData := `[
+		{
+			"ID": "node1",
+			"Name": "exit-us-nyc",
+			"Country": "United States",
+			"CountryCode": "US",
+			"City": "New York",
+			"Online": true,
+			"Mullvad": true
+		},
+		{
+			"ID": "node2",
+			"Name": "my-server",
+			"Online": true,
+			"Selected": true
+		}
+	]`
+
+	var entries []ExitNodeListEntry
+	err := json.Unmarshal([]byte(jsonData), &entries)
+	if err != nil {
+		t.Fatalf("failed to parse exit-node list JSON: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Check first entry (Mullvad node)
+	if entries[0].Name != "exit-us-nyc" {
+		t.Errorf("expected name 'exit-us-nyc', got '%s'", entries[0].Name)
+	}
+	if entries[0].CountryCode != "US" {
+		t.Errorf("expected country code 'US', got '%s'", entries[0].CountryCode)
+	}
+	if !entries[0].Mullvad {
+		t.Error("expected Mullvad to be true for first entry")
+	}
+
+	// Check second entry (selected node)
+	if !entries[1].Selected {
+		t.Error("expected Selected to be true for second entry")
+	}
+}
+
+// TestParseSuggestedExitNode tests parsing of exit-node suggest JSON.
+func TestParseSuggestedExitNode(t *testing.T) {
+	jsonData := `{
+		"ID": "node123",
+		"Name": "optimal-exit",
+		"Location": "New York, US",
+		"Country": "United States",
+		"CountryCode": "US",
+		"City": "New York",
+		"Latency": 25.5
+	}`
+
+	var suggested SuggestedExitNode
+	err := json.Unmarshal([]byte(jsonData), &suggested)
+	if err != nil {
+		t.Fatalf("failed to parse suggested exit node JSON: %v", err)
+	}
+
+	if suggested.Name != "optimal-exit" {
+		t.Errorf("expected name 'optimal-exit', got '%s'", suggested.Name)
+	}
+	if suggested.Location != "New York, US" {
+		t.Errorf("expected location 'New York, US', got '%s'", suggested.Location)
+	}
+	if suggested.Latency != 25.5 {
+		t.Errorf("expected latency 25.5, got %f", suggested.Latency)
+	}
+}
+
+// TestGetExitNodeList tests the GetExitNodeList method if Tailscale is available.
+func TestGetExitNodeList(t *testing.T) {
+	provider, err := NewProvider()
+	if err != nil {
+		t.Skipf("Tailscale not available: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// This may fail if tailscale exit-node list is not supported (older version)
+	// We just check it doesn't panic
+	nodes, err := provider.GetExitNodeList(ctx)
+	if err != nil {
+		t.Logf("GetExitNodeList returned error (may be expected): %v", err)
+		return
+	}
+
+	t.Logf("Found %d exit nodes", len(nodes))
+	for _, node := range nodes {
+		t.Logf("  - %s (Online: %v, Mullvad: %v)", node.Name, node.Online, node.Mullvad)
+	}
+}

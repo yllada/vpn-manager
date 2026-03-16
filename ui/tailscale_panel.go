@@ -43,11 +43,13 @@ type TailscalePanel struct {
 	authKeyToggle *gtk.Switch
 
 	// Exit node selector
-	exitNodeCombo *gtk.DropDown
-	exitNodes     []tailscale.ExitNode
-	mullvadNodes  []tailscale.MullvadNode
-	exitNodeStack *gtk.Stack
-	mullvadCombo  *gtk.DropDown
+	exitNodeCombo     *gtk.DropDown
+	exitNodes         []tailscale.ExitNode
+	mullvadNodes      []tailscale.MullvadNode
+	exitNodeStack     *gtk.Stack
+	mullvadCombo      *gtk.DropDown
+	allowLANSwitch    *gtk.Switch  // Allow LAN access when using exit node
+	suggestExitBtn    *gtk.Button  // Suggest best exit node button
 
 	// Taildrop widgets
 	taildropBtn     *gtk.Button
@@ -420,12 +422,42 @@ func (tp *TailscalePanel) createFeaturesTab() *gtk.Box {
 	tp.exitNodeCombo.SetHExpand(true)
 	exitRow.Append(tp.exitNodeCombo)
 
+	tp.suggestExitBtn = gtk.NewButton()
+	tp.suggestExitBtn.SetIconName("system-search-symbolic")
+	tp.suggestExitBtn.SetTooltipText("Auto-select best exit node")
+	tp.suggestExitBtn.AddCSSClass("flat")
+	tp.suggestExitBtn.ConnectClicked(tp.onSuggestExitNode)
+	exitRow.Append(tp.suggestExitBtn)
+
 	tp.exitNodeBtn = gtk.NewButtonWithLabel("Apply")
 	tp.exitNodeBtn.AddCSSClass("flat")
 	tp.exitNodeBtn.ConnectClicked(tp.onExitNodeApply)
 	exitRow.Append(tp.exitNodeBtn)
 
 	exitInner.Append(exitRow)
+
+	// Allow LAN Access option
+	lanRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	lanRow.SetMarginTop(8)
+
+	lanLabel := gtk.NewLabel("Allow LAN access")
+	lanLabel.SetXAlign(0)
+	lanLabel.SetHExpand(true)
+	lanRow.Append(lanLabel)
+
+	tp.allowLANSwitch = gtk.NewSwitch()
+	tp.allowLANSwitch.SetTooltipText("Access local network while using exit node")
+	lanRow.Append(tp.allowLANSwitch)
+
+	exitInner.Append(lanRow)
+
+	lanHint := gtk.NewLabel("Enable to access local devices (printer, NAS) while routing through exit node")
+	lanHint.AddCSSClass("dim-label")
+	lanHint.AddCSSClass("caption")
+	lanHint.SetXAlign(0)
+	lanHint.SetWrap(true)
+	exitInner.Append(lanHint)
+
 	exitCard.Append(exitInner)
 	contentBox.Append(exitCard)
 
@@ -892,6 +924,9 @@ func (tp *TailscalePanel) onExitNodeApply() {
 	tp.exitNodeBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Changing exit node...")
 
+	// Get current LAN access setting
+	allowLANAccess := tp.allowLANSwitch.Active()
+
 	// Run in goroutine to avoid blocking UI (especially for pkexec dialogs)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -899,7 +934,7 @@ func (tp *TailscalePanel) onExitNodeApply() {
 
 		// Index 0 is "None (Direct)" - clear exit node
 		if selected == 0 {
-			if err := tp.provider.SetExitNode(ctx, ""); err != nil {
+			if err := tp.provider.SetExitNodeWithOptions(ctx, "", false); err != nil {
 				glib.IdleAdd(func() {
 					tp.exitNodeBtn.SetSensitive(true)
 					tp.mainWindow.showError("Exit Node Error", err.Error())
@@ -924,7 +959,8 @@ func (tp *TailscalePanel) onExitNodeApply() {
 		}
 
 		exitNode := tp.exitNodes[nodeIndex]
-		if err := tp.provider.SetExitNode(ctx, exitNode.ID); err != nil {
+		// Use SetExitNodeWithOptions to enable/disable LAN access
+		if err := tp.provider.SetExitNodeWithOptions(ctx, exitNode.ID, allowLANAccess); err != nil {
 			glib.IdleAdd(func() {
 				tp.exitNodeBtn.SetSensitive(true)
 				tp.mainWindow.showError("Exit Node Error", err.Error())
@@ -933,10 +969,59 @@ func (tp *TailscalePanel) onExitNodeApply() {
 		}
 
 		exitNodeName := exitNode.Name // Capture for closure
+		lanStatus := ""
+		if allowLANAccess {
+			lanStatus = " (LAN access enabled)"
+		}
 		glib.IdleAdd(func() {
 			tp.exitNodeBtn.SetSensitive(true)
-			tp.mainWindow.SetStatus(fmt.Sprintf("Exit node set to %s", exitNodeName))
+			tp.mainWindow.SetStatus(fmt.Sprintf("Exit node set to %s%s", exitNodeName, lanStatus))
 			tp.updateStatus()
+		})
+	}()
+}
+
+// onSuggestExitNode automatically selects the best exit node based on network conditions.
+func (tp *TailscalePanel) onSuggestExitNode() {
+	tp.suggestExitBtn.SetSensitive(false)
+	tp.mainWindow.SetStatus("Finding best exit node...")
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		suggested, err := tp.provider.GetSuggestedExitNode(ctx)
+		if err != nil {
+			glib.IdleAdd(func() {
+				tp.suggestExitBtn.SetSensitive(true)
+				tp.mainWindow.showError("Exit Node Suggestion", 
+					"Could not determine best exit node. Try selecting one manually.")
+			})
+			return
+		}
+
+		// Find the suggested node in our list and select it
+		glib.IdleAdd(func() {
+			tp.suggestExitBtn.SetSensitive(true)
+
+			// Find index of suggested node
+			for i, node := range tp.exitNodes {
+				if node.ID == suggested.ID || node.Name == suggested.Name {
+					// +1 because index 0 is "None (Direct)"
+					tp.exitNodeCombo.SetSelected(uint(i + 1))
+					
+					location := suggested.Location
+					if location == "" && suggested.City != "" {
+						location = suggested.City + ", " + suggested.Country
+					}
+					tp.mainWindow.SetStatus(fmt.Sprintf("Suggested: %s (%s)", suggested.Name, location))
+					return
+				}
+			}
+			
+			// If not found in current list, just show the suggestion
+			tp.mainWindow.SetStatus(fmt.Sprintf("Suggested: %s (not in current list, refresh may be needed)", 
+				suggested.Name))
 		})
 	}()
 }

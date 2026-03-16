@@ -84,15 +84,15 @@ type ShutdownManager struct {
 	timeout      time.Duration
 	cancelFunc   context.CancelFunc
 	shutdownOnce sync.Once
-	
+
 	// Active goroutine tracking
-	wg           sync.WaitGroup
-	activeOps    int64
-	
+	wg        sync.WaitGroup
+	activeOps int64
+
 	// Channels for coordination
-	shutdownCh   chan struct{}
-	completedCh  chan struct{}
-	
+	shutdownCh  chan struct{}
+	completedCh chan struct{}
+
 	// Callbacks
 	onPhaseChange func(ShutdownPhase)
 }
@@ -146,7 +146,7 @@ func (sm *ShutdownManager) RegisterHook(hook ShutdownHook) {
 	}
 
 	sm.hooks = append(sm.hooks, hook)
-	
+
 	// Sort by priority
 	for i := len(sm.hooks) - 1; i > 0; i-- {
 		if sm.hooks[i].Priority < sm.hooks[i-1].Priority {
@@ -170,7 +170,7 @@ func (sm *ShutdownManager) Register(name string, priority ShutdownPriority, hook
 func (sm *ShutdownManager) TrackOperation() func() {
 	atomic.AddInt64(&sm.activeOps, 1)
 	sm.wg.Add(1)
-	
+
 	return func() {
 		atomic.AddInt64(&sm.activeOps, -1)
 		sm.wg.Done()
@@ -224,11 +224,11 @@ func (sm *ShutdownManager) setPhase(phase ShutdownPhase) {
 // Shutdown initiates graceful shutdown.
 func (sm *ShutdownManager) Shutdown(ctx context.Context) error {
 	var err error
-	
+
 	sm.shutdownOnce.Do(func() {
 		err = sm.doShutdown(ctx)
 	})
-	
+
 	return err
 }
 
@@ -252,9 +252,9 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 
 	for _, hook := range hooks {
 		LogInfo("Shutdown: Running hook '%s' (priority %d)", hook.Name, hook.Priority)
-		
+
 		hookCtx, hookCancel := context.WithTimeout(timeoutCtx, hook.Timeout)
-		
+
 		errCh := make(chan error, 1)
 		go func(h ShutdownHook) {
 			errCh <- h.Hook(hookCtx)
@@ -271,7 +271,7 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 		case <-hookCtx.Done():
 			LogWarn("Shutdown: Hook '%s' timed out", hook.Name)
 		}
-		
+
 		hookCancel()
 
 		// Check if overall context is done
@@ -288,7 +288,7 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 	sm.setPhase(PhaseGracePeriod)
 	LogInfo("Shutdown: Waiting for %d active operations to complete", sm.ActiveOperations())
 
-	done:
+done:
 	waitCh := make(chan struct{})
 	go func() {
 		sm.wg.Wait()
@@ -313,11 +313,11 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 func (sm *ShutdownManager) ForceShutdown() {
 	LogWarn("Shutdown: Force shutdown initiated")
 	sm.setPhase(PhaseForcedShutdown)
-	
+
 	if sm.cancelFunc != nil {
 		sm.cancelFunc()
 	}
-	
+
 	close(sm.completedCh)
 }
 
@@ -336,10 +336,9 @@ func InstallSignalHandlers() context.Context {
 	go func() {
 		sig := <-sigCh
 		LogInfo("Received signal: %v", sig)
-		
+
 		// Start graceful shutdown
 		go GetShutdownManager().Shutdown(ctx)
-
 
 		// Wait for second signal for force quit
 		select {
@@ -362,12 +361,12 @@ func InstallSignalHandlers() context.Context {
 
 // Worker represents a managed goroutine that respects shutdown signals.
 type Worker struct {
-	name       string
-	work       func(context.Context)
-	ctx        context.Context
-	cancel     context.CancelFunc
-	done       chan struct{}
-	running    atomic.Bool
+	name    string
+	work    func(context.Context)
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
+	running atomic.Bool
 }
 
 // NewWorker creates a new managed worker.
@@ -391,11 +390,11 @@ func (w *Worker) Start(parentCtx context.Context) {
 	go func() {
 		defer close(w.done)
 		defer w.running.Store(false)
-		
+
 		LogDebug("Worker '%s' started", w.name)
-		
+
 		w.work(w.ctx)
-		
+
 		LogDebug("Worker '%s' stopped", w.name)
 	}()
 }
@@ -448,7 +447,7 @@ func NewWorkerPool(ctx context.Context) *WorkerPool {
 func (wp *WorkerPool) Add(worker *Worker) {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
-	
+
 	wp.workers = append(wp.workers, worker)
 	worker.Start(wp.ctx)
 }
@@ -483,7 +482,7 @@ func (wp *WorkerPool) Stop(timeout time.Duration) error {
 func (wp *WorkerPool) Running() int {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
-	
+
 	count := 0
 	for _, w := range wp.workers {
 		if w.IsRunning() {

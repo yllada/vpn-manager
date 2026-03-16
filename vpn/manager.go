@@ -80,15 +80,15 @@ type Manager struct {
 	appTunnel        *AppTunnel
 	providerRegistry *app.ProviderRegistry
 	nmBackend        *NMBackend // NetworkManager backend for system VPN icon
-	
+
 	// Security features
-	dnsProtection    *DNSProtection
-	ipv6Protection   *IPv6Protection
-	
+	dnsProtection  *DNSProtection
+	ipv6Protection *IPv6Protection
+
 	// Resilience
-	circuitBreaker   *app.CircuitBreaker
-	
-	mu               sync.RWMutex
+	circuitBreaker *app.CircuitBreaker
+
+	mu sync.RWMutex
 }
 
 // NewManager creates a new VPN connection manager.
@@ -123,7 +123,7 @@ func NewManager() (*Manager, error) {
 
 	// Initialize health checker with default config
 	m.healthChecker = NewHealthChecker(m, DefaultHealthConfig())
-	
+
 	// Register shutdown hooks
 	m.registerShutdownHooks()
 
@@ -133,31 +133,31 @@ func NewManager() (*Manager, error) {
 // registerShutdownHooks registers cleanup functions for graceful shutdown.
 func (m *Manager) registerShutdownHooks() {
 	sm := app.GetShutdownManager()
-	
+
 	// Disconnect all VPNs first
 	sm.Register("vpn-disconnect-all", app.PriorityFirst, func(ctx context.Context) error {
 		app.LogInfo("Shutdown: Disconnecting all VPN connections")
 		return m.DisconnectAll()
 	})
-	
+
 	// Restore DNS settings
 	sm.Register("dns-restore", app.PriorityLow, func(ctx context.Context) error {
 		app.LogInfo("Shutdown: Restoring DNS settings")
 		return m.dnsProtection.Disable()
 	})
-	
+
 	// Restore IPv6 settings
 	sm.Register("ipv6-restore", app.PriorityLow, func(ctx context.Context) error {
 		app.LogInfo("Shutdown: Restoring IPv6 settings")
 		return m.ipv6Protection.Disable()
 	})
-	
+
 	// Disable kill switch
 	sm.Register("killswitch-disable", app.PriorityLow, func(ctx context.Context) error {
 		app.LogInfo("Shutdown: Disabling kill switch")
 		return m.killSwitch.Disable()
 	})
-	
+
 	// Stop health checker
 	sm.Register("health-checker-stop", app.PriorityNormal, func(ctx context.Context) error {
 		m.StopHealthChecker()
@@ -373,12 +373,12 @@ func (m *Manager) Disconnect(profileID string) error {
 	delete(m.connections, profileID)
 
 	log.Printf("VPN: Disconnected from %s", profileID)
-	
+
 	// Emit event
 	app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
 		ProfileID: profileID,
 	})
-	
+
 	return nil
 }
 

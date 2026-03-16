@@ -219,6 +219,44 @@ func (p *Provider) SetExitNode(ctx context.Context, nodeID string) error {
 	return p.client.SetExitNode(ctx, nodeID)
 }
 
+// SetExitNodeWithOptions configures the exit node with additional options.
+// allowLANAccess enables access to local network while using exit node.
+func (p *Provider) SetExitNodeWithOptions(ctx context.Context, nodeID string, allowLANAccess bool) error {
+	if p.client == nil {
+		return fmt.Errorf("tailscale client not initialized")
+	}
+
+	return p.client.SetExitNodeWithOptions(ctx, nodeID, allowLANAccess)
+}
+
+// GetExitNodeList returns available exit nodes using the modern CLI command.
+// This provides more detailed information including country/city data.
+func (p *Provider) GetExitNodeList(ctx context.Context) ([]ExitNodeListEntry, error) {
+	if p.client == nil {
+		return nil, fmt.Errorf("tailscale client not initialized")
+	}
+
+	return p.client.ExitNodeList(ctx)
+}
+
+// GetExitNodeListFiltered returns exit nodes filtered by country code.
+func (p *Provider) GetExitNodeListFiltered(ctx context.Context, countryCode string) ([]ExitNodeListEntry, error) {
+	if p.client == nil {
+		return nil, fmt.Errorf("tailscale client not initialized")
+	}
+
+	return p.client.ExitNodeListFiltered(ctx, countryCode)
+}
+
+// GetSuggestedExitNode returns the recommended exit node based on network conditions.
+func (p *Provider) GetSuggestedExitNode(ctx context.Context) (*SuggestedExitNode, error) {
+	if p.client == nil {
+		return nil, fmt.Errorf("tailscale client not initialized")
+	}
+
+	return p.client.ExitNodeSuggest(ctx)
+}
+
 // Login initiates the Tailscale login flow.
 // If authKey is provided, uses non-interactive authentication.
 // Otherwise, returns a URL for browser-based authentication.
@@ -481,10 +519,11 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 // See: https://tailscale.com/kb/1080/cli#up
 type UpOptions struct {
 	// Connection
-	ExitNode     string
-	AcceptRoutes bool
-	AcceptDNS    bool
-	ShieldsUp    bool
+	ExitNode               string
+	ExitNodeAllowLANAccess bool // Allow access to local network when using exit node
+	AcceptRoutes           bool
+	AcceptDNS              bool
+	ShieldsUp              bool
 
 	// Authentication
 	AuthKey     string
@@ -497,6 +536,7 @@ type UpOptions struct {
 	// Features
 	AdvertiseExitNode bool
 	SSH               bool
+	StatefulFiltering bool // Enable stateful packet filtering for subnet routers/exit nodes
 
 	// Operator (user allowed to run commands without sudo)
 	Operator string
@@ -508,6 +548,10 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 
 	if opts.ExitNode != "" {
 		args = append(args, "--exit-node="+opts.ExitNode)
+	}
+
+	if opts.ExitNodeAllowLANAccess {
+		args = append(args, "--exit-node-allow-lan-access")
 	}
 
 	if opts.AcceptRoutes {
@@ -545,6 +589,10 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 
 	if opts.SSH {
 		args = append(args, "--ssh")
+	}
+
+	if opts.StatefulFiltering {
+		args = append(args, "--stateful-filtering")
 	}
 
 	if opts.Operator != "" {
@@ -771,6 +819,103 @@ func (c *Client) ExitNodes(ctx context.Context) ([]ExitNode, error) {
 	return exitNodes, nil
 }
 
+// ExitNodeListEntry represents an exit node from `tailscale exit-node list --json`.
+type ExitNodeListEntry struct {
+	ID            string   `json:"ID"`
+	Name          string   `json:"Name"`
+	Location      *string  `json:"Location,omitempty"`
+	Country       string   `json:"Country,omitempty"`
+	CountryCode   string   `json:"CountryCode,omitempty"`
+	City          string   `json:"City,omitempty"`
+	Online        bool     `json:"Online"`
+	Mullvad       bool     `json:"Mullvad,omitempty"`
+	TailscaleIPs  []string `json:"TailscaleIPs,omitempty"`
+	Selected      bool     `json:"Selected,omitempty"`
+}
+
+// ExitNodeList returns available exit nodes using the modern CLI command.
+// This uses `tailscale exit-node list --json` which provides more detailed info.
+// See: https://tailscale.com/kb/1080/cli#exit-node
+func (c *Client) ExitNodeList(ctx context.Context) ([]ExitNodeListEntry, error) {
+	cmd := exec.CommandContext(ctx, c.binaryPath, "exit-node", "list", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback to legacy ExitNodes if new command not supported
+		exitNodes, err := c.ExitNodes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Convert to ExitNodeListEntry format
+		var entries []ExitNodeListEntry
+		for _, node := range exitNodes {
+			entries = append(entries, ExitNodeListEntry{
+				ID:     node.ID,
+				Name:   node.Name,
+				Online: node.Online,
+			})
+		}
+		return entries, nil
+	}
+
+	var entries []ExitNodeListEntry
+	if err := json.Unmarshal(output, &entries); err != nil {
+		return nil, fmt.Errorf("failed to parse exit-node list: %w", err)
+	}
+
+	return entries, nil
+}
+
+// ExitNodeListFiltered returns exit nodes filtered by country code.
+// Uses `tailscale exit-node list --filter=<country>`.
+func (c *Client) ExitNodeListFiltered(ctx context.Context, countryCode string) ([]ExitNodeListEntry, error) {
+	args := []string{"exit-node", "list", "--json"}
+	if countryCode != "" {
+		args = append(args, "--filter="+countryCode)
+	}
+
+	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list exit nodes: %w", err)
+	}
+
+	var entries []ExitNodeListEntry
+	if err := json.Unmarshal(output, &entries); err != nil {
+		return nil, fmt.Errorf("failed to parse exit-node list: %w", err)
+	}
+
+	return entries, nil
+}
+
+// SuggestedExitNode represents the suggested exit node from `tailscale exit-node suggest`.
+type SuggestedExitNode struct {
+	ID          string  `json:"ID"`
+	Name        string  `json:"Name"`
+	Location    string  `json:"Location,omitempty"`
+	Country     string  `json:"Country,omitempty"`
+	CountryCode string  `json:"CountryCode,omitempty"`
+	City        string  `json:"City,omitempty"`
+	Latency     float64 `json:"Latency,omitempty"` // Latency in milliseconds
+}
+
+// ExitNodeSuggest returns the recommended exit node based on network conditions.
+// Uses `tailscale exit-node suggest` to get the best exit node.
+// See: https://tailscale.com/kb/1080/cli#exit-node
+func (c *Client) ExitNodeSuggest(ctx context.Context) (*SuggestedExitNode, error) {
+	cmd := exec.CommandContext(ctx, c.binaryPath, "exit-node", "suggest", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to suggest exit node: %w", err)
+	}
+
+	var suggested SuggestedExitNode
+	if err := json.Unmarshal(output, &suggested); err != nil {
+		return nil, fmt.Errorf("failed to parse exit-node suggest: %w", err)
+	}
+
+	return &suggested, nil
+}
+
 // SetExitNode sets the exit node to use.
 func (c *Client) SetExitNode(ctx context.Context, nodeID string) error {
 	args := []string{"set", "--exit-node=" + nodeID}
@@ -796,6 +941,55 @@ func (c *Client) SetExitNode(ctx context.Context, nodeID string) error {
 // setExitNodeWithPkexec attempts to set exit node using pkexec for elevated privileges.
 func (c *Client) setExitNodeWithPkexec(ctx context.Context, nodeID string) error {
 	args := []string{c.binaryPath, "set", "--exit-node=" + nodeID}
+
+	cmd := exec.CommandContext(ctx, "pkexec", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tailscale set exit-node (pkexec) failed: %w: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// SetExitNodeWithOptions sets the exit node with additional options.
+// allowLANAccess enables access to local network while using exit node.
+// See: https://tailscale.com/kb/1080/cli#set
+func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allowLANAccess bool) error {
+	args := []string{"set", "--exit-node=" + nodeID}
+	
+	if allowLANAccess {
+		args = append(args, "--exit-node-allow-lan-access=true")
+	} else {
+		args = append(args, "--exit-node-allow-lan-access=false")
+	}
+
+	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := string(output)
+		outputLower := strings.ToLower(outputStr)
+		// Check for access denied - need elevated privileges
+		if strings.Contains(outputLower, "access denied") ||
+			strings.Contains(outputLower, "permission denied") ||
+			strings.Contains(outputLower, "operation not permitted") {
+			// Try with pkexec for elevated privileges
+			return c.setExitNodeWithOptionsPkexec(ctx, nodeID, allowLANAccess)
+		}
+		return fmt.Errorf("failed to set exit node: %w: %s", err, outputStr)
+	}
+
+	return nil
+}
+
+// setExitNodeWithOptionsPkexec attempts to set exit node with options using pkexec.
+func (c *Client) setExitNodeWithOptionsPkexec(ctx context.Context, nodeID string, allowLANAccess bool) error {
+	args := []string{c.binaryPath, "set", "--exit-node=" + nodeID}
+	
+	if allowLANAccess {
+		args = append(args, "--exit-node-allow-lan-access=true")
+	} else {
+		args = append(args, "--exit-node-allow-lan-access=false")
+	}
 
 	cmd := exec.CommandContext(ctx, "pkexec", args...)
 	output, err := cmd.CombinedOutput()
@@ -1084,12 +1278,15 @@ func (c *Client) SSHCommand(target SSHTarget) *exec.Cmd {
 
 // SetSettings applies settings without reconnecting.
 type SetOptions struct {
-	ShieldsUp         *bool   // Block incoming connections
-	AcceptRoutes      *bool   // Accept subnet routes
-	AcceptDNS         *bool   // Accept DNS configuration
-	ExitNode          *string // Exit node IP or hostname
-	AdvertiseExitNode *bool   // Advertise this node as exit node
-	Hostname          *string // Override hostname
+	ShieldsUp              *bool   // Block incoming connections
+	AcceptRoutes           *bool   // Accept subnet routes
+	AcceptDNS              *bool   // Accept DNS configuration
+	ExitNode               *string // Exit node IP or hostname
+	ExitNodeAllowLANAccess *bool   // Allow access to local network when using exit node
+	AdvertiseExitNode      *bool   // Advertise this node as exit node
+	Hostname               *string // Override hostname
+	StatefulFiltering      *bool   // Enable stateful packet filtering
+	AutoUpdate             *bool   // Enable auto-updates
 }
 
 // Set applies settings to the Tailscale daemon.
@@ -1124,6 +1321,14 @@ func (c *Client) Set(ctx context.Context, opts SetOptions) error {
 		args = append(args, "--exit-node="+*opts.ExitNode)
 	}
 
+	if opts.ExitNodeAllowLANAccess != nil {
+		if *opts.ExitNodeAllowLANAccess {
+			args = append(args, "--exit-node-allow-lan-access=true")
+		} else {
+			args = append(args, "--exit-node-allow-lan-access=false")
+		}
+	}
+
 	if opts.AdvertiseExitNode != nil {
 		if *opts.AdvertiseExitNode {
 			args = append(args, "--advertise-exit-node=true")
@@ -1134,6 +1339,22 @@ func (c *Client) Set(ctx context.Context, opts SetOptions) error {
 
 	if opts.Hostname != nil {
 		args = append(args, "--hostname="+*opts.Hostname)
+	}
+
+	if opts.StatefulFiltering != nil {
+		if *opts.StatefulFiltering {
+			args = append(args, "--stateful-filtering=true")
+		} else {
+			args = append(args, "--stateful-filtering=false")
+		}
+	}
+
+	if opts.AutoUpdate != nil {
+		if *opts.AutoUpdate {
+			args = append(args, "--auto-update=true")
+		} else {
+			args = append(args, "--auto-update=false")
+		}
 	}
 
 	// Only run if we have settings to apply

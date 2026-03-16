@@ -18,59 +18,59 @@ type ErrorCode string
 // Error codes organized by category
 const (
 	// Network errors (NET-xxx)
-	ErrCodeNetworkUnreachable   ErrorCode = "NET-001"
-	ErrCodeConnectionTimeout    ErrorCode = "NET-002"
-	ErrCodeDNSResolutionFailed  ErrorCode = "NET-003"
-	ErrCodeTLSHandshakeFailed   ErrorCode = "NET-004"
-	ErrCodeConnectionReset      ErrorCode = "NET-005"
-	ErrCodePortBlocked          ErrorCode = "NET-006"
-	ErrCodeNoRoute              ErrorCode = "NET-007"
+	ErrCodeNetworkUnreachable  ErrorCode = "NET-001"
+	ErrCodeConnectionTimeout   ErrorCode = "NET-002"
+	ErrCodeDNSResolutionFailed ErrorCode = "NET-003"
+	ErrCodeTLSHandshakeFailed  ErrorCode = "NET-004"
+	ErrCodeConnectionReset     ErrorCode = "NET-005"
+	ErrCodePortBlocked         ErrorCode = "NET-006"
+	ErrCodeNoRoute             ErrorCode = "NET-007"
 
 	// Authentication errors (AUTH-xxx)
-	ErrCodeAuthFailed           ErrorCode = "AUTH-001"
-	ErrCodeCredentialsInvalid   ErrorCode = "AUTH-002"
-	ErrCodeOTPRequired          ErrorCode = "AUTH-003"
-	ErrCodeOTPInvalid           ErrorCode = "AUTH-004"
-	ErrCodeCertificateExpired   ErrorCode = "AUTH-005"
-	ErrCodeCertificateInvalid   ErrorCode = "AUTH-006"
-	ErrCodeSessionExpired       ErrorCode = "AUTH-007"
-	ErrCodeKeyringAccess        ErrorCode = "AUTH-008"
+	ErrCodeAuthFailed         ErrorCode = "AUTH-001"
+	ErrCodeCredentialsInvalid ErrorCode = "AUTH-002"
+	ErrCodeOTPRequired        ErrorCode = "AUTH-003"
+	ErrCodeOTPInvalid         ErrorCode = "AUTH-004"
+	ErrCodeCertificateExpired ErrorCode = "AUTH-005"
+	ErrCodeCertificateInvalid ErrorCode = "AUTH-006"
+	ErrCodeSessionExpired     ErrorCode = "AUTH-007"
+	ErrCodeKeyringAccess      ErrorCode = "AUTH-008"
 
 	// Configuration errors (CFG-xxx)
-	ErrCodeConfigInvalid        ErrorCode = "CFG-001"
-	ErrCodeConfigNotFound       ErrorCode = "CFG-002"
-	ErrCodeConfigParseError     ErrorCode = "CFG-003"
-	ErrCodeProfileNotFound      ErrorCode = "CFG-004"
-	ErrCodeProfileInvalid       ErrorCode = "CFG-005"
-	ErrCodeProfileDuplicate     ErrorCode = "CFG-006"
+	ErrCodeConfigInvalid    ErrorCode = "CFG-001"
+	ErrCodeConfigNotFound   ErrorCode = "CFG-002"
+	ErrCodeConfigParseError ErrorCode = "CFG-003"
+	ErrCodeProfileNotFound  ErrorCode = "CFG-004"
+	ErrCodeProfileInvalid   ErrorCode = "CFG-005"
+	ErrCodeProfileDuplicate ErrorCode = "CFG-006"
 
 	// Security errors (SEC-xxx)
-	ErrCodePermissionDenied     ErrorCode = "SEC-001"
-	ErrCodeRootRequired         ErrorCode = "SEC-002"
-	ErrCodeSecurityViolation    ErrorCode = "SEC-003"
-	ErrCodeDNSLeakDetected      ErrorCode = "SEC-004"
-	ErrCodeIPv6LeakDetected     ErrorCode = "SEC-005"
-	ErrCodeWebRTCLeakDetected   ErrorCode = "SEC-006"
-	ErrCodeKillSwitchFailed     ErrorCode = "SEC-007"
+	ErrCodePermissionDenied   ErrorCode = "SEC-001"
+	ErrCodeRootRequired       ErrorCode = "SEC-002"
+	ErrCodeSecurityViolation  ErrorCode = "SEC-003"
+	ErrCodeDNSLeakDetected    ErrorCode = "SEC-004"
+	ErrCodeIPv6LeakDetected   ErrorCode = "SEC-005"
+	ErrCodeWebRTCLeakDetected ErrorCode = "SEC-006"
+	ErrCodeKillSwitchFailed   ErrorCode = "SEC-007"
 
 	// VPN operation errors (VPN-xxx)
-	ErrCodeAlreadyConnected     ErrorCode = "VPN-001"
-	ErrCodeNotConnected         ErrorCode = "VPN-002"
-	ErrCodeConnectionFailed     ErrorCode = "VPN-003"
-	ErrCodeDisconnectFailed     ErrorCode = "VPN-004"
-	ErrCodeProviderUnavailable  ErrorCode = "VPN-005"
-	ErrCodeTunnelSetupFailed    ErrorCode = "VPN-006"
-	ErrCodeRouteConfigFailed    ErrorCode = "VPN-007"
-	ErrCodeExitNodeFailed       ErrorCode = "VPN-008"
+	ErrCodeAlreadyConnected    ErrorCode = "VPN-001"
+	ErrCodeNotConnected        ErrorCode = "VPN-002"
+	ErrCodeConnectionFailed    ErrorCode = "VPN-003"
+	ErrCodeDisconnectFailed    ErrorCode = "VPN-004"
+	ErrCodeProviderUnavailable ErrorCode = "VPN-005"
+	ErrCodeTunnelSetupFailed   ErrorCode = "VPN-006"
+	ErrCodeRouteConfigFailed   ErrorCode = "VPN-007"
+	ErrCodeExitNodeFailed      ErrorCode = "VPN-008"
 
 	// System errors (SYS-xxx)
-	ErrCodeProcessFailed        ErrorCode = "SYS-001"
-	ErrCodeFilesystemError      ErrorCode = "SYS-002"
-	ErrCodeResourceExhausted    ErrorCode = "SYS-003"
-	ErrCodeDependencyMissing    ErrorCode = "SYS-004"
-	ErrCodeInternalError        ErrorCode = "SYS-005"
-	ErrCodeCircuitOpen          ErrorCode = "SYS-006"
-	ErrCodeRateLimited          ErrorCode = "SYS-007"
+	ErrCodeProcessFailed     ErrorCode = "SYS-001"
+	ErrCodeFilesystemError   ErrorCode = "SYS-002"
+	ErrCodeResourceExhausted ErrorCode = "SYS-003"
+	ErrCodeDependencyMissing ErrorCode = "SYS-004"
+	ErrCodeInternalError     ErrorCode = "SYS-005"
+	ErrCodeCircuitOpen       ErrorCode = "SYS-006"
+	ErrCodeRateLimited       ErrorCode = "SYS-007"
 )
 
 // ErrorCategory groups related error types.
@@ -420,4 +420,3 @@ func (el *ErrorList) Combined() error {
 	}
 	return el
 }
-

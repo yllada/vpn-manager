@@ -8,7 +8,6 @@
 package vpn
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"net"

@@ -44,19 +44,19 @@ const (
 	EventProviderUnavailable EventType = "provider.unavailable"
 
 	// Security events
-	EventKillSwitchEnabled   EventType = "security.killswitch.enabled"
-	EventKillSwitchDisabled  EventType = "security.killswitch.disabled"
-	EventDNSProtectionOn     EventType = "security.dns.enabled"
-	EventDNSProtectionOff    EventType = "security.dns.disabled"
-	EventIPv6ProtectionOn    EventType = "security.ipv6.enabled"
-	EventIPv6ProtectionOff   EventType = "security.ipv6.disabled"
-	EventPotentialLeak       EventType = "security.leak.detected"
+	EventKillSwitchEnabled  EventType = "security.killswitch.enabled"
+	EventKillSwitchDisabled EventType = "security.killswitch.disabled"
+	EventDNSProtectionOn    EventType = "security.dns.enabled"
+	EventDNSProtectionOff   EventType = "security.dns.disabled"
+	EventIPv6ProtectionOn   EventType = "security.ipv6.enabled"
+	EventIPv6ProtectionOff  EventType = "security.ipv6.disabled"
+	EventPotentialLeak      EventType = "security.leak.detected"
 
 	// Authentication events
-	EventAuthRequired EventType = "auth.required"
-	EventAuthOTPRequired  EventType = "auth.otp.required"
-	EventAuthFailed   EventType = "auth.failed"
-	EventAuthSuccess  EventType = "auth.success"
+	EventAuthRequired    EventType = "auth.required"
+	EventAuthOTPRequired EventType = "auth.otp.required"
+	EventAuthFailed      EventType = "auth.failed"
+	EventAuthSuccess     EventType = "auth.success"
 
 	// Error events
 	EventError   EventType = "error.occurred"
@@ -141,10 +141,10 @@ type SecurityEventData struct {
 
 // ErrorEventData contains data for error events.
 type ErrorEventData struct {
-	Code       ErrorCode
-	Category   ErrorCategory
-	Message    string
-	Error      error
+	Code        ErrorCode
+	Category    ErrorCategory
+	Message     string
+	Error       error
 	Recoverable bool
 }
 
@@ -160,12 +160,12 @@ type TypedEventHandler[T any] func(eventType EventType, data T)
 
 // Subscription represents an active event subscription.
 type Subscription struct {
-	id         uint64
-	eventType  EventType
-	handler    EventHandler
-	filter     func(*Event) bool
-	once       bool
-	bus        *EventBus
+	id        uint64
+	eventType EventType
+	handler   EventHandler
+	filter    func(*Event) bool
+	once      bool
+	bus       *EventBus
 }
 
 // Unsubscribe removes this subscription from the event bus.
@@ -185,17 +185,17 @@ type EventBus struct {
 	subscriptions map[EventType][]*Subscription
 	allHandlers   []*Subscription // Handlers for all events
 	nextID        uint64
-	
+
 	// Async settings
-	asyncWorkers  int
-	eventQueue    chan *Event
-	wg            sync.WaitGroup
-	closed        atomic.Bool
-	
+	asyncWorkers int
+	eventQueue   chan *Event
+	wg           sync.WaitGroup
+	closed       atomic.Bool
+
 	// Metrics
-	published     uint64
-	delivered     uint64
-	dropped       uint64
+	published uint64
+	delivered uint64
+	dropped   uint64
 }
 
 // EventBusConfig configures the event bus behavior.
@@ -385,11 +385,11 @@ func (bus *EventBus) PublishSync(event *Event) {
 // deliverEvent sends the event to matching handlers.
 func (bus *EventBus) deliverEvent(event *Event) {
 	bus.mu.RLock()
-	
+
 	// Get handlers for this event type
 	handlers := append([]*Subscription{}, bus.subscriptions[event.Type]...)
 	allHandlers := append([]*Subscription{}, bus.allHandlers...)
-	
+
 	bus.mu.RUnlock()
 
 	var toRemove []uint64

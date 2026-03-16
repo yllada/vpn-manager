@@ -180,27 +180,31 @@ type User struct {
 // configuration per account/network, but we can create virtual "profiles"
 // for different exit node configurations.
 type Profile struct {
-	id           string
-	name         string
-	exitNode     string
-	acceptRoutes bool
-	acceptDNS    bool
-	shieldsUp    bool
-	connected    bool
-	createdAt    time.Time
-	lastUsed     time.Time
-	autoConnect  bool
+	id                     string
+	name                   string
+	exitNode               string
+	exitNodeAllowLANAccess bool // Allow access to local network when using exit node
+	acceptRoutes           bool
+	acceptDNS              bool
+	shieldsUp              bool
+	statefulFiltering      bool // Enable stateful packet filtering
+	connected              bool
+	createdAt              time.Time
+	lastUsed               time.Time
+	autoConnect            bool
 }
 
 // NewProfile creates a new Tailscale profile with default settings.
 func NewProfile(id, name string) *Profile {
 	return &Profile{
-		id:           id,
-		name:         name,
-		acceptRoutes: true,
-		acceptDNS:    true,
-		shieldsUp:    false,
-		createdAt:    time.Now(),
+		id:                     id,
+		name:                   name,
+		acceptRoutes:           true,
+		acceptDNS:              true,
+		shieldsUp:              false,
+		exitNodeAllowLANAccess: false, // Default: disabled for security
+		statefulFiltering:      false, // Default: disabled
+		createdAt:              time.Now(),
 	}
 }
 
@@ -277,6 +281,26 @@ func (p *Profile) ShieldsUp() bool {
 // SetShieldsUp sets shields-up mode.
 func (p *Profile) SetShieldsUp(enabled bool) {
 	p.shieldsUp = enabled
+}
+
+// ExitNodeAllowLANAccess returns if LAN access is allowed when using exit node.
+func (p *Profile) ExitNodeAllowLANAccess() bool {
+	return p.exitNodeAllowLANAccess
+}
+
+// SetExitNodeAllowLANAccess sets whether to allow LAN access when using exit node.
+func (p *Profile) SetExitNodeAllowLANAccess(allow bool) {
+	p.exitNodeAllowLANAccess = allow
+}
+
+// StatefulFiltering returns if stateful packet filtering is enabled.
+func (p *Profile) StatefulFiltering() bool {
+	return p.statefulFiltering
+}
+
+// SetStatefulFiltering sets stateful packet filtering mode.
+func (p *Profile) SetStatefulFiltering(enabled bool) {
+	p.statefulFiltering = enabled
 }
 
 // SetConnected sets the connection status.
