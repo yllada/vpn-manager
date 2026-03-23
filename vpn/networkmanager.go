@@ -122,33 +122,22 @@ func (nm *NMBackend) findConnectionByFile(configPath string) string {
 // Connect initiates a VPN connection via NetworkManager.
 // Saves credentials so reconnection works without asking password again.
 func (nm *NMBackend) Connect(connName, username, password string) error {
-	// IMPORTANT: First, save credentials to NetworkManager so reconnection works
-	// Set password-flags=0 to store password in system
-	if username != "" {
-		cmd := exec.Command("nmcli", "connection", "modify", connName,
-			"+vpn.data", fmt.Sprintf("username=%s", username),
-			"+vpn.data", "password-flags=0")
-		cmd.Run()
-	}
-
-	if password != "" {
-		// Save the password permanently in NetworkManager
-		cmd := exec.Command("nmcli", "connection", "modify", connName,
-			"vpn.secrets.password", password)
-		if err := cmd.Run(); err != nil {
-			log.Printf("NM: Warning: Could not save password: %v", err)
+	// First, try to save credentials for future reconnections
+	// This is done async so we don't block the connection
+	go func() {
+		if username != "" {
+			exec.Command("nmcli", "connection", "modify", connName,
+				"+vpn.data", fmt.Sprintf("username=%s", username),
+				"+vpn.data", "password-flags=0").Run()
 		}
-	}
+		if password != "" {
+			exec.Command("nmcli", "connection", "modify", connName,
+				"vpn.secrets.password", password).Run()
+		}
+	}()
 
-	// Now connect - credentials are saved, so no stdin needed
-	cmd := exec.Command("nmcli", "connection", "up", connName)
-	if err := cmd.Run(); err != nil {
-		// If it fails, try with passwd-file as fallback
-		return nm.connectWithPasswdFile(connName, password)
-	}
-
-	log.Printf("NM: Connected to %s", connName)
-	return nil
+	// Connect with passwd-file to ensure credentials are passed
+	return nm.connectWithPasswdFile(connName, password)
 }
 
 // connectWithPasswdFile is a fallback connection method using stdin for password.
