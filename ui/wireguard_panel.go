@@ -69,40 +69,19 @@ func (wp *WireGuardPanel) GetWidget() gtk.Widgetter {
 
 // createLayout builds the WireGuard panel UI.
 func (wp *WireGuardPanel) createLayout() {
-	wp.box = gtk.NewBox(gtk.OrientationVertical, 12)
-	wp.box.SetMarginTop(12)
-	wp.box.SetMarginBottom(12)
-	wp.box.SetMarginStart(12)
-	wp.box.SetMarginEnd(12)
+	// Use shared panel helpers
+	cfg := DefaultPanelConfig("WireGuard")
+	wp.box = CreatePanelBox(cfg)
 
-	// Header
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignCenter)
-
-	logoIcon := gtk.NewImage()
-	logoIcon.SetFromIconName("network-vpn-symbolic")
-	logoIcon.SetPixelSize(48)
-	headerBox.Append(logoIcon)
-
-	titleLabel := gtk.NewLabel("WireGuard")
-	titleLabel.AddCSSClass("title-1")
-	headerBox.Append(titleLabel)
-
+	// Header - using shared helper
+	headerBox := CreatePanelHeader(cfg)
 	wp.box.Append(headerBox)
 
-	// Status box
-	wp.statusBox = gtk.NewBox(gtk.OrientationHorizontal, 8)
-	wp.statusBox.SetHAlign(gtk.AlignCenter)
-	wp.statusBox.SetMarginTop(8)
-
-	wp.statusIcon = gtk.NewImage()
-	wp.statusIcon.SetFromIconName("network-offline-symbolic")
-	wp.statusBox.Append(wp.statusIcon)
-
-	wp.statusLabel = gtk.NewLabel("Disconnected")
-	wp.statusLabel.AddCSSClass("dim-label")
-	wp.statusBox.Append(wp.statusLabel)
-
+	// Status box - using shared helper
+	statusBar := CreateStatusBar(cfg)
+	wp.statusBox = statusBar.Box
+	wp.statusIcon = statusBar.Icon
+	wp.statusLabel = statusBar.Label
 	wp.box.Append(wp.statusBox)
 
 	// Profiles list

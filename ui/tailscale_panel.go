@@ -86,25 +86,12 @@ func (tp *TailscalePanel) GetWidget() gtk.Widgetter {
 
 // createLayout builds the Tailscale panel UI.
 func (tp *TailscalePanel) createLayout() {
-	tp.box = gtk.NewBox(gtk.OrientationVertical, 12)
-	tp.box.SetMarginTop(12)
-	tp.box.SetMarginBottom(12)
-	tp.box.SetMarginStart(12)
-	tp.box.SetMarginEnd(12)
+	// Use shared panel helpers
+	cfg := DefaultPanelConfig("Tailscale")
+	tp.box = CreatePanelBox(cfg)
 
-	// Header - matching OpenVPN/WireGuard style
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignCenter)
-
-	logoIcon := gtk.NewImage()
-	logoIcon.SetFromIconName("network-vpn-symbolic")
-	logoIcon.SetPixelSize(48)
-	headerBox.Append(logoIcon)
-
-	titleLabel := gtk.NewLabel("Tailscale")
-	titleLabel.AddCSSClass("title-1")
-	headerBox.Append(titleLabel)
-
+	// Header - using shared helper
+	headerBox := CreatePanelHeader(cfg)
 	tp.box.Append(headerBox)
 
 	// Main profile card - styled like OpenVPN/WireGuard profiles

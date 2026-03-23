@@ -45,41 +45,19 @@ func (op *OpenVPNPanel) GetProfileList() *ProfileList {
 
 // createLayout builds the OpenVPN panel UI.
 func (op *OpenVPNPanel) createLayout() {
-	op.box = gtk.NewBox(gtk.OrientationVertical, 12)
-	op.box.SetMarginTop(12)
-	op.box.SetMarginBottom(12)
-	op.box.SetMarginStart(12)
-	op.box.SetMarginEnd(12)
+	// Use shared panel helpers
+	cfg := DefaultPanelConfig("OpenVPN")
+	op.box = CreatePanelBox(cfg)
 
-	// Header - matching WireGuard/Tailscale style
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignCenter)
-
-	logoIcon := gtk.NewImage()
-	logoIcon.SetFromIconName("network-vpn-symbolic")
-	logoIcon.SetPixelSize(48)
-	headerBox.Append(logoIcon)
-
-	titleLabel := gtk.NewLabel("OpenVPN")
-	titleLabel.AddCSSClass("title-1")
-	headerBox.Append(titleLabel)
-
+	// Header - using shared helper
+	headerBox := CreatePanelHeader(cfg)
 	op.box.Append(headerBox)
 
-	// Status box
-	statusBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	statusBox.SetHAlign(gtk.AlignCenter)
-	statusBox.SetMarginTop(8)
-
-	op.statusIcon = gtk.NewImage()
-	op.statusIcon.SetFromIconName("network-offline-symbolic")
-	statusBox.Append(op.statusIcon)
-
-	op.statusLabel = gtk.NewLabel("Disconnected")
-	op.statusLabel.AddCSSClass("dim-label")
-	statusBox.Append(op.statusLabel)
-
-	op.box.Append(statusBox)
+	// Status box - using shared helper
+	statusBar := CreateStatusBar(cfg)
+	op.statusIcon = statusBar.Icon
+	op.statusLabel = statusBar.Label
+	op.box.Append(statusBar.Box)
 
 	// Profiles section label
 	profilesLabel := gtk.NewLabel("PROFILES")
