@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -65,6 +66,9 @@ type TailscalePanel struct {
 
 	// Update ticker
 	stopUpdates chan struct{}
+
+	// Peers cache to avoid unnecessary rebuilds (prevents scroll jump)
+	lastPeersSignature string
 }
 
 // NewTailscalePanel creates a new Tailscale panel.
@@ -1147,18 +1151,43 @@ func (tp *TailscalePanel) updateExitNodes() {
 }
 
 // updatePeers updates the peers list.
+// Uses a signature-based cache to avoid rebuilding when peers haven't changed,
+// which prevents the scroll position from resetting every 5 seconds.
 func (tp *TailscalePanel) updatePeers() {
-	// Clear existing peers
-	for tp.peersBox.FirstChild() != nil {
-		tp.peersBox.Remove(tp.peersBox.FirstChild())
-	}
-
 	ctx := context.Background()
 	tsStatus, err := tp.provider.GetTailscaleStatus(ctx)
 	if err != nil || tsStatus == nil || len(tsStatus.Peer) == 0 {
-		// Show empty state placeholder directly
-		tp.showEmptyPeersState()
+		// Only rebuild if we had peers before
+		if tp.lastPeersSignature != "empty" {
+			tp.lastPeersSignature = "empty"
+			// Clear existing peers
+			for tp.peersBox.FirstChild() != nil {
+				tp.peersBox.Remove(tp.peersBox.FirstChild())
+			}
+			tp.showEmptyPeersState()
+		}
 		return
+	}
+
+	// Build signature from peer states to detect changes
+	// Format: "id:online:exitnode|id:online:exitnode|..."
+	var sigParts []string
+	for peerID, peer := range tsStatus.Peer {
+		sigParts = append(sigParts, fmt.Sprintf("%s:%v:%v", peerID, peer.Online, peer.ExitNode))
+	}
+	// Sort for consistent ordering (map iteration order is random)
+	sort.Strings(sigParts)
+	newSignature := strings.Join(sigParts, "|")
+
+	// Skip rebuild if peers haven't changed
+	if newSignature == tp.lastPeersSignature {
+		return
+	}
+	tp.lastPeersSignature = newSignature
+
+	// Clear existing peers
+	for tp.peersBox.FirstChild() != nil {
+		tp.peersBox.Remove(tp.peersBox.FirstChild())
 	}
 
 	for peerID, peer := range tsStatus.Peer {
@@ -1286,11 +1315,14 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBox
 		useBtn.AddCSSClass("flat")
 		useBtn.AddCSSClass("suggested-action")
 		
-		// Capture peer ID and name for closure
-		peerID := peer.ID
+		// Capture peer DNSName (or HostName fallback) for CLI - NOT the internal ID
+		peerIdentifier := peer.DNSName
+		if peerIdentifier == "" {
+			peerIdentifier = peer.HostName
+		}
 		peerName := peer.HostName
 		useBtn.ConnectClicked(func() {
-			tp.setExitNodeFromPeer(peerID, peerName, true)
+			tp.setExitNodeFromPeer(peerIdentifier, peerName, true)
 		})
 		box.Append(useBtn)
 	} else if peer.ExitNodeOption && !peer.Online {
@@ -1306,7 +1338,8 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBox
 }
 
 // setExitNodeFromPeer sets or clears the exit node from the peers list.
-func (tp *TailscalePanel) setExitNodeFromPeer(peerID, peerName string, enable bool) {
+// nodeIdentifier should be the peer's DNSName or HostName (NOT the internal ID).
+func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, enable bool) {
 	tp.mainWindow.SetStatus("Changing gateway...")
 
 	// Get current LAN access setting
@@ -1318,7 +1351,7 @@ func (tp *TailscalePanel) setExitNodeFromPeer(peerID, peerName string, enable bo
 
 		var err error
 		if enable {
-			err = tp.provider.SetExitNodeWithOptions(ctx, peerID, allowLANAccess)
+			err = tp.provider.SetExitNodeWithOptions(ctx, nodeIdentifier, allowLANAccess)
 		} else {
 			err = tp.provider.SetExitNodeWithOptions(ctx, "", false)
 		}
