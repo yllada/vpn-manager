@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -176,7 +177,9 @@ type ConnectionInfo struct {
 }
 
 // ProviderRegistry manages available VPN providers.
+// Thread-safe for concurrent access.
 type ProviderRegistry struct {
+	mu        sync.RWMutex
 	providers map[VPNProviderType]VPNProvider
 }
 
@@ -188,18 +191,27 @@ func NewProviderRegistry() *ProviderRegistry {
 }
 
 // Register adds a provider to the registry.
+// Thread-safe: uses exclusive lock.
 func (r *ProviderRegistry) Register(provider VPNProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.providers[provider.Type()] = provider
 }
 
 // Get returns a provider by type.
+// Thread-safe: uses read lock for concurrent reads.
 func (r *ProviderRegistry) Get(providerType VPNProviderType) (VPNProvider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	p, ok := r.providers[providerType]
 	return p, ok
 }
 
 // List returns all registered providers.
+// Thread-safe: uses read lock for concurrent reads.
 func (r *ProviderRegistry) List() []VPNProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	result := make([]VPNProvider, 0, len(r.providers))
 	for _, p := range r.providers {
 		result = append(result, p)
@@ -208,7 +220,10 @@ func (r *ProviderRegistry) List() []VPNProvider {
 }
 
 // Available returns all providers that are currently available on this system.
+// Thread-safe: uses read lock for concurrent reads.
 func (r *ProviderRegistry) Available() []VPNProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	result := make([]VPNProvider, 0, len(r.providers))
 	for _, p := range r.providers {
 		if p.IsAvailable() {
