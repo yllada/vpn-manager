@@ -5,13 +5,12 @@ go 1.25.0
 require (
 	fyne.io/systray v1.12.0
 	github.com/diamondburned/gotk4/pkg v0.3.2-0.20250703063411-16654385f59a
-	github.com/zalando/go-keyring v0.2.6
+	github.com/zalando/go-keyring v0.2.7
 	golang.org/x/crypto v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	al.essio.dev/pkg/shellescape v1.6.0 // indirect
 	github.com/KarpelesLab/weak v0.1.1 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
