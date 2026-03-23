@@ -1,3 +1,24 @@
+vpn-manager (1.5.0-1) stable; urgency=medium
+
+  * Tailscale Bug Fixes:
+    - Fixed exit node selection error "invalid value for --exit-node"
+      (was using internal ID instead of DNSName/HostName)
+    - Fixed peers list scroll jumping every 5 seconds
+      (added signature-based cache to prevent unnecessary rebuilds)
+    - Fixed gateway selection from peers list (same DNSName bug)
+  
+  * Tailscale Panel Simplification:
+    - Removed unused Server tab (Headscale support not wired)
+    - Removed unused Features tab (Exit node dropdown, Taildrop, Settings)
+    - Reduced code from 1542 to 867 lines (44% reduction)
+    - Cleaner layout: Profile card + Devices list only
+  
+  * Technical:
+    - Added lastPeersSignature cache field to TailscalePanel
+    - setExitNodeFromPeer now uses DNSName with HostName fallback
+
+ -- VPN Manager Team <vpn-manager@example.com>  Sun, 23 Mar 2026 15:00:00 +0000
+
 vpn-manager (1.4.0-1) stable; urgency=medium
 
   * Stability Improvements:
