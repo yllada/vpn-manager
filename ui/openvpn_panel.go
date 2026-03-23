@@ -159,6 +159,8 @@ type ProfileRow struct {
 	latencyLabel *gtk.Label
 	txLabel      *gtk.Label
 	rxLabel      *gtk.Label
+	// Track last status to avoid duplicate notifications
+	lastStatus vpn.ConnectionStatus
 }
 
 // NewProfileList creates a new VPN profile list.
@@ -884,11 +886,16 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 
 // updateRowStatus updates the visual state of a profile row.
 // Modifies icons, text and button styles according to state.
+// Only sends notifications when status actually changes to prevent spam.
 func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionStatus) {
 	row, exists := pl.rows[profileID]
 	if !exists {
 		return
 	}
+
+	// Check if status actually changed - skip if same as last time
+	statusChanged := row.lastStatus != status
+	row.lastStatus = status
 
 	// Clear previous CSS classes
 	row.statusLabel.RemoveCSSClass("status-connected")
@@ -942,8 +949,10 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.connectBtn.RemoveCSSClass("connect-button")
 		row.connectBtn.AddCSSClass("warning")
 		row.deleteBtn.SetSensitive(false)
-		// Connection in progress notification
-		NotifyConnecting(row.profile.Name)
+		// Connection in progress notification - only if status changed
+		if statusChanged {
+			NotifyConnecting(row.profile.Name)
+		}
 
 	case vpn.StatusConnected:
 		row.spinner.Stop()
@@ -961,8 +970,10 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.statsBox.SetVisible(true)
 		// Start statistics update
 		pl.startStatsUpdate(profileID)
-		// Successful connection notification
-		NotifyConnected(row.profile.Name)
+		// Successful connection notification - only if status changed
+		if statusChanged {
+			NotifyConnected(row.profile.Name)
+		}
 		// Update tray indicator
 		if tray := pl.mainWindow.app.GetTray(); tray != nil {
 			tray.SetConnected(row.profile.Name)
@@ -977,8 +988,10 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.connectBtn.SetIconName("view-refresh-symbolic")
 		row.connectBtn.SetTooltipText("Retry")
 		row.deleteBtn.SetSensitive(true)
-		// Error notification
-		NotifyError(row.profile.Name, "Connection error")
+		// Error notification - only if status changed
+		if statusChanged {
+			NotifyError(row.profile.Name, "Connection error")
+		}
 	}
 }
 
