@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,10 @@ func LoadProfile(configPath string) (*Profile, error) {
 	}
 
 	// Load additional settings from metadata file
-	_ = profile.LoadSettings()
+	if err := profile.LoadSettings(); err != nil {
+		// Non-fatal: use defaults if settings file is missing or corrupted
+		log.Printf("WireGuard: LoadSettings for %s: %v (using defaults)", name, err)
+	}
 
 	return profile, nil
 }

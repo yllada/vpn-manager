@@ -1508,8 +1508,10 @@ func (tp *TailscalePanel) StartUpdates() {
 }
 
 // StopUpdates stops periodic status updates.
+// Safe to call multiple times (idempotent).
 func (tp *TailscalePanel) StopUpdates() {
 	if tp.stopUpdates != nil {
 		close(tp.stopUpdates)
+		tp.stopUpdates = nil
 	}
 }

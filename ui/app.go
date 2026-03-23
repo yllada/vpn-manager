@@ -164,8 +164,23 @@ func (a *Application) showWindow() {
 	}
 }
 
+// Cleanup stops all background goroutines before shutdown.
+// MUST be called before Quit() to prevent memory leaks.
+func (a *Application) Cleanup() {
+	if a.window != nil {
+		if a.window.tailscalePanel != nil {
+			a.window.tailscalePanel.StopUpdates()
+		}
+		if a.window.wireguardPanel != nil {
+			a.window.wireguardPanel.StopUpdates()
+		}
+	}
+	app.LogInfo("Application cleanup completed")
+}
+
 // Quit closes the application
 func (a *Application) Quit() {
+	a.Cleanup()
 	a.app.Quit()
 }
 

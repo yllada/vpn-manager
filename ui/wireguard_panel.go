@@ -447,7 +447,9 @@ func (wp *WireGuardPanel) onDeleteProfile(row *WireGuardRow) {
 	// First disconnect if connected
 	conn := wp.provider.GetConnection(row.profile.ID())
 	if conn != nil && conn.Status == wireguard.StatusConnected {
-		_ = wp.provider.Disconnect(context.Background(), row.profile)
+		if err := wp.provider.Disconnect(context.Background(), row.profile); err != nil {
+			log.Printf("WireGuard: Disconnect before delete failed: %v", err)
+		}
 	}
 
 	// Delete profile
@@ -571,8 +573,12 @@ func (wp *WireGuardPanel) StartUpdates() {
 }
 
 // StopUpdates stops periodic status updates.
+// Safe to call multiple times (idempotent).
 func (wp *WireGuardPanel) StopUpdates() {
-	close(wp.stopUpdates)
+	if wp.stopUpdates != nil {
+		close(wp.stopUpdates)
+		wp.stopUpdates = nil
+	}
 }
 
 // showError displays an error notification.

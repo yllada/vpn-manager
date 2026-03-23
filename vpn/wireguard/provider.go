@@ -536,6 +536,8 @@ func (p *Provider) SupportsFeature(feature app.ProviderFeature) bool {
 		return true // WireGuard can use kill switch
 	case app.FeatureAutoConnect:
 		return true
+	case app.FeatureSplitTunnel:
+		return true // WireGuard supports split tunneling via AllowedIPs
 	default:
 		return false
 	}
