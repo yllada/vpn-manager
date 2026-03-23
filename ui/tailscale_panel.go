@@ -946,11 +946,16 @@ func (tp *TailscalePanel) onExitNodeApply() {
 		}
 
 		exitNode := tp.exitNodes[nodeIndex]
+		// Use DNSName (or Name as fallback) - Tailscale CLI expects IP or node name, not internal ID
+		nodeIdentifier := exitNode.DNSName
+		if nodeIdentifier == "" {
+			nodeIdentifier = exitNode.Name
+		}
 		// Use SetExitNodeWithOptions to enable/disable LAN access
-		if err := tp.provider.SetExitNodeWithOptions(ctx, exitNode.ID, allowLANAccess); err != nil {
+		if err := tp.provider.SetExitNodeWithOptions(ctx, nodeIdentifier, allowLANAccess); err != nil {
 			glib.IdleAdd(func() {
 				tp.exitNodeBtn.SetSensitive(true)
-				tp.mainWindow.showError("Exit Node Error", err.Error())
+				tp.mainWindow.showError("Gateway Error", err.Error())
 			})
 			return
 		}
