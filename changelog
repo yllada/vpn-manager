@@ -1,3 +1,23 @@
+vpn-manager (1.4.0-1) stable; urgency=medium
+
+  * Stability Improvements:
+    - Fixed memory leak: panels now properly cleanup goroutines on app exit
+    - Fixed race condition in ProviderRegistry with thread-safe RWMutex
+    - Improved error handling: no longer silently ignoring critical errors
+    - StopUpdates() now idempotent (safe to call multiple times)
+  
+  * UI Improvements:
+    - New panel_base.go with shared helpers for consistent UI
+    - Reduced code duplication across OpenVPN/WireGuard/Tailscale panels
+    - WireGuard now correctly reports Split Tunnel support
+  
+  * Technical:
+    - Added Cleanup() method to Application for graceful shutdown
+    - ProviderRegistry now uses sync.RWMutex for concurrent access
+    - Extracted CreatePanelBox, CreatePanelHeader, CreateStatusBar helpers
+
+ -- VPN Manager Team <vpn-manager@example.com>  Sun, 23 Mar 2026 12:00:00 +0000
+
 vpn-manager (1.0.1-1) stable; urgency=medium
 
   * New Features:
