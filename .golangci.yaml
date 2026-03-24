@@ -22,12 +22,11 @@ output:
 linters:
   default: none
   enable:
-    # Default linters
+    # Default linters (v2: gosimple merged into staticcheck)
     - errcheck      # Check for unchecked errors
-    - gosimple      # Simplify code
     - govet         # Report suspicious constructs
     - ineffassign   # Detect unused assignments
-    - staticcheck   # Static analysis checks
+    - staticcheck   # Static analysis checks (includes gosimple)
     - unused        # Check for unused code
 
     # Security
@@ -47,12 +46,7 @@ linters:
     # Complexity
     - gocyclo       # Cyclomatic complexity
 
-# Formatters (v2: formatters are separate from linters)
-formatters:
-  enable:
-    - gofmt         # Check code is formatted
-    - goimports     # Check imports are sorted
-
+# Linter-specific settings (v2: under linters.settings)
   settings:
     errcheck:
       check-type-assertions: true
@@ -82,6 +76,7 @@ formatters:
       range-loops: true
       for-loops: false  # Can be noisy
 
+  # Exclusions (v2: under linters.exclusions)
   exclusions:
     # Exclude vendored and generated files
     paths:
@@ -107,6 +102,12 @@ formatters:
         linters:
           - unused
         text: "parameter .* is unused"
+
+# Formatters (v2: formatters are separate from linters)
+formatters:
+  enable:
+    - gofmt         # Check code is formatted
+    - goimports     # Check imports are sorted
 
 issues:
   max-issues-per-linter: 0
