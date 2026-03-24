@@ -1144,11 +1144,11 @@ func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, _, _ string) {
 
 		// Add route via original interface (bypass VPN)
 		cmd := exec.Command("ip", "route", "add", normalizedRoute, "via", originalGateway, "dev", originalInterface)
-		output, err := cmd.CombinedOutput()
+		_, err := cmd.CombinedOutput()
 		if err != nil {
 			// Route might already exist, try to replace
 			cmd = exec.Command("ip", "route", "replace", normalizedRoute, "via", originalGateway, "dev", originalInterface)
-			output, err = cmd.CombinedOutput()
+			output, err := cmd.CombinedOutput()
 			if err != nil {
 				log.Printf("VPN: Error adding bypass route %s: %v - %s", normalizedRoute, err, string(output))
 			} else {
