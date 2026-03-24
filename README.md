@@ -25,6 +25,7 @@
   <img src="https://img.shields.io/badge/GTK-4.0-4A86CF.svg" alt="GTK Version">
   <img src="https://img.shields.io/badge/platform-Linux-orange.svg" alt="Platform">
   <a href="https://github.com/yllada/vpn-manager/blob/main/CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg" alt="Contributor Covenant"></a>
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/vpn-manager)
 </p>
 
 ---
