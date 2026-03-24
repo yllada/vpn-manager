@@ -5,7 +5,7 @@
 <h1 align="center">VPN Manager</h1>
 
 <p align="center">
-  <strong>Modern and elegant OpenVPN client for Linux</strong>
+  <strong>Modern VPN client for Linux with GUI — OpenVPN, WireGuard & Tailscale</strong>
 </p>
 
 <p align="center">
@@ -13,7 +13,8 @@
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#building">Building</a> •
-  <a href="#contributing">Contributing</a>
+  <a href="#contributing">Contributing</a> •
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 <p align="center">
@@ -22,13 +23,20 @@
   <img src="https://img.shields.io/badge/Go-1.24+-00ADD8.svg" alt="Go Version">
   <img src="https://img.shields.io/badge/GTK-4.0-4A86CF.svg" alt="GTK Version">
   <img src="https://img.shields.io/badge/platform-Linux-orange.svg" alt="Platform">
+  <a href="https://github.com/yllada/vpn-manager/blob/main/CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg" alt="Contributor Covenant"></a>
 </p>
 
 ---
 
+## Why This Project?
+
+When I started using Linux and needed to connect to a VPN, I spent hours searching for a simple graphical client. Everything I found required command-line knowledge — OpenVPN configs, WireGuard's `wg-quick`, Tailscale CLI... For a newcomer, it was overwhelming.
+
+**VPN Manager was born to solve this.** A simple, beautiful GUI where you can manage all your VPN connections without touching the terminal. This is my gift to the Linux community — so others don't have to go through what I did.
+
 ## About
 
-**VPN Manager** is a modern, user-friendly desktop application designed to manage VPN connections on Linux systems using OpenVPN. With a native GTK4/libadwaita interface, it integrates seamlessly with the GNOME desktop and other modern environments.
+**VPN Manager** is a modern, user-friendly desktop application for managing VPN connections on Linux. It supports **OpenVPN**, **WireGuard**, and **Tailscale** — all in one unified interface. Built with GTK4/libadwaita, it integrates seamlessly with GNOME and other modern desktop environments.
 
 <p align="center">
   <img src="assets/screen/cap.png" alt="VPN Manager Screenshot" width="600">
@@ -137,33 +145,37 @@ go build -o vpn-manager .
 
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
+Contributions are welcome! Please read our **[Contributing Guide](CONTRIBUTING.md)** to get started.
 
+Quick start:
 1. **Fork** the repository
 2. **Create** a branch for your feature (`git checkout -b feature/new-feature`)
-3. **Commit** your changes (`git commit -am 'Add new feature'`)
+3. **Commit** your changes using [Conventional Commits](https://www.conventionalcommits.org/)
 4. **Push** to the branch (`git push origin feature/new-feature`)
 5. Open a **Pull Request**
 
-### Guidelines
+Please note that this project is released with a **[Code of Conduct](CODE_OF_CONDUCT.md)**. By participating in this project you agree to abide by its terms.
 
-- Follow the existing code style
-- Add comments documenting public functions
-- Include tests when applicable
-- Update documentation if necessary
+### Security
+
+For security vulnerabilities, please see our **[Security Policy](SECURITY.md)** for responsible disclosure guidelines.
 
 ## Roadmap
 
-- [ ] WireGuard support
+### Completed ✅
+- [x] **WireGuard support** ✅ v1.0.0
+- [x] **Tailscale support** ✅ v1.0.0
+- [x] **Kill switch** (block traffic on VPN disconnect) ✅ v1.0.0
+- [x] **NetworkManager integration** ✅ v1.0.0
+- [x] **Command line interface** ✅ v1.0.2
+- [x] **Health monitoring & auto-reconnect** ✅ v1.0.2
+- [x] **Live connection statistics** ✅ v1.0.2
+
+### Planned
 - [ ] Bulk profile import
 - [ ] Historical connection statistics
-- [ ] Multi-language support
+- [ ] Multi-language support (i18n)
 - [ ] Configuration export/import
-- [ ] NetworkManager integration
-- [ ] Kill switch (block traffic on VPN disconnect)
-- [x] Command line interface ✅ v1.0.2
-- [x] Health monitoring & auto-reconnect ✅ v1.0.2
-- [x] Live connection statistics ✅ v1.0.2
 
 ## License
 
