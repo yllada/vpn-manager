@@ -1,0 +1,119 @@
+# =============================================================================
+# golangci-lint configuration for VPN Manager (v2 format)
+# =============================================================================
+# Balanced configuration: catches real issues without being overly pedantic.
+# Focused on security, correctness, and maintainability.
+#
+# Documentation: https://golangci-lint.run/usage/configuration/
+# =============================================================================
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true
+
+linters:
+  default: none
+  enable:
+    # Default linters
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Report suspicious constructs
+    - ineffassign   # Detect unused assignments
+    - staticcheck   # Static analysis checks
+    - unused        # Check for unused code
+
+    # Security
+    - gosec         # Security problems
+
+    # Bugs
+    - bodyclose     # Check HTTP response body is closed
+    - nilerr        # Check nil error returns
+
+    # Performance
+    - prealloc      # Suggest preallocations
+
+    # Style (non-pedantic)
+    - gofmt         # Check code is formatted
+    - goimports     # Check imports are sorted
+    - misspell      # Check for misspellings
+    - unconvert     # Remove unnecessary type conversions
+
+    # Complexity
+    - gocyclo       # Cyclomatic complexity
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - io.Copy
+        - io.WriteString
+        - (io.Closer).Close
+
+    govet:
+      disable:
+        - fieldalignment  # Too pedantic, micro-optimization
+
+    gocyclo:
+      min-complexity: 20  # Reasonable threshold
+
+    gosec:
+      excludes:
+        - G104  # Audit errors not handled (covered by errcheck)
+        - G304  # File path injection (we control the paths)
+
+    misspell:
+      locale: US
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false  # Can be noisy
+
+  exclusions:
+    # Exclude vendored and generated files
+    paths:
+      - vendor
+      - third_party$
+      - builtin$
+    
+    # Presets for common false positives
+    presets:
+      - std-error-handling
+    
+    # Custom exclusion rules
+    rules:
+      # Allow longer functions in test files
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - gosec
+
+      # GTK callbacks often have unused parameters
+      - path: ui/
+        linters:
+          - unused
+        text: "parameter .* is unused"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+severity:
+  default: warning
+  rules:
+    - linters:
+        - gosec
+      severity: error
+    - linters:
+        - errcheck
+      severity: error

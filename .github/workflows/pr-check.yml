@@ -1,0 +1,140 @@
+# =============================================================================
+# VPN Manager - PR Validation
+# =============================================================================
+# Quick checks for pull requests:
+# - Commit message format (Conventional Commits)
+# - PR title format
+# - Basic validation
+#
+# Designed to be fast and give immediate feedback.
+# =============================================================================
+
+name: PR Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # =============================================================================
+  # Validate PR metadata
+  # =============================================================================
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate PR title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          echo "📋 PR Title: $PR_TITLE"
+          
+          # Conventional Commits regex
+          PATTERN="^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\(.+\))?: .+"
+          
+          if [[ "$PR_TITLE" =~ $PATTERN ]]; then
+            echo "✅ PR title follows Conventional Commits format"
+          else
+            echo "::warning::PR title should follow Conventional Commits format"
+            echo ""
+            echo "Expected format: <type>(<scope>): <description>"
+            echo "Examples:"
+            echo "  feat(wireguard): add split tunnel support"
+            echo "  fix(tailscale): resolve exit node bug"
+            echo "  docs: update installation guide"
+            echo ""
+            echo "Types: feat, fix, docs, style, refactor, perf, test, chore, ci, build, revert"
+          fi
+
+      - name: Check for breaking changes
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          if [[ "$PR_TITLE" == *"!"* ]] || [[ "$PR_BODY" == *"BREAKING CHANGE"* ]]; then
+            echo "⚠️ This PR contains breaking changes"
+            echo "::notice::Breaking change detected - ensure CHANGELOG.md is updated"
+          fi
+
+      - name: Validate branch name
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          echo "🌿 Branch: $BRANCH"
+          
+          # Valid branch patterns
+          VALID_PATTERN="^(feature|feat|fix|bugfix|hotfix|docs|chore|refactor|test|ci)/.+"
+          
+          if [[ "$BRANCH" =~ $VALID_PATTERN ]] || [[ "$BRANCH" == "main" ]] || [[ "$BRANCH" == "develop" ]]; then
+            echo "✅ Branch name follows convention"
+          else
+            echo "::notice::Consider using branch naming convention: <type>/<description>"
+            echo "Examples: feature/add-wireguard, fix/tailscale-crash, docs/update-readme"
+          fi
+
+  # =============================================================================
+  # Check for common issues
+  # =============================================================================
+  checks:
+    name: Quick Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Check for large files
+        run: |
+          echo "🔍 Checking for large files..."
+          LARGE_FILES=$(find . -type f -size +1M -not -path "./.git/*" -not -path "./vendor/*" 2>/dev/null || true)
+          
+          if [ -n "$LARGE_FILES" ]; then
+            echo "::warning::Found files larger than 1MB:"
+            echo "$LARGE_FILES"
+          else
+            echo "✅ No large files detected"
+          fi
+
+      - name: Check for debug code
+        run: |
+          echo "🔍 Checking for debug statements..."
+          
+          # Look for common debug patterns
+          DEBUG_PATTERNS="fmt.Println|log.Print|console.log|debugger|TODO.*REMOVE|FIXME.*REMOVE"
+          
+          FOUND=$(grep -rn --include="*.go" -E "$DEBUG_PATTERNS" . 2>/dev/null | grep -v "_test.go" | head -10 || true)
+          
+          if [ -n "$FOUND" ]; then
+            echo "::notice::Found potential debug statements (review before merge):"
+            echo "$FOUND"
+          else
+            echo "✅ No obvious debug statements found"
+          fi
+
+      - name: Check go.mod tidiness
+        run: |
+          # Download dependencies
+          go mod download 2>/dev/null || true
+          
+          # Check if go.mod needs tidying
+          cp go.mod go.mod.backup
+          cp go.sum go.sum.backup 2>/dev/null || true
+          
+          go mod tidy 2>/dev/null || true
+          
+          if ! diff -q go.mod go.mod.backup > /dev/null 2>&1; then
+            echo "::warning::go.mod may need 'go mod tidy'"
+          else
+            echo "✅ go.mod is tidy"
+          fi
+          
+          mv go.mod.backup go.mod
+          mv go.sum.backup go.sum 2>/dev/null || true

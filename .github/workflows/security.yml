@@ -1,0 +1,135 @@
+# =============================================================================
+# VPN Manager - Security Analysis (CodeQL)
+# =============================================================================
+# Automated security scanning using GitHub's CodeQL analysis.
+# Runs weekly and on PRs to catch security vulnerabilities.
+#
+# Documentation: https://docs.github.com/en/code-security/code-scanning
+# =============================================================================
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  schedule:
+    # Run every Monday at 6:00 AM UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # =============================================================================
+  # CodeQL Analysis - GitHub's semantic code analysis
+  # =============================================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libayatana-appindicator3-dev \
+            libgirepository1.0-dev \
+            pkg-config
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: +security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+  # =============================================================================
+  # Vulnerability Scanning - Check dependencies
+  # =============================================================================
+  govulncheck:
+    name: Vulnerability Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # =============================================================================
+  # License Check - Ensure dependency licenses are compatible
+  # =============================================================================
+  license-check:
+    name: License Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@latest
+
+      - name: Check licenses
+        run: |
+          echo "📋 Checking dependency licenses..."
+          go-licenses report ./... 2>/dev/null || true
+          
+          # Check for problematic licenses
+          echo ""
+          echo "🔍 Scanning for potentially incompatible licenses..."
+          PROBLEMATIC=$(go-licenses report ./... 2>/dev/null | grep -iE "(GPL|AGPL|SSPL)" || true)
+          
+          if [ -n "$PROBLEMATIC" ]; then
+            echo "::warning::Found dependencies with GPL-family licenses:"
+            echo "$PROBLEMATIC"
+            echo ""
+            echo "Review these for MIT compatibility."
+          else
+            echo "✅ No GPL-family licenses detected"
+          fi

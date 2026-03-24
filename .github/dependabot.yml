@@ -32,6 +32,10 @@ updates:
       - "dependencies"
       - "go"
     
+    # Assignees for dependency updates
+    assignees:
+      - "yllada"
+    
     # Group updates to reduce PR noise
     groups:
       # Group all patch updates together
@@ -47,11 +51,6 @@ updates:
           - "*"
         update-types:
           - "minor"
-    
-    # Ignore specific dependencies if needed
-    # ignore:
-    #   - dependency-name: "example.com/problematic-pkg"
-    #     versions: ["4.x"]
 
   # ===========================================================================
   # GitHub Actions
@@ -67,13 +66,16 @@ updates:
     open-pull-requests-limit: 5
     
     commit-message:
-      prefix: "ci(actions)"
+      prefix: "ci(deps)"
       include: "scope"
     
     labels:
       - "dependencies"
       - "github-actions"
       - "ci"
+    
+    assignees:
+      - "yllada"
     
     # Group all GitHub Actions updates together
     groups:
