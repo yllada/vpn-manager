@@ -47,7 +47,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -73,7 +73,7 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: goinstall
-          args: --timeout=5m
+          args: --timeout=15m
 
   # =============================================================================
   # Test - Unit tests with coverage and race detection
