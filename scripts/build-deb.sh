@@ -106,8 +106,8 @@ Architecture: ${ARCH}
 Depends: openvpn | openvpn3, libgtk-4-1, libadwaita-1-0
 Recommends: polkit-1
 Installed-Size: $(du -sk "${BUILD_DIR}/${PKG_DIR}/usr" | cut -f1)
-Maintainer: VPN Manager Team <vpn-manager@example.com>
-Homepage: https://github.com/vpn-manager/vpn-manager
+Maintainer: VPN Manager Team <yadian.llada@gmail.com>
+Homepage: https://github.com/yllada/vpn-manager
 Description: Modern GTK4 VPN Manager for Linux
  VPN Manager is a modern OpenVPN client with GTK4 interface.
  Features profile management, secure credential storage,

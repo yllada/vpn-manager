@@ -14,7 +14,7 @@ First off, thank you for considering contributing to VPN Manager! It's people li
 
 ## Code of Conduct
 
-This project and everyone participating in it is governed by our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to vpn-manager@example.com.
+This project and everyone participating in it is governed by our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior via [GitHub Issues](https://github.com/yllada/vpn-manager/issues).
 
 ## Getting Started
 

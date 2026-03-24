@@ -17,7 +17,7 @@ vpn-manager (1.5.0-1) stable; urgency=medium
     - Added lastPeersSignature cache field to TailscalePanel
     - setExitNodeFromPeer now uses DNSName with HostName fallback
 
- -- VPN Manager Team <vpn-manager@example.com>  Sun, 23 Mar 2026 15:00:00 +0000
+ -- VPN Manager Team <yadian.llada@gmail.com>  Sun, 23 Mar 2026 15:00:00 +0000
 
 vpn-manager (1.4.0-1) stable; urgency=medium
 
@@ -37,7 +37,7 @@ vpn-manager (1.4.0-1) stable; urgency=medium
     - ProviderRegistry now uses sync.RWMutex for concurrent access
     - Extracted CreatePanelBox, CreatePanelHeader, CreateStatusBar helpers
 
- -- VPN Manager Team <vpn-manager@example.com>  Sun, 23 Mar 2026 12:00:00 +0000
+ -- VPN Manager Team <yadian.llada@gmail.com>  Sun, 23 Mar 2026 12:00:00 +0000
 
 vpn-manager (1.0.1-1) stable; urgency=medium
 
@@ -57,7 +57,7 @@ vpn-manager (1.0.1-1) stable; urgency=medium
     - Refactored logging system with rotation support
     - Modular CLI package for extensibility
 
- -- VPN Manager Team <vpn-manager@example.com>  Mon, 17 Feb 2026 12:00:00 +0000
+ -- VPN Manager Team <yadian.llada@gmail.com>  Mon, 17 Feb 2026 12:00:00 +0000
 
 vpn-manager (1.0.0-1) stable; urgency=medium
 
@@ -67,4 +67,4 @@ vpn-manager (1.0.0-1) stable; urgency=medium
   * Secure credential storage
   * Split tunneling support
 
- -- VPN Manager Team <vpn-manager@example.com>  Fri, 14 Feb 2026 12:00:00 +0000
+ -- VPN Manager Team <yadian.llada@gmail.com>  Fri, 14 Feb 2026 12:00:00 +0000
