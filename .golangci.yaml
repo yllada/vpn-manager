@@ -41,13 +41,17 @@ linters:
     - prealloc      # Suggest preallocations
 
     # Style (non-pedantic)
-    - gofmt         # Check code is formatted
-    - goimports     # Check imports are sorted
     - misspell      # Check for misspellings
     - unconvert     # Remove unnecessary type conversions
 
     # Complexity
     - gocyclo       # Cyclomatic complexity
+
+# Formatters (v2: formatters are separate from linters)
+formatters:
+  enable:
+    - gofmt         # Check code is formatted
+    - goimports     # Check imports are sorted
 
   settings:
     errcheck:
