@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	fyne.io/systray v1.12.0
 	github.com/diamondburned/gotk4/pkg v0.3.2-0.20250703063411-16654385f59a
-	github.com/zalando/go-keyring v0.2.7
+	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 )
