@@ -35,7 +35,7 @@ concurrency:
 
 env:
   GO_VERSION: '1.25'
-  GOLANGCI_LINT_VERSION: 'v1.64'
+  GOLANGCI_LINT_VERSION: 'v2.1'
 
 permissions:
   contents: read
@@ -69,7 +69,7 @@ jobs:
             pkg-config
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: --timeout=5m
