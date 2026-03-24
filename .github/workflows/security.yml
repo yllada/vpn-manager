@@ -1,8 +1,17 @@
 # =============================================================================
-# VPN Manager - Security Analysis (CodeQL)
+# VPN Manager - Security Analysis
 # =============================================================================
-# Automated security scanning using GitHub's CodeQL analysis.
-# Runs weekly and on PRs to catch security vulnerabilities.
+# Comprehensive security scanning pipeline:
+#   - CodeQL:      GitHub's semantic code analysis (SAST)
+#   - govulncheck: Go vulnerability database scanning
+#   - Licenses:    Dependency license compliance
+#
+# Schedule: Weekly (Monday 6:00 UTC) + on push/PR to main
+#
+# Optimizations:
+#   - APT caching for CodeQL job (requires CGO)
+#   - No CGO deps for govulncheck/license-check (pure analysis)
+#   - Parallel execution of all jobs
 #
 # Documentation: https://docs.github.com/en/code-security/code-scanning
 # =============================================================================
@@ -32,7 +41,7 @@ permissions:
 
 jobs:
   # =============================================================================
-  # CodeQL Analysis - GitHub's semantic code analysis
+  # CodeQL Analysis - Semantic code analysis (requires CGO for Go build)
   # =============================================================================
   codeql:
     name: CodeQL Analysis
@@ -42,21 +51,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache: true
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libayatana-appindicator3-dev \
-            libgirepository1.0-dev \
-            pkg-config
+      - name: Setup Go and GTK
+        uses: ./.github/actions/setup-go-gtk
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -73,7 +69,7 @@ jobs:
           category: "/language:go"
 
   # =============================================================================
-  # Vulnerability Scanning - Check dependencies
+  # Vulnerability Check - Go vulnerability database (NO CGO needed)
   # =============================================================================
   govulncheck:
     name: Vulnerability Check
@@ -83,30 +79,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # NOTE: No GTK deps needed - govulncheck analyzes code, doesn't compile
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: 'go.mod'
           cache: true
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libayatana-appindicator3-dev \
-            libgirepository1.0-dev \
-            pkg-config
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
         run: govulncheck ./...
+        env:
+          CGO_ENABLED: 0
 
   # =============================================================================
-  # License Check - Ensure dependency licenses are compatible
+  # License Check - Dependency license compliance (NO CGO needed)
   # =============================================================================
   license-check:
     name: License Check
@@ -116,10 +105,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # NOTE: No GTK deps needed - license scanning is pure Go analysis
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: 'go.mod'
           cache: true
 
       - name: Install go-licenses

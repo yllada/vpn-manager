@@ -1,12 +1,18 @@
 # =============================================================================
 # VPN Manager - PR Validation
 # =============================================================================
-# Quick checks for pull requests:
-# - Commit message format (Conventional Commits)
-# - PR title format
-# - Basic validation
+# Fast validation checks for pull requests:
+#   - Conventional Commits format validation
+#   - Branch naming convention check
+#   - Breaking change detection
+#   - Large file detection
+#   - Debug code detection
+#   - go.mod tidiness check
 #
-# Designed to be fast and give immediate feedback.
+# Designed to be FAST (<2 min) and provide immediate feedback.
+# Does NOT run full test suite (that's handled by ci.yml).
+#
+# Documentation: https://www.conventionalcommits.org/
 # =============================================================================
 
 name: PR Check
@@ -25,7 +31,7 @@ jobs:
   # =============================================================================
   validate:
     name: Validate PR
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout repository
@@ -83,11 +89,11 @@ jobs:
           fi
 
   # =============================================================================
-  # Check for common issues
+  # Quick checks for common issues
   # =============================================================================
   checks:
     name: Quick Checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout repository

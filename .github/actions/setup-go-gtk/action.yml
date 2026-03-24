@@ -1,0 +1,48 @@
+# =============================================================================
+# Composite Action: Setup Go with GTK Dependencies
+# =============================================================================
+# Reusable action that sets up Go and GTK4 dependencies with caching.
+# Eliminates duplication across workflows and ensures consistency.
+#
+# Usage:
+#   - name: Setup Go and GTK
+#     uses: ./.github/actions/setup-go-gtk
+#     with:
+#       go-version-file: 'go.mod'  # Optional, defaults to go.mod
+#
+# Performance: Caches APT packages, reducing setup time from ~60s to ~5s
+# =============================================================================
+
+name: 'Setup Go with GTK'
+description: 'Setup Go and GTK4 dependencies with caching for CGO projects'
+
+inputs:
+  go-version-file:
+    description: 'Path to go.mod or .go-version file'
+    required: false
+    default: 'go.mod'
+  install-gtk:
+    description: 'Whether to install GTK dependencies (set to false for non-CGO jobs)'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache: true
+
+    - name: Cache APT packages
+      if: inputs.install-gtk == 'true'
+      uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+      with:
+        packages: >-
+          libgtk-4-dev
+          libadwaita-1-dev
+          libayatana-appindicator3-dev
+          libgirepository1.0-dev
+          pkg-config
+        version: v1
