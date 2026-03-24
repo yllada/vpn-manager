@@ -34,8 +34,9 @@ jobs:
           fetch-depth: 0
 
       - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
           echo "📋 PR Title: $PR_TITLE"
           
           # Conventional Commits regex
@@ -56,18 +57,19 @@ jobs:
           fi
 
       - name: Check for breaking changes
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY="${{ github.event.pull_request.body }}"
-          
           if [[ "$PR_TITLE" == *"!"* ]] || [[ "$PR_BODY" == *"BREAKING CHANGE"* ]]; then
             echo "⚠️ This PR contains breaking changes"
             echo "::notice::Breaking change detected - ensure CHANGELOG.md is updated"
           fi
 
       - name: Validate branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
         run: |
-          BRANCH="${{ github.head_ref }}"
           echo "🌿 Branch: $BRANCH"
           
           # Valid branch patterns
