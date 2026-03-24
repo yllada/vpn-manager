@@ -9,8 +9,8 @@
 # Schedule: Weekly (Monday 6:00 UTC) + on push/PR to main
 #
 # Optimizations:
-#   - APT caching for CodeQL job (requires CGO)
-#   - No CGO deps for govulncheck/license-check (pure analysis)
+#   - APT caching via setup-go-gtk composite action (~60s → ~5s)
+#   - Go module caching (via setup-go)
 #   - Parallel execution of all jobs
 #
 # Documentation: https://docs.github.com/en/code-security/code-scanning
@@ -69,7 +69,11 @@ jobs:
           category: "/language:go"
 
   # =============================================================================
-  # Vulnerability Check - Go vulnerability database (NO CGO needed)
+  # Vulnerability Check - Go vulnerability database
+  # =============================================================================
+  # NOTE: Requires GTK deps because govulncheck needs to parse Go files.
+  # gotk4 packages have CGO build constraints - without GTK libs installed
+  # and CGO_ENABLED=1, those files are excluded causing undefined symbol errors.
   # =============================================================================
   govulncheck:
     name: Vulnerability Check
@@ -79,12 +83,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # NOTE: No GTK deps needed - govulncheck analyzes code, doesn't compile
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: 'go.mod'
-          cache: true
+      - name: Setup Go and GTK
+        uses: ./.github/actions/setup-go-gtk
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -92,10 +92,13 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
         env:
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1
 
   # =============================================================================
-  # License Check - Dependency license compliance (NO CGO needed)
+  # License Check - Dependency license compliance
+  # =============================================================================
+  # NOTE: Requires GTK deps for the same reason as govulncheck - go-licenses
+  # needs to resolve all packages including gotk4 which has CGO constraints.
   # =============================================================================
   license-check:
     name: License Check
@@ -105,24 +108,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # NOTE: No GTK deps needed - license scanning is pure Go analysis
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: 'go.mod'
-          cache: true
+      - name: Setup Go and GTK
+        uses: ./.github/actions/setup-go-gtk
 
       - name: Install go-licenses
         run: go install github.com/google/go-licenses@latest
 
       - name: Check licenses
         run: |
-          echo "📋 Checking dependency licenses..."
+          echo "Checking dependency licenses..."
           go-licenses report ./... 2>/dev/null || true
           
           # Check for problematic licenses
           echo ""
-          echo "🔍 Scanning for potentially incompatible licenses..."
+          echo "Scanning for potentially incompatible licenses..."
           PROBLEMATIC=$(go-licenses report ./... 2>/dev/null | grep -iE "(GPL|AGPL|SSPL)" || true)
           
           if [ -n "$PROBLEMATIC" ]; then
@@ -131,5 +130,7 @@ jobs:
             echo ""
             echo "Review these for MIT compatibility."
           else
-            echo "✅ No GPL-family licenses detected"
+            echo "No GPL-family licenses detected"
           fi
+        env:
+          CGO_ENABLED: 1
