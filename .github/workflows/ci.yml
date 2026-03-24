@@ -172,7 +172,7 @@ jobs:
           ./vpn-manager --version || echo "Version flag may not be implemented"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vpn-manager-ci-${{ github.sha }}
           path: vpn-manager
