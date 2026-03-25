@@ -66,6 +66,7 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: goinstall
+          args: --timeout=15m
 
   # =============================================================================
   # Test - Unit tests with coverage and race detection
