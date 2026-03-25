@@ -221,10 +221,8 @@ func (pm *ProfileManager) Add(profile *Profile) error {
 func (pm *ProfileManager) Remove(id string) error {
 	for i, profile := range pm.profiles {
 		if profile.ID == id {
-			// Remove configuration file
-			if err := os.Remove(profile.ConfigPath); err != nil && !os.IsNotExist(err) {
-				// Log but don't fail - file might already be deleted
-			}
+			// Remove configuration file (ignore error - file might already be deleted)
+			_ = os.Remove(profile.ConfigPath)
 
 			// Remove from slice
 			pm.profiles = append(pm.profiles[:i], pm.profiles[i+1:]...)

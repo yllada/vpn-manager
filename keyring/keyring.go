@@ -81,7 +81,7 @@ func initStorage() {
 func initLocalStorage() {
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, ".config", "vpn-manager")
-	os.MkdirAll(configDir, 0700)
+	_ = os.MkdirAll(configDir, 0700)
 	localStoreFile = filepath.Join(configDir, ".credentials")
 	saltFile = filepath.Join(configDir, ".keyring-salt")
 
@@ -163,18 +163,18 @@ func migrateOldCredentials() {
 
 	// Backup old file
 	backupFile := localStoreFile + ".bak"
-	os.Rename(localStoreFile, backupFile)
+	_ = os.Rename(localStoreFile, backupFile)
 
 	// Re-encrypt with new key
 	localStore = oldStore
 	if err := saveLocalStore(); err != nil {
 		// Restore backup on failure
-		os.Rename(backupFile, localStoreFile)
+		_ = os.Rename(backupFile, localStoreFile)
 		return
 	}
 
 	// Remove backup after successful migration
-	os.Remove(backupFile)
+	_ = os.Remove(backupFile)
 }
 
 // deriveOldKey recreates the old insecure key for migration purposes.

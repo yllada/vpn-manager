@@ -319,14 +319,14 @@ func ZeroString(s *string) {
 		return
 	}
 
-	// Convert string header to byte slice header for zeroing
-	// This is unsafe but necessary for security
-	sh := (*[2]uintptr)(unsafe.Pointer(s))
-	if sh[0] == 0 || sh[1] == 0 {
+	// Use unsafe.StringData to get a direct pointer to the string's backing array
+	// This is the safe way to access string internals in Go 1.20+
+	ptr := unsafe.StringData(*s)
+	if ptr == nil {
 		return
 	}
 
-	b := unsafe.Slice((*byte)(unsafe.Pointer(sh[0])), sh[1])
+	b := unsafe.Slice(ptr, len(*s))
 	for i := range b {
 		b[i] = 0
 	}

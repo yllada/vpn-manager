@@ -341,7 +341,7 @@ func (p *Provider) runConnection(_ context.Context, conn *Connection, auth app.A
 
 	defer func() {
 		if credFile != "" {
-			os.Remove(credFile)
+			_ = os.Remove(credFile)
 		}
 	}()
 
@@ -412,19 +412,19 @@ func (p *Provider) runConnection(_ context.Context, conn *Connection, auth app.A
 	if credFile != "" {
 		go func(path string) {
 			time.Sleep(3 * time.Second)
-			os.Remove(path)
+			_ = os.Remove(path)
 		}(credFile)
 	}
 
 	// Send credentials via stdin for OpenVPN3
 	if p.client.useV3 && stdin != nil {
 		go func() {
-			defer stdin.Close()
-			fmt.Fprintf(stdin, "%s\n", auth.Username)
+			defer func() { _ = stdin.Close() }()
+			_, _ = fmt.Fprintf(stdin, "%s\n", auth.Username)
 			if auth.OTP != "" {
-				fmt.Fprintf(stdin, "%s%s\n", auth.Password, auth.OTP)
+				_, _ = fmt.Fprintf(stdin, "%s%s\n", auth.Password, auth.OTP)
 			} else {
-				fmt.Fprintf(stdin, "%s\n", auth.Password)
+				_, _ = fmt.Fprintf(stdin, "%s\n", auth.Password)
 			}
 		}()
 	}

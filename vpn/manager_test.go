@@ -3,7 +3,6 @@ package vpn
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/yllada/vpn-manager/app"
 )
@@ -204,23 +203,6 @@ func TestNormalizeNetworkRoute_IPv6(t *testing.T) {
 		})
 	}
 }
-
-// mockProfile implements app.VPNProfile for testing
-type mockProfile struct {
-	id          string
-	name        string
-	provType    app.VPNProviderType
-	connected   bool
-	autoConnect bool
-}
-
-func (p *mockProfile) ID() string                { return p.id }
-func (p *mockProfile) Name() string              { return p.name }
-func (p *mockProfile) Type() app.VPNProviderType { return p.provType }
-func (p *mockProfile) IsConnected() bool         { return p.connected }
-func (p *mockProfile) CreatedAt() time.Time      { return time.Now() }
-func (p *mockProfile) LastUsed() time.Time       { return time.Now() }
-func (p *mockProfile) AutoConnect() bool         { return p.autoConnect }
 
 // mockProvider implements app.VPNProvider for testing
 type mockProvider struct {

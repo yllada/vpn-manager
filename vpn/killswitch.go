@@ -236,10 +236,8 @@ func (ks *KillSwitch) disableIptables() error {
 
 // enableNftables creates nftables rules for the kill switch.
 func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error {
-	// Create table and chain
-	if err := ks.runCmd("nft", "add", "table", "inet", "vpn_killswitch"); err != nil {
-		// Table might exist, continue
-	}
+	// Create table and chain (ignore error - table might already exist)
+	_ = ks.runCmd("nft", "add", "table", "inet", "vpn_killswitch")
 
 	// Create output chain with drop policy
 	chainCmd := "add chain inet vpn_killswitch output { type filter hook output priority 0; policy drop; }"

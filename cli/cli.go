@@ -44,8 +44,8 @@ func (c *CLI) ListProfiles() error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tNAME\tSTATUS\tAUTO-CONNECT\tOTP")
-	fmt.Fprintln(w, "--\t----\t------\t------------\t---")
+	_, _ = fmt.Fprintln(w, "ID\tNAME\tSTATUS\tAUTO-CONNECT\tOTP")
+	_, _ = fmt.Fprintln(w, "--\t----\t------\t------------\t---")
 
 	for _, profile := range profiles {
 		status := "Disconnected"
@@ -69,11 +69,11 @@ func (c *CLI) ListProfiles() error {
 			shortID = shortID[:8]
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			shortID, profile.Name, status, autoConnect, otp)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 
@@ -191,8 +191,8 @@ func (c *CLI) Status() error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROFILE\tSTATUS\tUPTIME\tIP ADDRESS")
-	fmt.Fprintln(w, "-------\t------\t------\t----------")
+	_, _ = fmt.Fprintln(w, "PROFILE\tSTATUS\tUPTIME\tIP ADDRESS")
+	_, _ = fmt.Fprintln(w, "-------\t------\t------\t----------")
 
 	for _, conn := range connections {
 		uptime := ""
@@ -205,11 +205,11 @@ func (c *CLI) Status() error {
 			ip = "-"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			conn.Profile.Name, conn.GetStatus().String(), uptime, ip)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 
@@ -393,18 +393,18 @@ func (c *CLI) ListApps() error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tEXECUTABLE\tICON")
-	fmt.Fprintln(w, "----\t----------\t----")
+	_, _ = fmt.Fprintln(w, "NAME\tEXECUTABLE\tICON")
+	_, _ = fmt.Fprintln(w, "----\t----------\t----")
 
 	for _, app := range apps {
 		icon := app.Icon
 		if icon == "" {
 			icon = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", app.Name, app.Executable, icon)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", app.Name, app.Executable, icon)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	fmt.Printf("\nTotal: %d applications\n", len(apps))
 	return nil
 }

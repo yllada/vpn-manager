@@ -86,7 +86,7 @@ func main() {
 		MaxFileSize: 5 * 1024 * 1024, // 5MB
 		MaxBackups:  5,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Could not initialize file logging: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: Could not initialize file logging: %v\n", err)
 	}
 	defer app.CloseLogger()
 
@@ -100,7 +100,7 @@ func main() {
 	// Verify OpenVPN installation
 	if !checkOpenVPNInstalled() {
 		app.LogError("OpenVPN is not installed on the system")
-		fmt.Fprintln(os.Stderr, "Error: OpenVPN is not installed on the system.")
+		_, _ = fmt.Fprintln(os.Stderr, "Error: OpenVPN is not installed on the system.")
 		os.Exit(1)
 	}
 
@@ -115,7 +115,7 @@ func main() {
 	application, err := ui.NewApplication(app.AppID, appVersion)
 	if err != nil {
 		app.LogError("Failed to initialize application: %v", err)
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 	exitCode := application.Run(os.Args)
@@ -131,7 +131,7 @@ func main() {
 func runCLI(ctx context.Context) {
 	cliApp, err := cli.New()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -171,7 +171,7 @@ func runCLI(ctx context.Context) {
 	}
 
 	if cliErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
 		os.Exit(1)
 	}
 }

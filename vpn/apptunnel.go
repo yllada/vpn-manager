@@ -422,9 +422,8 @@ func parseDesktopFile(path string) (AppConfig, error) {
 			app.Icon = strings.TrimPrefix(line, "Icon=")
 		} else if line == "NoDisplay=true" {
 			noDisplay = true
-		} else if line == "Type=Application" {
-			// Good, it's an application
 		}
+		// Note: Type=Application is valid but doesn't need special handling
 	}
 
 	if noDisplay {

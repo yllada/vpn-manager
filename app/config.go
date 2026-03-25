@@ -151,7 +151,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error opening configuration: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	decoder := yaml.NewDecoder(file)
 	decoder.KnownFields(true) // Strict validation: reject unknown fields

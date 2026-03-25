@@ -286,7 +286,7 @@ func (ip6 *IPv6Protection) blockIPv6Firewall() error {
 
 	for _, rule := range rules {
 		cmd := exec.Command("pkexec", append([]string{"ip6tables"}, rule...)...)
-		cmd.Run() // Ignore errors (chain might exist, rule might exist)
+		_ = cmd.Run() // Ignore errors (chain might exist, rule might exist)
 	}
 
 	return nil
@@ -306,7 +306,7 @@ func (ip6 *IPv6Protection) unblockIPv6Firewall() error {
 
 	for _, rule := range rules {
 		cmd := exec.Command("pkexec", append([]string{"ip6tables"}, rule...)...)
-		cmd.Run() // Ignore errors
+		_ = cmd.Run() // Ignore errors
 	}
 
 	return nil
@@ -442,21 +442,21 @@ func (ip6 *IPv6Protection) BlockWebRTCPorts() error {
 		// Block UDP (most common for STUN)
 		cmd := exec.Command("pkexec", "iptables", "-A", "OUTPUT", "-p", "udp",
 			"--dport", port, "-j", "DROP")
-		cmd.Run()
+		_ = cmd.Run()
 
 		// Block TCP (TURN fallback)
 		cmd = exec.Command("pkexec", "iptables", "-A", "OUTPUT", "-p", "tcp",
 			"--dport", port, "-j", "DROP")
-		cmd.Run()
+		_ = cmd.Run()
 
 		// Same for IPv6
 		cmd = exec.Command("pkexec", "ip6tables", "-A", "OUTPUT", "-p", "udp",
 			"--dport", port, "-j", "DROP")
-		cmd.Run()
+		_ = cmd.Run()
 
 		cmd = exec.Command("pkexec", "ip6tables", "-A", "OUTPUT", "-p", "tcp",
 			"--dport", port, "-j", "DROP")
-		cmd.Run()
+		_ = cmd.Run()
 	}
 
 	log.Printf("IPv6Protection: WebRTC STUN/TURN ports blocked")
@@ -468,13 +468,13 @@ func (ip6 *IPv6Protection) UnblockWebRTCPorts() error {
 	ports := []string{"3478", "5349", "19302"}
 
 	for _, port := range ports {
-		exec.Command("pkexec", "iptables", "-D", "OUTPUT", "-p", "udp",
+		_ = exec.Command("pkexec", "iptables", "-D", "OUTPUT", "-p", "udp",
 			"--dport", port, "-j", "DROP").Run()
-		exec.Command("pkexec", "iptables", "-D", "OUTPUT", "-p", "tcp",
+		_ = exec.Command("pkexec", "iptables", "-D", "OUTPUT", "-p", "tcp",
 			"--dport", port, "-j", "DROP").Run()
-		exec.Command("pkexec", "ip6tables", "-D", "OUTPUT", "-p", "udp",
+		_ = exec.Command("pkexec", "ip6tables", "-D", "OUTPUT", "-p", "udp",
 			"--dport", port, "-j", "DROP").Run()
-		exec.Command("pkexec", "ip6tables", "-D", "OUTPUT", "-p", "tcp",
+		_ = exec.Command("pkexec", "ip6tables", "-D", "OUTPUT", "-p", "tcp",
 			"--dport", port, "-j", "DROP").Run()
 	}
 

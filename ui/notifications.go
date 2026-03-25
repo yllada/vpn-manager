@@ -41,7 +41,7 @@ func ShowNotification(n Notification) {
 		}
 	}
 
-	urgency := "normal"
+	var urgency string
 	switch n.Type {
 	case NotificationError:
 		urgency = "critical"

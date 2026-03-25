@@ -170,7 +170,7 @@ func (l *AppLogger) EnableFileLogging() error {
 
 	// Close previous file if exists
 	if l.logFile != nil {
-		l.logFile.Close()
+		_ = l.logFile.Close()
 	}
 
 	l.logFile = file
@@ -201,7 +201,7 @@ func (l *AppLogger) rotate(logPath string) {
 	// Close current file if open
 	l.mu.Lock()
 	if l.logFile != nil {
-		l.logFile.Close()
+		_ = l.logFile.Close()
 		l.logFile = nil
 	}
 	l.mu.Unlock()
@@ -213,7 +213,7 @@ func (l *AppLogger) rotate(logPath string) {
 	// Compress the log file
 	if err := compressFile(logPath, rotatedPath); err != nil {
 		// If compression fails, just rename
-		os.Rename(logPath, strings.TrimSuffix(rotatedPath, ".gz"))
+		_ = os.Rename(logPath, strings.TrimSuffix(rotatedPath, ".gz"))
 	} else {
 		// Remove original after successful compression
 		os.Remove(logPath)

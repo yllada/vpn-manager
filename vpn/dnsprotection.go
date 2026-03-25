@@ -245,7 +245,7 @@ func (dp *DNSProtection) disableSystemdResolved() error {
 // NETWORKMANAGER BACKEND
 // ═══════════════════════════════════════════════════════════════════════════
 
-func (dp *DNSProtection) enableNetworkManager(vpnInterface string, dnsServers []string) error {
+func (dp *DNSProtection) enableNetworkManager(_ string, _ []string) error {
 	// NetworkManager typically handles DNS automatically when VPN connects
 	// We might need to adjust DNS priority for the connection
 	return nil
@@ -334,17 +334,6 @@ func (dp *DNSProtection) backupResolvConf(path string) error {
 // ═══════════════════════════════════════════════════════════════════════════
 // ALTERNATIVE DNS BLOCKING
 // ═══════════════════════════════════════════════════════════════════════════
-
-// Known DoH providers to block
-var dohProviders = []string{
-	"dns.google",           // 8.8.8.8, 8.8.4.4
-	"1.1.1.1",              // Cloudflare
-	"dns.cloudflare.com",   // Cloudflare
-	"mozilla.cloudflare-dns.com",
-	"dns.quad9.net",        // 9.9.9.9
-	"dns.adguard.com",
-	"doh.opendns.com",
-}
 
 func (dp *DNSProtection) blockAlternativeDNS() error {
 	// Block DNS-over-TLS (port 853) using iptables

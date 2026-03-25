@@ -80,7 +80,7 @@ func (nm *NMBackend) ImportProfile(configPath, name string) (string, error) {
 
 	// IMPORTANT: Set password-flags=0 so credentials can be saved
 	// This prevents the "password required" error on reconnection
-	exec.Command("nmcli", "connection", "modify", connName,
+	_ = exec.Command("nmcli", "connection", "modify", connName,
 		"+vpn.data", "password-flags=0").Run()
 
 	log.Printf("NM: Profile imported as '%s' with password storage enabled", connName)
@@ -126,12 +126,12 @@ func (nm *NMBackend) Connect(connName, username, password string) error {
 	// This is done async so we don't block the connection
 	go func() {
 		if username != "" {
-			exec.Command("nmcli", "connection", "modify", connName,
+			_ = exec.Command("nmcli", "connection", "modify", connName,
 				"+vpn.data", fmt.Sprintf("username=%s", username),
 				"+vpn.data", "password-flags=0").Run()
 		}
 		if password != "" {
-			exec.Command("nmcli", "connection", "modify", connName,
+			_ = exec.Command("nmcli", "connection", "modify", connName,
 				"vpn.secrets.password", password).Run()
 		}
 	}()
@@ -153,8 +153,8 @@ func (nm *NMBackend) connectWithPasswdFile(connName, password string) error {
 	}
 
 	go func() {
-		defer stdin.Close()
-		fmt.Fprintf(stdin, "vpn.secrets.password:%s\n", password)
+		defer func() { _ = stdin.Close() }()
+		_, _ = fmt.Fprintf(stdin, "vpn.secrets.password:%s\n", password)
 	}()
 
 	output, err := cmd.CombinedOutput()
@@ -171,15 +171,15 @@ func (nm *NMBackend) connectWithPasswdFile(connName, password string) error {
 func (nm *NMBackend) ConnectWithSecrets(connName, username, password, otp string) error {
 	// Save username permanently
 	if username != "" {
-		exec.Command("nmcli", "connection", "modify", connName,
+		_ = exec.Command("nmcli", "connection", "modify", connName,
 			"+vpn.data", fmt.Sprintf("username=%s", username)).Run()
 	}
 
 	// If no OTP, save password permanently for future reconnections
 	if otp == "" && password != "" {
-		exec.Command("nmcli", "connection", "modify", connName,
+		_ = exec.Command("nmcli", "connection", "modify", connName,
 			"+vpn.data", "password-flags=0").Run()
-		exec.Command("nmcli", "connection", "modify", connName,
+		_ = exec.Command("nmcli", "connection", "modify", connName,
 			"vpn.secrets.password", password).Run()
 	}
 

@@ -535,7 +535,7 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	// Ensure cleanup of credentials file
 	defer func() {
 		if credFile != "" {
-			os.Remove(credFile)
+			_ = os.Remove(credFile)
 			log.Printf("VPN: Credentials file deleted")
 		}
 	}()
@@ -640,9 +640,9 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	// For OpenVPN3, send credentials via stdin
 	if useOpenVPN3 && stdin != nil {
 		go func() {
-			defer stdin.Close()
-			fmt.Fprintf(stdin, "%s\n", username)
-			fmt.Fprintf(stdin, "%s\n", password)
+			defer func() { _ = stdin.Close() }()
+			_, _ = fmt.Fprintf(stdin, "%s\n", username)
+			_, _ = fmt.Fprintf(stdin, "%s\n", password)
 		}()
 	}
 

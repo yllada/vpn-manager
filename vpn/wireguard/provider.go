@@ -572,21 +572,6 @@ func (p *Provider) ListActiveInterfaces() ([]string, error) {
 	return interfaces, nil
 }
 
-// generateInterfaceName generates a unique interface name for a profile.
-func generateInterfaceName(profileName string) string {
-	// WireGuard interface names are limited to 15 characters
-	name := strings.ToLower(profileName)
-	name = strings.ReplaceAll(name, " ", "")
-	name = strings.ReplaceAll(name, "-", "")
-	name = strings.ReplaceAll(name, "_", "")
-
-	if len(name) > 12 {
-		name = name[:12]
-	}
-
-	return "wg-" + name
-}
-
 // parseEndpoint parses a WireGuard endpoint string.
 func parseEndpoint(endpoint string) (host string, port string) {
 	// Handle IPv6 with brackets
@@ -632,9 +617,10 @@ func validateConfig(configPath string) error {
 		// Check section headers
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			currentSection = strings.ToLower(line[1 : len(line)-1])
-			if currentSection == "interface" {
+			switch currentSection {
+			case "interface":
 				hasInterface = true
-			} else if currentSection == "peer" {
+			case "peer":
 				hasPeer = true
 			}
 			continue

@@ -189,20 +189,6 @@ func (a *Application) GetTray() *TrayIndicator {
 	return a.tray
 }
 
-// connectFromTray starts connection from tray with saved credentials.
-// Respects RequiresOTP setting - shows OTP dialog only when needed.
-func (a *Application) connectFromTray(profile *vpn.Profile, savedPassword string) {
-	if a.window != nil && a.window.openvpnPanel != nil {
-		pl := a.window.openvpnPanel.GetProfileList()
-		if profile.RequiresOTP {
-			pl.showOTPDialog(profile, profile.Username, savedPassword, false)
-		} else {
-			// No OTP required - connect directly
-			pl.connectWithCredentials(profile, profile.Username, savedPassword)
-		}
-	}
-}
-
 // setupHealthChecker configures and starts the health checker.
 func (a *Application) setupHealthChecker() {
 	if !a.config.AutoReconnect {
@@ -289,7 +275,7 @@ func (a *Application) setupHealthChecker() {
 
 			if a.window != nil {
 				a.window.SetStatus(fmt.Sprintf("OTP required to reconnect to %s", profile.Name))
-				
+
 				// Show OTP dialog for reconnection
 				if a.window.openvpnPanel != nil {
 					pl := a.window.openvpnPanel.GetProfileList()
