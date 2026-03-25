@@ -134,8 +134,8 @@ func TestFileExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tempFile.Name())
-	tempFile.Close()
+	defer func() { _ = os.Remove(tempFile.Name()) }()
+	_ = tempFile.Close()
 
 	if !FileExists(tempFile.Name()) {
 		t.Error("FileExists() should return true for existing file")
@@ -218,7 +218,7 @@ func TestLogRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "test.log")
 

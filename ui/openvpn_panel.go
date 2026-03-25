@@ -583,7 +583,7 @@ func (pl *ProfileList) showOTPDialog(profile *vpn.Profile, username, password st
 				profile.SavePassword = false
 				pl.mainWindow.SetStatus("Warning: Could not save password")
 			}
-			pl.mainWindow.app.vpnManager.ProfileManager().Save()
+			_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
 		}
 
 		window.Close()
@@ -598,7 +598,7 @@ func (pl *ProfileList) showOTPDialog(profile *vpn.Profile, username, password st
 
 	mainBox.Append(buttonBox)
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 
 	// Focus on OTP field
 	otpEntry.GrabFocus()
@@ -716,7 +716,7 @@ func (pl *ProfileList) showPasswordDialog(profile *vpn.Profile) {
 				profile.SavePassword = false
 				pl.mainWindow.SetStatus("Warning: Could not save password")
 			}
-			pl.mainWindow.app.vpnManager.ProfileManager().Save()
+			_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
 		}
 
 		// Check if OTP is required for this profile
@@ -737,7 +737,7 @@ func (pl *ProfileList) showPasswordDialog(profile *vpn.Profile) {
 
 	mainBox.Append(buttonBox)
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 
 	// Focus on appropriate field
 	if profile.Username != "" {
@@ -774,10 +774,10 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 				// This can be done outside GTK thread
 				failedProfile.RequiresOTP = true
 				failedProfile.OTPAutoDetected = false // Learned from server, not config
-				pl.mainWindow.app.vpnManager.ProfileManager().Save()
+				_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
 
 				// Disconnect failed connection first (done outside GTK thread)
-				pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID)
+				_ = pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID)
 
 				// All GTK operations must be done on the main thread
 				glib.IdleAdd(func() {
@@ -1029,7 +1029,7 @@ func (pl *ProfileList) onDeleteClicked(profile *vpn.Profile) {
 		window.Close()
 
 		// Delete from keyring
-		keyring.Delete(profile.ID)
+		_ = keyring.Delete(profile.ID)
 
 		// Delete profile
 		if err := pl.mainWindow.app.vpnManager.ProfileManager().Remove(profile.ID); err != nil {
@@ -1044,7 +1044,7 @@ func (pl *ProfileList) onDeleteClicked(profile *vpn.Profile) {
 	mainBox.Append(buttonBox)
 
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 }
 
 // updateHealthIndicator updates the visual health indicator for a profile.

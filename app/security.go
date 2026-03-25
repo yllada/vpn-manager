@@ -131,7 +131,7 @@ func (ss *SecureString) Zero() {
 
 	// Overwrite with cryptographically random data first
 	// This helps against cold boot attacks
-	rand.Read(ss.data)
+	_, _ = rand.Read(ss.data)
 
 	// Then zero out
 	for i := range ss.data {

@@ -216,7 +216,7 @@ func (l *AppLogger) rotate(logPath string) {
 		_ = os.Rename(logPath, strings.TrimSuffix(rotatedPath, ".gz"))
 	} else {
 		// Remove original after successful compression
-		os.Remove(logPath)
+		_ = os.Remove(logPath)
 	}
 
 	// Clean up old backups
@@ -229,16 +229,16 @@ func compressFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() { _ = dstFile.Close() }()
 
 	gzWriter := gzip.NewWriter(dstFile)
-	defer gzWriter.Close()
+	defer func() { _ = gzWriter.Close() }()
 
 	_, err = io.Copy(gzWriter, srcFile)
 	return err
@@ -269,7 +269,7 @@ func (l *AppLogger) cleanupOldBackups(logDir string) {
 	// Remove oldest files
 	toRemove := len(matches) - l.maxBackups
 	for i := 0; i < toRemove; i++ {
-		os.Remove(matches[i])
+		_ = os.Remove(matches[i])
 	}
 }
 
@@ -380,7 +380,7 @@ func (l *AppLogger) CheckRotation() {
 		l.rotateIfNeeded(l.filePath)
 		// Reopen the log file after rotation
 		if l.logFile == nil {
-			l.EnableFileLogging()
+			_ = l.EnableFileLogging()
 		}
 	}
 }

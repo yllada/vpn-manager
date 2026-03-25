@@ -310,7 +310,7 @@ func (p *Provider) updateStats(conn *Connection) {
 	txPath := fmt.Sprintf("/sys/class/net/%s/statistics/tx_bytes", ifaceName)
 	if txData, err := os.ReadFile(txPath); err == nil {
 		var tx uint64
-		fmt.Sscanf(strings.TrimSpace(string(txData)), "%d", &tx)
+		_, _ = fmt.Sscanf(strings.TrimSpace(string(txData)), "%d", &tx)
 		conn.mu.Lock()
 		conn.BytesSent = tx
 		conn.mu.Unlock()
@@ -320,7 +320,7 @@ func (p *Provider) updateStats(conn *Connection) {
 	rxPath := fmt.Sprintf("/sys/class/net/%s/statistics/rx_bytes", ifaceName)
 	if rxData, err := os.ReadFile(rxPath); err == nil {
 		var rx uint64
-		fmt.Sscanf(strings.TrimSpace(string(rxData)), "%d", &rx)
+		_, _ = fmt.Sscanf(strings.TrimSpace(string(rxData)), "%d", &rx)
 		conn.mu.Lock()
 		conn.BytesRecv = rx
 		conn.mu.Unlock()
@@ -597,7 +597,7 @@ func validateConfig(configPath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hasInterface := false
 	hasPeer := false

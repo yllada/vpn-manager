@@ -349,5 +349,5 @@ func (pd *PreferencesDialog) savePreferences() {
 
 // Show displays the preferences dialog.
 func (pd *PreferencesDialog) Show() {
-	pd.window.Show()
+	pd.window.SetVisible(true)
 }

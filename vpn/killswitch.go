@@ -85,7 +85,7 @@ func (ks *KillSwitch) SetMode(mode KillSwitchMode) {
 	ks.mode = mode
 
 	if mode == KillSwitchOff {
-		ks.disable()
+		_ = ks.disable()
 	}
 }
 
@@ -182,7 +182,7 @@ func (ks *KillSwitch) enableIptables(vpnIface string, allowedIPs []string) error
 	// Create custom chain
 	if err := ks.runCmd("iptables", "-N", ks.chainName); err != nil {
 		// Chain might already exist, try flushing
-		ks.runCmd("iptables", "-F", ks.chainName)
+		_ = ks.runCmd("iptables", "-F", ks.chainName)
 	}
 
 	// Allow established connections
@@ -206,8 +206,8 @@ func (ks *KillSwitch) enableIptables(vpnIface string, allowedIPs []string) error
 	}
 
 	// Allow DNS (important for VPN server resolution)
-	ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", "53", "-j", "ACCEPT")
-	ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", "53", "-j", "ACCEPT")
+	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", "53", "-j", "ACCEPT")
+	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", "53", "-j", "ACCEPT")
 
 	// Block everything else
 	if err := ks.runCmd("iptables", "-A", ks.chainName, "-j", "DROP"); err != nil {
@@ -225,11 +225,11 @@ func (ks *KillSwitch) enableIptables(vpnIface string, allowedIPs []string) error
 // disableIptables removes iptables rules for the kill switch.
 func (ks *KillSwitch) disableIptables() error {
 	// Remove from OUTPUT chain
-	ks.runCmd("iptables", "-D", "OUTPUT", "-j", ks.chainName)
+	_ = ks.runCmd("iptables", "-D", "OUTPUT", "-j", ks.chainName)
 
 	// Flush and delete custom chain
-	ks.runCmd("iptables", "-F", ks.chainName)
-	ks.runCmd("iptables", "-X", ks.chainName)
+	_ = ks.runCmd("iptables", "-F", ks.chainName)
+	_ = ks.runCmd("iptables", "-X", ks.chainName)
 
 	return nil
 }
@@ -243,7 +243,7 @@ func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error
 	chainCmd := "add chain inet vpn_killswitch output { type filter hook output priority 0; policy drop; }"
 	if err := ks.runCmd("nft", chainCmd); err != nil {
 		// Try to flush if exists
-		ks.runCmd("nft", "flush", "chain", "inet", "vpn_killswitch", "output")
+		_ = ks.runCmd("nft", "flush", "chain", "inet", "vpn_killswitch", "output")
 	}
 
 	// Allow established connections
@@ -269,14 +269,14 @@ func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error
 		if ip == "" {
 			continue
 		}
-		ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+		_ = ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
 			"ip", "daddr", ip, "accept")
 	}
 
 	// Allow DNS
-	ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+	_ = ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
 		"udp", "dport", "53", "accept")
-	ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+	_ = ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
 		"tcp", "dport", "53", "accept")
 
 	return nil

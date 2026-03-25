@@ -350,6 +350,7 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 
 // onImportProfile handles importing a WireGuard config file.
 func (wp *WireGuardPanel) onImportProfile() {
+	//nolint:staticcheck // FileDialog migration planned
 	dialog := gtk.NewFileChooserNative(
 		"Import WireGuard Configuration",
 		&wp.mainWindow.window.Window,
@@ -362,11 +363,13 @@ func (wp *WireGuardPanel) onImportProfile() {
 	filter := gtk.NewFileFilter()
 	filter.SetName("WireGuard Config (*.conf)")
 	filter.AddPattern("*.conf")
+	//nolint:staticcheck // FileDialog migration planned
 	dialog.AddFilter(filter)
 
 	// Show dialog
 	dialog.ConnectResponse(func(responseID int) {
 		if responseID == int(gtk.ResponseAccept) {
+			//nolint:staticcheck // FileDialog migration planned
 			file := dialog.File()
 			if file != nil {
 				path := file.Path()

@@ -259,7 +259,7 @@ func TestWaitForEvent(t *testing.T) {
 		t.Errorf("WaitForEvent failed: %v", err)
 	}
 	if event == nil {
-		t.Error("Expected event, got nil")
+		t.Fatal("Expected event, got nil")
 	}
 	if event.Data != "data" {
 		t.Error("Event data mismatch")

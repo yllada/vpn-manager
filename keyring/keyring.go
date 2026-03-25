@@ -69,7 +69,7 @@ func initStorage() {
 	testKey := "vpn-manager-test-init"
 	err := keyring.Set(serviceName, testKey, "test")
 	if err == nil {
-		keyring.Delete(serviceName, testKey)
+		_ = keyring.Delete(serviceName, testKey)
 		useLocalStorage = false
 	} else {
 		useLocalStorage = true
@@ -232,7 +232,7 @@ func loadLocalStore() {
 		return
 	}
 
-	json.Unmarshal(decrypted, &localStore)
+	_ = json.Unmarshal(decrypted, &localStore)
 }
 
 func saveLocalStore() error {
@@ -369,13 +369,13 @@ func Delete(profileID string) error {
 		return saveLocalStore()
 	}
 
-	keyring.Delete(serviceName, profileID)
+	_ = keyring.Delete(serviceName, profileID)
 
 	// Also remove from local storage if present
 	localStoreMu.Lock()
 	delete(localStore, profileID)
 	localStoreMu.Unlock()
-	saveLocalStore()
+	_ = saveLocalStore()
 
 	return nil
 }

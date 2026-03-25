@@ -99,7 +99,7 @@ func TestProfileManager_Get(t *testing.T) {
 		Name:       "Test Profile",
 		ConfigPath: configPath,
 	}
-	pm.Add(profile)
+	_ = pm.Add(profile)
 
 	// Get by ID
 	retrieved, err := pm.Get(profile.ID)
@@ -131,7 +131,7 @@ func TestProfileManager_GetByName(t *testing.T) {
 		Name:       "My VPN",
 		ConfigPath: configPath,
 	}
-	pm.Add(profile)
+	_ = pm.Add(profile)
 
 	retrieved, err := pm.GetByName("My VPN")
 	if err != nil {
@@ -164,7 +164,7 @@ func TestProfileManager_List(t *testing.T) {
 	// Add profiles
 	for i := 0; i < 3; i++ {
 		configPath := createTestOVPNFile(t, pm.configDir, "test"+string(rune('0'+i))+".ovpn")
-		pm.Add(&Profile{
+		_ = pm.Add(&Profile{
 			Name:       "Profile " + string(rune('0'+i)),
 			ConfigPath: configPath,
 		})
@@ -185,7 +185,7 @@ func TestProfileManager_Remove(t *testing.T) {
 		Name:       "To Delete",
 		ConfigPath: configPath,
 	}
-	pm.Add(profile)
+	_ = pm.Add(profile)
 
 	err := pm.Remove(profile.ID)
 	if err != nil {
@@ -223,7 +223,7 @@ func TestProfileManager_Update(t *testing.T) {
 		Name:       "Original Name",
 		ConfigPath: configPath,
 	}
-	pm.Add(profile)
+	_ = pm.Add(profile)
 
 	// Update profile
 	profile.Name = "Updated Name"
@@ -269,7 +269,7 @@ func TestProfileManager_MarkUsed(t *testing.T) {
 		Name:       "Test",
 		ConfigPath: configPath,
 	}
-	pm.Add(profile)
+	_ = pm.Add(profile)
 
 	// Initial LastUsed should be zero
 	if !profile.LastUsed.IsZero() {
@@ -306,7 +306,7 @@ func TestProfileManager_SaveAndLoad(t *testing.T) {
 		SplitTunnelMode:    "include",
 		SplitTunnelRoutes:  []string{"192.168.1.0/24", "10.0.0.0/8"},
 	}
-	pm.Add(profile)
+	_ = pm.Add(profile)
 
 	// Create new manager pointing to same files
 	pm2 := &ProfileManager{
@@ -364,7 +364,7 @@ func TestValidateConfigFile_NotFound(t *testing.T) {
 func TestValidateConfigFile_WrongExtension(t *testing.T) {
 	tmpDir := t.TempDir()
 	badPath := filepath.Join(tmpDir, "config.txt")
-	os.WriteFile(badPath, []byte("client\nremote vpn.example.com"), 0600)
+	_ = os.WriteFile(badPath, []byte("client\nremote vpn.example.com"), 0600)
 
 	err := validateConfigFile(badPath)
 	if err == nil {
@@ -375,7 +375,7 @@ func TestValidateConfigFile_WrongExtension(t *testing.T) {
 func TestValidateConfigFile_MissingDirectives(t *testing.T) {
 	tmpDir := t.TempDir()
 	badPath := filepath.Join(tmpDir, "bad.ovpn")
-	os.WriteFile(badPath, []byte("# Empty config\nno-directives-here"), 0600)
+	_ = os.WriteFile(badPath, []byte("# Empty config\nno-directives-here"), 0600)
 
 	err := validateConfigFile(badPath)
 	if err == nil {
@@ -399,7 +399,7 @@ func TestValidateConfigFile_DangerousDirectives(t *testing.T) {
 	for _, tc := range dangerousCases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(tmpDir, tc.name+".ovpn")
-			os.WriteFile(path, []byte(tc.content), 0600)
+			_ = os.WriteFile(path, []byte(tc.content), 0600)
 
 			err := validateConfigFile(path)
 			if err == nil {
@@ -440,7 +440,7 @@ func TestDetectOTPRequirement(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(tmpDir, tc.name+".ovpn")
-			os.WriteFile(path, []byte(tc.content), 0600)
+			_ = os.WriteFile(path, []byte(tc.content), 0600)
 
 			result := DetectOTPRequirement(path)
 			if result != tc.expected {

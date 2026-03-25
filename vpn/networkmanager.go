@@ -208,7 +208,7 @@ func (nm *NMBackend) Disconnect(connName string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try disconnecting all VPN connections
-		nm.DisconnectAll()
+		_ = nm.DisconnectAll()
 		return nil
 	}
 
@@ -229,7 +229,7 @@ func (nm *NMBackend) DisconnectAll() error {
 	for _, line := range lines {
 		parts := strings.Split(line, ":")
 		if len(parts) >= 2 && parts[1] == "vpn" {
-			nm.Disconnect(parts[0])
+			_ = nm.Disconnect(parts[0])
 		}
 	}
 
@@ -332,7 +332,7 @@ func (nm *NMBackend) MonitorConnection(connName string, callback func(connected 
 	}
 
 	go func() {
-		defer cmd.Process.Kill()
+		defer func() { _ = cmd.Process.Kill() }()
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()

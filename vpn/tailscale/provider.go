@@ -787,10 +787,10 @@ func (c *Client) loginWithPkexec(ctx context.Context, authKey string) (string, e
 		// Got URL, don't wait for command to finish (it waits for browser)
 		return url, nil
 	case <-ctx.Done():
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		return "", ctx.Err()
 	case <-time.After(30 * time.Second):
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		return "", fmt.Errorf("timeout waiting for auth URL")
 	}
 }

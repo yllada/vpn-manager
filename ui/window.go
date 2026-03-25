@@ -281,7 +281,7 @@ func (mw *MainWindow) createStatusBar() {
 
 // Show displays the window.
 func (mw *MainWindow) Show() {
-	mw.window.Show()
+	mw.window.SetVisible(true)
 }
 
 // SetStatus updates the status text.
@@ -295,6 +295,7 @@ func (mw *MainWindow) SetStatus(text string) {
 
 func (mw *MainWindow) onAddProfile() {
 	// Create dialog to select .ovpn file
+	//nolint:staticcheck // FileDialog migration requires async API refactor
 	dialog := gtk.NewFileChooserNative(
 		"Select VPN configuration file",
 		&mw.window.Window,
@@ -308,12 +309,12 @@ func (mw *MainWindow) onAddProfile() {
 	filter.SetName("OpenVPN files (*.ovpn, *.conf)")
 	filter.AddPattern("*.ovpn")
 	filter.AddPattern("*.conf")
-	dialog.AddFilter(filter)
+	dialog.AddFilter(filter) //nolint:staticcheck // FileDialog migration requires async API refactor
 
 	// Show dialog
 	dialog.ConnectResponse(func(responseID int) {
 		if responseID == int(gtk.ResponseAccept) {
-			file := dialog.File()
+			file := dialog.File() //nolint:staticcheck // FileDialog migration requires async API refactor
 			if file != nil {
 				path := file.Path()
 				mw.showAddProfileDialog(path)
@@ -396,7 +397,7 @@ func (mw *MainWindow) showAddProfileDialog(configPath string) {
 	mainBox.Append(buttonBox)
 
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 }
 
 func (mw *MainWindow) onPreferences() {
@@ -446,7 +447,7 @@ SOFTWARE.`)
 	// Credits
 	about.SetAuthors([]string{"Yadian Llada Lopez <yadian@y3lcorp.com>"})
 
-	about.Show()
+	about.SetVisible(true)
 }
 
 // showError displays an error dialog.
@@ -488,7 +489,7 @@ func (mw *MainWindow) showError(title, message string) {
 	mainBox.Append(okBtn)
 
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 }
 
 // showInfo displays an information dialog.
@@ -530,7 +531,7 @@ func (mw *MainWindow) showInfo(title, message string) {
 	mainBox.Append(okBtn)
 
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 }
 
 // =============================================================================
@@ -545,6 +546,7 @@ func (mw *MainWindow) onExportProfiles() {
 		return
 	}
 
+	//nolint:staticcheck // FileDialog migration requires async API refactor
 	dialog := gtk.NewFileChooserNative(
 		"Export VPN Profiles",
 		&mw.window.Window,
@@ -556,18 +558,18 @@ func (mw *MainWindow) onExportProfiles() {
 	// Set suggested filename with date
 	suggestedName := fmt.Sprintf("vpn-profiles-backup-%s.yaml",
 		time.Now().Format("20060102"))
-	dialog.SetCurrentName(suggestedName)
+	dialog.SetCurrentName(suggestedName) //nolint:staticcheck // FileDialog migration requires async API refactor
 
 	// Add file filter
 	filter := gtk.NewFileFilter()
 	filter.SetName("VPN Backup Files (*.yaml)")
 	filter.AddPattern("*.yaml")
 	filter.AddPattern("*.yml")
-	dialog.AddFilter(filter)
+	dialog.AddFilter(filter) //nolint:staticcheck // FileDialog migration requires async API refactor
 
 	dialog.ConnectResponse(func(response int) {
 		if response == int(gtk.ResponseAccept) {
-			file := dialog.File()
+			file := dialog.File() //nolint:staticcheck // FileDialog migration requires async API refactor
 			if file != nil {
 				filePath := file.Path()
 
@@ -595,6 +597,7 @@ func (mw *MainWindow) onExportProfiles() {
 
 // onImportProfiles handles the import profiles action.
 func (mw *MainWindow) onImportProfiles() {
+	//nolint:staticcheck // FileDialog migration requires async API refactor
 	dialog := gtk.NewFileChooserNative(
 		"Import VPN Profiles",
 		&mw.window.Window,
@@ -608,11 +611,11 @@ func (mw *MainWindow) onImportProfiles() {
 	filter.SetName("VPN Backup Files (*.yaml, *.yml)")
 	filter.AddPattern("*.yaml")
 	filter.AddPattern("*.yml")
-	dialog.AddFilter(filter)
+	dialog.AddFilter(filter) //nolint:staticcheck // FileDialog migration requires async API refactor
 
 	dialog.ConnectResponse(func(response int) {
 		if response == int(gtk.ResponseAccept) {
-			file := dialog.File()
+			file := dialog.File() //nolint:staticcheck // FileDialog migration requires async API refactor
 			if file != nil {
 				filePath := file.Path()
 

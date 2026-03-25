@@ -986,5 +986,5 @@ func (std *SplitTunnelDialog) saveSettings() {
 
 // Show displays the dialog.
 func (std *SplitTunnelDialog) Show() {
-	std.window.Show()
+	std.window.SetVisible(true)
 }

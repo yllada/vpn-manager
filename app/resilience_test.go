@@ -29,7 +29,7 @@ func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 
 	// Record failures
 	for i := 0; i < 3; i++ {
-		cb.Allow()
+		_ = cb.Allow()
 		cb.RecordFailure()
 	}
 
@@ -51,9 +51,9 @@ func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
 	cb := NewCircuitBreaker(config)
 
 	// Open the circuit
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordFailure()
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordFailure()
 
 	if cb.State() != CircuitOpen {
@@ -81,20 +81,20 @@ func TestCircuitBreaker_ClosesAfterSuccesses(t *testing.T) {
 	cb := NewCircuitBreaker(config)
 
 	// Open the circuit
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordFailure()
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordFailure()
 
 	// Wait for timeout
 	time.Sleep(20 * time.Millisecond)
 
 	// Transition to half-open
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordSuccess()
 
 	// Need another success to close
-	cb.Allow()
+	_ = cb.Allow()
 	cb.RecordSuccess()
 
 	if cb.State() != CircuitClosed {
@@ -238,7 +238,7 @@ func TestRetry_OnRetryCallback(t *testing.T) {
 	retry := NewRetry(config)
 	ctx := context.Background()
 
-	retry.Do(ctx, func() error {
+	_ = retry.Do(ctx, func() error {
 		return errors.New("always fails")
 	})
 

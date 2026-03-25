@@ -227,7 +227,7 @@ func (p *Provider) disconnectOne(conn *Connection) {
 		cmd := exec.Command("openvpn3", "sessions-list")
 		if output, err := cmd.Output(); err == nil {
 			if strings.Contains(string(output), configPath) {
-				exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath).Run()
+				_ = exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath).Run()
 			}
 		}
 	} else {
@@ -250,7 +250,7 @@ func (p *Provider) disconnectOne(conn *Connection) {
 
 		// Fallback: kill any remaining openvpn processes started by this app
 		// This is a last resort - only kills openvpn processes, not other VPNs
-		exec.Command("pkexec", "killall", "-q", "openvpn").Run()
+		_ = exec.Command("pkexec", "killall", "-q", "openvpn").Run()
 	}
 
 	// Wait a moment for process cleanup
@@ -688,7 +688,7 @@ func parseRouteForOpenVPN(route string) (network, netmask string) {
 		// Convert CIDR prefix to netmask
 		prefixLen := 32
 		if len(parts) > 1 {
-			fmt.Sscanf(parts[1], "%d", &prefixLen)
+			_, _ = fmt.Sscanf(parts[1], "%d", &prefixLen)
 		}
 
 		netmask = cidrToNetmask(prefixLen)

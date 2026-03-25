@@ -367,7 +367,7 @@ func (m *Manager) Disconnect(profileID string) error {
 			}
 
 			// Fallback: kill any remaining openvpn processes
-			exec.Command("pkexec", "killall", "-q", "openvpn").Run()
+			_ = exec.Command("pkexec", "killall", "-q", "openvpn").Run()
 		}
 	}
 
@@ -466,12 +466,12 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 
 		// Save the connection name to the profile
 		conn.Profile.NMConnectionName = connName
-		m.profileManager.Save()
+		_ = m.profileManager.Save()
 		log.Printf("VPN: Imported to NetworkManager as '%s'", connName)
 	} else {
 		// Connection exists - ensure password storage is enabled
 		// This fixes existing connections that have password-flags=1
-		m.nmBackend.FixPasswordFlags(connName)
+		_ = m.nmBackend.FixPasswordFlags(connName)
 	}
 
 	// Connect using NetworkManager (this also saves credentials permanently)

@@ -229,15 +229,15 @@ func (dp *DNSProtection) enableSystemdResolved(vpnInterface string, dnsServers [
 	}
 
 	// Flush DNS cache
-	exec.Command("resolvectl", "flush-caches").Run()
+	_ = exec.Command("resolvectl", "flush-caches").Run()
 
 	return nil
 }
 
 func (dp *DNSProtection) disableSystemdResolved() error {
 	// Flushing caches and resetting will allow normal DNS resolution
-	exec.Command("resolvectl", "flush-caches").Run()
-	exec.Command("resolvectl", "reset-statistics").Run()
+	_ = exec.Command("resolvectl", "flush-caches").Run()
+	_ = exec.Command("resolvectl", "reset-statistics").Run()
 	return nil
 }
 
@@ -287,7 +287,7 @@ func (dp *DNSProtection) enableResolvConf(dnsServers []string) error {
 		return fmt.Errorf("failed to update resolv.conf: %w: %s", err, output)
 	}
 
-	os.Remove(tmpFile)
+	_ = os.Remove(tmpFile)
 	return nil
 }
 
@@ -302,7 +302,7 @@ func (dp *DNSProtection) disableResolvConf() error {
 		return fmt.Errorf("failed to restore resolv.conf: %w: %s", err, output)
 	}
 
-	os.Remove(dp.backupPath)
+	_ = os.Remove(dp.backupPath)
 	return nil
 }
 
@@ -344,7 +344,7 @@ func (dp *DNSProtection) blockAlternativeDNS() error {
 		}
 		for _, args := range cmds {
 			cmd := exec.Command("pkexec", args...)
-			cmd.Run() // Ignore errors, might already exist
+			_ = cmd.Run() // Ignore errors, might already exist
 		}
 	}
 
@@ -365,7 +365,7 @@ func (dp *DNSProtection) unblockAlternativeDNS() error {
 	}
 	for _, args := range cmds {
 		cmd := exec.Command("pkexec", args...)
-		cmd.Run() // Ignore errors
+		_ = cmd.Run() // Ignore errors
 	}
 
 	return nil

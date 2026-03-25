@@ -88,7 +88,7 @@ func main() {
 	}); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: Could not initialize file logging: %v\n", err)
 	}
-	defer app.CloseLogger()
+	defer func() { _ = app.CloseLogger() }()
 
 	// Setup graceful shutdown context
 	ctx, cancel := context.WithCancel(context.Background())

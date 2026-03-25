@@ -239,7 +239,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 			status := conn.GetStatus()
 			if status == vpn.StatusConnected || status == vpn.StatusConnecting {
 				profileID := profile.ID
-				t.app.vpnManager.Disconnect(profileID)
+				_ = t.app.vpnManager.Disconnect(profileID)
 
 				// Update main window UI
 				glib.IdleAdd(func() {
@@ -297,8 +297,8 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 		conn.SetOnAuthFailed(func(failedProfile *vpn.Profile, needsOTP bool) {
 			if needsOTP {
 				failedProfile.RequiresOTP = true
-				t.app.vpnManager.ProfileManager().Save()
-				t.app.vpnManager.Disconnect(failedProfile.ID)
+				_ = t.app.vpnManager.ProfileManager().Save()
+				_ = t.app.vpnManager.Disconnect(failedProfile.ID)
 				t.SetDisconnected()
 
 				glib.IdleAdd(func() {
@@ -434,7 +434,7 @@ func (t *TrayIndicator) showFloatingOTPDialog(profile *vpn.Profile, username, pa
 
 	content.Append(btnBox)
 	window.SetChild(content)
-	window.Show()
+	window.SetVisible(true)
 	otpEntry.GrabFocus()
 }
 
@@ -521,8 +521,8 @@ func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
 		if saveCheck.Active() {
 			profile.Username = username
 			profile.SavePassword = true
-			keyring.Store(profile.ID, password)
-			t.app.vpnManager.ProfileManager().Save()
+			_ = keyring.Store(profile.ID, password)
+			_ = t.app.vpnManager.ProfileManager().Save()
 		}
 
 		window.Close()
@@ -537,7 +537,7 @@ func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
 
 	content.Append(btnBox)
 	window.SetChild(content)
-	window.Show()
+	window.SetVisible(true)
 
 	if profile.Username != "" {
 		passwordEntry.GrabFocus()

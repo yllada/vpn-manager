@@ -338,7 +338,7 @@ func InstallSignalHandlers() context.Context {
 		LogInfo("Received signal: %v", sig)
 
 		// Start graceful shutdown
-		go GetShutdownManager().Shutdown(ctx)
+		go func() { _ = GetShutdownManager().Shutdown(ctx) }()
 
 		// Wait for second signal for force quit
 		select {

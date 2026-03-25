@@ -386,7 +386,7 @@ func parseDesktopFile(path string) (AppConfig, error) {
 	if err != nil {
 		return app, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	inDesktopEntry := false

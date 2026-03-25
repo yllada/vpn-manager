@@ -234,7 +234,7 @@ func (p *Profile) parseInterfaceKey(key, value string) {
 			p.DNS[i] = strings.TrimSpace(dns)
 		}
 	case "mtu":
-		fmt.Sscanf(value, "%d", &p.MTU)
+		_, _ = fmt.Sscanf(value, "%d", &p.MTU)
 	}
 }
 

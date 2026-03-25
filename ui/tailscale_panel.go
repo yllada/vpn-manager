@@ -527,7 +527,7 @@ func (tp *TailscalePanel) showOperatorSetupDialog() {
 	mainBox.Append(okBtn)
 
 	window.SetChild(mainBox)
-	window.Show()
+	window.SetVisible(true)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

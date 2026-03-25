@@ -62,8 +62,8 @@ func DefaultHealthConfig() HealthConfig {
 		ReconnectDelay:       5 * time.Second,
 		MaxReconnectAttempts: 5,
 		TestHosts: []string{
-			"8.8.8.8:53",      // Google DNS
-			"1.1.1.1:53",      // Cloudflare DNS
+			"8.8.8.8:53",        // Google DNS
+			"1.1.1.1:53",        // Cloudflare DNS
 			"208.67.222.222:53", // OpenDNS
 		},
 	}
@@ -278,7 +278,7 @@ func (hc *HealthChecker) testConnectivity() (time.Duration, error) {
 		start := time.Now()
 		conn, err := net.DialTimeout("tcp", host, 5*time.Second)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return time.Since(start), nil
 		}
 	}
@@ -323,7 +323,7 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 	// Check if profile requires OTP - cannot auto-reconnect with expired OTP codes
 	if profile.RequiresOTP {
 		app.LogInfo("Profile %s requires OTP - requesting user input for reconnection", profile.Name)
-		
+
 		// Try to get saved password for OTP dialog
 		savedPassword := ""
 		if profile.SavePassword {
@@ -331,12 +331,12 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 				savedPassword = pwd
 			}
 		}
-		
+
 		// Reset reconnect attempts since user will manually reconnect
 		hc.mu.Lock()
 		health.ReconnectAttempts = 0
 		hc.mu.Unlock()
-		
+
 		// Notify UI that OTP is required for reconnection
 		if hc.onOTPRequired != nil {
 			hc.onOTPRequired(profile.ID, profile.Username, savedPassword)
