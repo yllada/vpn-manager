@@ -134,6 +134,14 @@ func (m *Manager) Disconnect(profileID string) error {
 			}
 			cmd := exec.Command("pkexec", "sh", "-c", killScript)
 			if err := cmd.Run(); err != nil {
+				// Check if user cancelled the auth dialog
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					exitCode := exitErr.ExitCode()
+					if exitCode == 126 || exitCode == 127 {
+						app.LogWarn("vpn", "Authentication cancelled by user during disconnect")
+						return app.NewVPNError(app.ErrCodeAuthFailed, "disconnect cancelled by user")
+					}
+				}
 				app.LogDebug("vpn", "kill openvpn failed: %v", err)
 			}
 
@@ -146,6 +154,18 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	// Wait a moment for cleanup
 	time.Sleep(CleanupDelay)
+
+	// Verify the VPN is actually stopped
+	tunIface := m.detectTunInterface()
+	if tunIface != "" {
+		// Check if openvpn process is still running
+		checkCmd := exec.Command("pgrep", "-x", "openvpn")
+		if checkErr := checkCmd.Run(); checkErr == nil {
+			// Process still running!
+			app.LogError("vpn", "VPN process still running after disconnect attempt")
+			return app.NewVPNError(app.ErrCodeProcessFailed, "VPN process still running after disconnect")
+		}
+	}
 
 	// Disable kill switch if no other connections remain
 	if len(m.connections) <= 1 {

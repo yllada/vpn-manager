@@ -615,3 +615,40 @@ func (m *Manager) activateKillSwitchForUntrusted() {
 		Enabled: true,
 	})
 }
+
+// =============================================================================
+// ORPHANED VPN DETECTION
+// =============================================================================
+
+// OrphanedVPNInfo contains information about a VPN connection not managed by this app.
+type OrphanedVPNInfo struct {
+	Interface string
+	IPAddress string
+}
+
+// DetectOrphanedVPN checks for running OpenVPN processes not managed by this app.
+// Returns true and info if an orphaned VPN is detected.
+func (m *Manager) DetectOrphanedVPN() (bool, *OrphanedVPNInfo) {
+	// Check for tun interface
+	tunIface := m.detectTunInterface()
+	if tunIface == "" {
+		return false, nil
+	}
+
+	// Check for running openvpn process
+	cmd := exec.Command("pgrep", "-x", "openvpn")
+	if err := cmd.Run(); err != nil {
+		// No openvpn process running
+		return false, nil
+	}
+
+	// Get VPN IP if available
+	ipAddr := m.getVPNGateway(tunIface)
+
+	app.LogWarn("vpn", "Detected orphaned VPN connection (interface: %s, ip: %s)", tunIface, ipAddr)
+
+	return true, &OrphanedVPNInfo{
+		Interface: tunIface,
+		IPAddress: ipAddr,
+	}
+}
