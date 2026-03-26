@@ -182,13 +182,13 @@ func setupSignalHandler(cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	go func() {
+	app.SafeGoWithName("signal-handler", func() {
 		sig := <-sigChan
 		app.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
 		cancel()
 		// Note: In CLI mode, the context cancellation will be checked
 		// In GUI mode, GTK handles the shutdown via window close
-	}()
+	})
 }
 
 // checkOpenVPNInstalled verifies that OpenVPN is available on the system.

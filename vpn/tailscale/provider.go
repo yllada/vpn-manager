@@ -778,8 +778,12 @@ func (c *Client) loginWithPkexec(ctx context.Context, authKey string) (string, e
 	}
 
 	// Read from both stdout and stderr concurrently
-	go scanForURL(stdout)
-	go scanForURL(stderr)
+	app.SafeGoWithName("tailscale-login-stdout", func() {
+		scanForURL(stdout)
+	})
+	app.SafeGoWithName("tailscale-login-stderr", func() {
+		scanForURL(stderr)
+	})
 
 	// Wait for URL or timeout
 	select {

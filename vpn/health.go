@@ -147,7 +147,9 @@ func (hc *HealthChecker) Start() {
 
 	app.LogInfo("Health checker started (interval: %v)", hc.config.CheckInterval)
 
-	go hc.runLoop()
+	app.SafeGoWithName("health-checker-loop", func() {
+		hc.runLoop()
+	})
 }
 
 // Stop stops the health checking loop.
@@ -260,12 +262,16 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 			conn.Profile.Name, oldState.String(), health.State.String())
 
 		if hc.onHealthChange != nil {
-			go hc.onHealthChange(profileID, oldState, health.State)
+			app.SafeGoWithName("health-change-callback", func() {
+				hc.onHealthChange(profileID, oldState, health.State)
+			})
 		}
 
 		// Trigger auto-reconnect if unhealthy
 		if health.State == HealthUnhealthy && hc.config.AutoReconnect {
-			go hc.attemptReconnect(conn, health)
+			app.SafeGoWithName("health-auto-reconnect", func() {
+				hc.attemptReconnect(conn, health)
+			})
 		}
 	}
 }
@@ -387,7 +393,9 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 		if health.ReconnectAttempts < hc.config.MaxReconnectAttempts || hc.config.MaxReconnectAttempts == 0 {
 			// Schedule another attempt
 			hc.mu.Unlock()
-			go hc.attemptReconnect(conn, health)
+			app.SafeGoWithName("health-reconnect-retry", func() {
+				hc.attemptReconnect(conn, health)
+			})
 		} else {
 			hc.mu.Unlock()
 			if hc.onReconnectFailed != nil {

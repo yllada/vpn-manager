@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -243,12 +242,12 @@ func (m *Manager) FixAllVPNConnections() {
 
 	fixed, err := m.nmBackend.FixAllVPNConnections()
 	if err != nil {
-		log.Printf("VPN: Warning: Failed to fix VPN connections: %v", err)
+		app.LogWarn("vpn", "Failed to fix VPN connections: %v", err)
 		return
 	}
 
 	if fixed > 0 {
-		log.Printf("VPN: Fixed password-flags for %d connection(s) - reconnection will now work without password", fixed)
+		app.LogDebug("vpn", "Fixed password-flags for %d connection(s) - reconnection will now work without password", fixed)
 	}
 }
 
@@ -278,7 +277,7 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 
 	// Mark profile as used
 	if err := m.profileManager.MarkUsed(profileID); err != nil {
-		log.Printf("VPN: Warning: Failed to mark profile as used: %v", err)
+		app.LogWarn("vpn", "Failed to mark profile as used: %v", err)
 	}
 
 	// Create new connection
@@ -293,10 +292,14 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 
 	// Use NetworkManager if enabled and available
 	if profile.UseNetworkManager && m.nmBackend.IsAvailable() {
-		go m.runNMConnection(conn, username, password)
+		app.SafeGoWithName("vpn-nm-connection", func() {
+			m.runNMConnection(conn, username, password)
+		})
 	} else {
 		// Start connection in goroutine (direct OpenVPN)
-		go m.runConnection(conn, username, password)
+		app.SafeGoWithName("vpn-openvpn-connection", func() {
+			m.runConnection(conn, username, password)
+		})
 	}
 
 	return nil
@@ -336,7 +339,7 @@ func (m *Manager) Disconnect(profileID string) error {
 	// Use NetworkManager to disconnect if that was used for connection
 	if useNM && m.nmBackend.IsAvailable() && nmConnName != "" {
 		if err := m.nmBackend.Disconnect(nmConnName); err != nil {
-			log.Printf("VPN: NM disconnect failed: %v, trying fallback", err)
+			app.LogDebug("vpn", "NM disconnect failed: %v, trying fallback", err)
 		}
 	} else {
 		// Terminate the OpenVPN process - it runs as root via pkexec, so we need pkexec to kill it
@@ -347,27 +350,29 @@ func (m *Manager) Disconnect(profileID string) error {
 			if configPath != "" {
 				cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
 				if err := cmd.Run(); err != nil {
-					log.Printf("VPN: Warning: openvpn3 disconnect failed: %v", err)
+					app.LogWarn("vpn", "openvpn3 disconnect failed: %v", err)
 				}
 			}
 		} else {
 			// Classic OpenVPN: the process runs as root via pkexec
-			// First try to kill the specific process by config file pattern
+			// Combine all kill commands into a single pkexec call to avoid multiple password prompts
+			var killScript string
 			if configPath != "" {
 				pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
-				cmd := exec.Command("pkexec", "pkill", "-f", pattern)
-				if err := cmd.Run(); err != nil {
-					log.Printf("VPN: pkill by pattern failed: %v", err)
-				}
+				// Try specific pattern first, then fallback to killall
+				killScript = fmt.Sprintf("pkill -f '%s' 2>/dev/null; killall -q openvpn 2>/dev/null; exit 0", pattern)
+			} else {
+				killScript = "killall -q openvpn 2>/dev/null; exit 0"
+			}
+			cmd := exec.Command("pkexec", "sh", "-c", killScript)
+			if err := cmd.Run(); err != nil {
+				app.LogDebug("vpn", "kill openvpn failed: %v", err)
 			}
 
-			// Also kill the parent pkexec process
+			// Also kill the parent pkexec process (no pkexec needed - we own this process)
 			if conn.cmd != nil && conn.cmd.Process != nil {
 				_ = conn.cmd.Process.Kill()
 			}
-
-			// Fallback: kill any remaining openvpn processes
-			_ = exec.Command("pkexec", "killall", "-q", "openvpn").Run()
 		}
 	}
 
@@ -377,14 +382,14 @@ func (m *Manager) Disconnect(profileID string) error {
 	// Disable kill switch if no other connections remain
 	if len(m.connections) <= 1 {
 		if err := m.killSwitch.Disable(); err != nil {
-			log.Printf("KillSwitch: Warning: failed to disable: %v", err)
+			app.LogWarn("killswitch", "failed to disable: %v", err)
 		}
 	}
 
 	// Disable per-app tunneling if no other connections remain
 	if len(m.connections) <= 1 && m.appTunnel.enabled {
 		if err := m.appTunnel.Disable(); err != nil {
-			log.Printf("AppTunnel: Warning: failed to disable: %v", err)
+			app.LogWarn("apptunnel", "failed to disable: %v", err)
 		}
 	}
 
@@ -395,7 +400,7 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	delete(m.connections, profileID)
 
-	log.Printf("VPN: Disconnected from %s", profileID)
+	app.LogDebug("vpn", "Disconnected from %s", profileID)
 
 	// Emit event
 	app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
@@ -450,7 +455,7 @@ func (m *Manager) ListConnections() []*Connection {
 // runNMConnection executes VPN connection via NetworkManager.
 // This shows the VPN icon in the system panel.
 func (m *Manager) runNMConnection(conn *Connection, username, password string) {
-	log.Printf("VPN: Starting NetworkManager connection to %s", conn.Profile.Name)
+	app.LogDebug("vpn", "Starting NetworkManager connection to %s", conn.Profile.Name)
 
 	// First, ensure the profile is imported to NetworkManager
 	connName := conn.Profile.NMConnectionName
@@ -459,7 +464,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 		var err error
 		connName, err = m.nmBackend.ImportProfile(conn.Profile.ConfigPath, conn.Profile.Name)
 		if err != nil {
-			log.Printf("VPN ERROR: Failed to import profile to NetworkManager: %v", err)
+			app.LogError("vpn", "Failed to import profile to NetworkManager: %v", err)
 			m.handleConnectionError(conn, fmt.Errorf("failed to import to NetworkManager: %w", err))
 			return
 		}
@@ -467,7 +472,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 		// Save the connection name to the profile
 		conn.Profile.NMConnectionName = connName
 		_ = m.profileManager.Save()
-		log.Printf("VPN: Imported to NetworkManager as '%s'", connName)
+		app.LogDebug("vpn", "Imported to NetworkManager as '%s'", connName)
 	} else {
 		// Connection exists - ensure password storage is enabled
 		// This fixes existing connections that have password-flags=1
@@ -484,7 +489,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 	}
 
 	if err != nil {
-		log.Printf("VPN ERROR: NetworkManager connection failed: %v", err)
+		app.LogError("vpn", "NetworkManager connection failed: %v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
@@ -501,7 +506,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 			// Disconnection requested
 			return
 		case <-timeout:
-			log.Printf("VPN ERROR: Connection timeout")
+			app.LogError("vpn", "Connection timeout")
 			m.handleConnectionError(conn, fmt.Errorf("connection timeout"))
 			return
 		case <-ticker.C:
@@ -511,7 +516,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 				conn.Status = StatusConnected
 				conn.IPAddress = ip
 				conn.mu.Unlock()
-				log.Printf("VPN: Connected via NetworkManager - IP: %s", ip)
+				app.LogDebug("vpn", "Connected via NetworkManager - IP: %s", ip)
 				return
 			}
 		}
@@ -520,36 +525,36 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 
 // runConnection executes the VPN connection
 func (m *Manager) runConnection(conn *Connection, username string, password string) {
-	log.Printf("VPN: Starting connection to %s", conn.Profile.Name)
-	log.Printf("VPN: Configuration file: %s", conn.Profile.ConfigPath)
+	app.LogDebug("vpn", "Starting connection to %s", conn.Profile.Name)
+	app.LogDebug("vpn", "Configuration file: %s", conn.Profile.ConfigPath)
 
 	// Create temporary credentials file
 	credFile, err := m.createCredentialsFile(username, password)
 	if err != nil {
-		log.Printf("VPN ERROR: Could not create credentials file: %v", err)
+		app.LogError("vpn", "Could not create credentials file: %v", err)
 		m.handleConnectionError(conn, fmt.Errorf("failed to create credentials: %w", err))
 		return
 	}
-	log.Printf("VPN: Credentials file created")
+	app.LogDebug("vpn", "Credentials file created")
 
 	// Ensure cleanup of credentials file
 	defer func() {
 		if credFile != "" {
 			_ = os.Remove(credFile)
-			log.Printf("VPN: Credentials file deleted")
+			app.LogDebug("vpn", "Credentials file deleted")
 		}
 	}()
 
 	// Use openvpn3 if available, otherwise use classic openvpn
 	useOpenVPN3 := checkCommandExists("openvpn3")
-	log.Printf("VPN: Using OpenVPN3: %v", useOpenVPN3)
+	app.LogDebug("vpn", "Using OpenVPN3: %v", useOpenVPN3)
 
 	var cmd *exec.Cmd
 	if useOpenVPN3 {
 		// OpenVPN3 uses a different approach
 		cmd = exec.Command("openvpn3", "session-start",
 			"--config", conn.Profile.ConfigPath)
-		log.Printf("VPN: Command: openvpn3 session-start --config %s", conn.Profile.ConfigPath)
+		app.LogDebug("vpn", "Command: openvpn3 session-start --config %s", conn.Profile.ConfigPath)
 	} else {
 		// Classic OpenVPN with credentials file
 		args := []string{
@@ -561,7 +566,7 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 		// Split tunneling: in "include" mode, prevent OpenVPN from configuring the default route
 		// and add only specific routes using native OpenVPN options
 		if conn.Profile.SplitTunnelEnabled && conn.Profile.SplitTunnelMode == "include" {
-			log.Printf("VPN: Split Tunneling INCLUDE mode activated - configuring specific routes")
+			app.LogDebug("vpn", "Split Tunneling INCLUDE mode activated - configuring specific routes")
 
 			// Prevent the server from pushing the default route
 			args = append(args, "--route-nopull")
@@ -580,14 +585,14 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 				// Parse the route to extract network and mask
 				network, netmask := parseRouteForOpenVPN(route)
 				if network != "" {
-					log.Printf("VPN: Adding OpenVPN route: %s %s", network, netmask)
+					app.LogDebug("vpn", "Adding OpenVPN route: %s %s", network, netmask)
 					args = append(args, "--route", network, netmask)
 				}
 			}
 		}
 
 		cmd = exec.Command("pkexec", append([]string{"openvpn"}, args...)...)
-		log.Printf("VPN: Command: pkexec openvpn %v", args)
+		app.LogDebug("vpn", "Command: pkexec openvpn %v", args)
 	}
 
 	// Capture stdout and stderr
@@ -618,37 +623,41 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	conn.mu.Unlock()
 
 	// Start the process
-	log.Printf("VPN: Starting OpenVPN process...")
+	app.LogDebug("vpn", "Starting OpenVPN process...")
 	if err := cmd.Start(); err != nil {
-		log.Printf("VPN ERROR: Could not start OpenVPN: %v", err)
+		app.LogError("vpn", "Could not start OpenVPN: %v", err)
 		m.handleConnectionError(conn, fmt.Errorf("failed to start openvpn: %w", err))
 		return
 	}
-	log.Printf("VPN: OpenVPN process started with PID %d", cmd.Process.Pid)
+	app.LogDebug("vpn", "OpenVPN process started with PID %d", cmd.Process.Pid)
 
 	// Remove credentials file after a longer delay for security
 	// (pkexec can add significant delay before OpenVPN actually starts)
 	if credFile != "" {
-		go func(credPath string) {
+		app.SafeGoWithName("vpn-cleanup-credentials", func() {
 			time.Sleep(30 * time.Second)
-			if err := os.Remove(credPath); err == nil {
-				log.Printf("VPN: Credentials file removed for security")
+			if err := os.Remove(credFile); err == nil {
+				app.LogDebug("vpn", "Credentials file removed for security")
 			}
-		}(credFile)
+		})
 	}
 
 	// For OpenVPN3, send credentials via stdin
 	if useOpenVPN3 && stdin != nil {
-		go func() {
+		app.SafeGoWithName("vpn-stdin-credentials", func() {
 			defer func() { _ = stdin.Close() }()
 			_, _ = fmt.Fprintf(stdin, "%s\n", username)
 			_, _ = fmt.Fprintf(stdin, "%s\n", password)
-		}()
+		})
 	}
 
 	// Monitor output
-	go m.monitorOutput(conn, stdout)
-	go m.monitorOutput(conn, stderr)
+	app.SafeGoWithName("vpn-monitor-stdout", func() {
+		m.monitorOutput(conn, stdout)
+	})
+	app.SafeGoWithName("vpn-monitor-stderr", func() {
+		m.monitorOutput(conn, stderr)
+	})
 
 	// Wait for completion
 	err = cmd.Wait()
@@ -656,11 +665,11 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	conn.mu.Lock()
 	if conn.Status == StatusConnecting || conn.Status == StatusConnected {
 		if err != nil {
-			log.Printf("VPN ERROR: OpenVPN terminated with error: %v", err)
+			app.LogError("vpn", "OpenVPN terminated with error: %v", err)
 			conn.Status = StatusError
 			conn.LastError = err.Error()
 		} else {
-			log.Printf("VPN: OpenVPN terminated normally")
+			app.LogDebug("vpn", "OpenVPN terminated normally")
 			conn.Status = StatusDisconnected
 		}
 	}
@@ -705,11 +714,11 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 		line := scanner.Text()
 
 		// Log all OpenVPN output
-		log.Printf("OpenVPN: %s", line)
+		app.LogDebug("openvpn", "%s", line)
 
 		// Detect important events
 		if strings.Contains(line, "Initialization Sequence Completed") {
-			log.Printf("VPN: Connection established!")
+			app.LogDebug("vpn", "Connection established!")
 			conn.mu.Lock()
 			conn.Status = StatusConnected
 			conn.mu.Unlock()
@@ -720,7 +729,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 				// Extract VPN server IP from profile config
 				vpnServerIP := m.getVPNServerIP(conn.Profile)
 				if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
-					log.Printf("KillSwitch: Warning: failed to enable: %v", err)
+					app.LogWarn("killswitch", "failed to enable: %v", err)
 				}
 			}
 
@@ -729,9 +738,9 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 				tunIface := m.detectTunInterface()
 				gateway := m.getDefaultGateway()
 				if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
-					log.Printf("AppTunnel: Warning: failed to enable: %v", err)
+					app.LogWarn("apptunnel", "failed to enable: %v", err)
 				} else {
-					log.Printf("AppTunnel: Enabled for %d apps (mode: %s)",
+					app.LogDebug("apptunnel", "Enabled for %d apps (mode: %s)",
 						len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode)
 				}
 			}
@@ -739,13 +748,15 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			// Apply split tunneling routes only for "exclude" mode
 			// In "include" mode, routes were already configured with OpenVPN's --route
 			if conn.Profile.SplitTunnelEnabled && conn.Profile.SplitTunnelMode == "exclude" {
-				go m.applySplitTunnelRoutes(conn)
+				app.SafeGoWithName("vpn-split-tunnel-routes", func() {
+					m.applySplitTunnelRoutes(conn)
+				})
 			}
 		}
 
 		// Detect authentication errors
 		if strings.Contains(line, "AUTH_FAILED") {
-			log.Printf("VPN ERROR: Authentication failed")
+			app.LogError("vpn", "Authentication failed")
 			conn.mu.Lock()
 			conn.Status = StatusError
 			conn.LastError = "Authentication failed - verify username/password/OTP"
@@ -760,15 +771,17 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 
 			// Invoke auth failed callback if set and not already called
 			if onAuthFailed != nil && !authFailedCalled && needsOTP {
-				log.Printf("VPN: AUTH_FAILED detected without OTP - suggesting OTP retry")
-				go onAuthFailed(conn.Profile, true)
+				app.LogDebug("vpn", "AUTH_FAILED detected without OTP - suggesting OTP retry")
+				app.SafeGoWithName("vpn-auth-failed-callback", func() {
+					onAuthFailed(conn.Profile, true)
+				})
 			}
 		}
 
 		// Detect CRV1 challenge (dynamic challenge from server)
 		// Format: AUTH:CRV1:R,E:base64:base64:message
 		if strings.Contains(line, "AUTH:CRV1") || strings.Contains(line, "CHALLENGE") {
-			log.Printf("VPN: Server requesting challenge/OTP authentication")
+			app.LogDebug("vpn", "Server requesting challenge/OTP authentication")
 			conn.mu.Lock()
 			needsOTP := !conn.Profile.RequiresOTP
 			onAuthFailed := conn.onAuthFailed
@@ -777,13 +790,15 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			conn.mu.Unlock()
 
 			if onAuthFailed != nil && !authFailedCalled && needsOTP {
-				go onAuthFailed(conn.Profile, true)
+				app.SafeGoWithName("vpn-challenge-callback", func() {
+					onAuthFailed(conn.Profile, true)
+				})
 			}
 		}
 
 		// Detect connection errors
 		if strings.Contains(line, "Connection refused") || strings.Contains(line, "SIGTERM") {
-			log.Printf("VPN ERROR: Connection refused or terminated")
+			app.LogError("vpn", "Connection refused or terminated")
 		}
 
 		// Invoke log handler if exists
@@ -795,7 +810,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 
 // handleConnectionError handles connection errors
 func (m *Manager) handleConnectionError(conn *Connection, err error) {
-	log.Printf("VPN ERROR: %v", err)
+	app.LogError("vpn", "%v", err)
 	conn.mu.Lock()
 	conn.Status = StatusError
 	conn.LastError = err.Error()
@@ -902,11 +917,11 @@ func (c *Connection) UpdateStats() bool {
 func (m *Manager) applySplitTunnelRoutes(conn *Connection) {
 	profile := conn.Profile
 	if !profile.SplitTunnelEnabled || len(profile.SplitTunnelRoutes) == 0 {
-		log.Printf("VPN: Split tunneling not configured or no routes")
+		app.LogDebug("vpn", "Split tunneling not configured or no routes")
 		return
 	}
 
-	log.Printf("VPN: Applying Split Tunneling configuration (mode: %s)", profile.SplitTunnelMode)
+	app.LogDebug("vpn", "Applying Split Tunneling configuration (mode: %s)", profile.SplitTunnelMode)
 
 	// Wait for VPN interface to be ready (with retries)
 	var tunInterface string
@@ -915,21 +930,21 @@ func (m *Manager) applySplitTunnelRoutes(conn *Connection) {
 		if tunInterface != "" {
 			break
 		}
-		log.Printf("VPN: Waiting for tun interface... attempt %d/10", i+1)
+		app.LogDebug("vpn", "Waiting for tun interface... attempt %d/10", i+1)
 		time.Sleep(500 * time.Millisecond)
 	}
 	if tunInterface == "" {
-		log.Printf("VPN ERROR: Could not detect tun interface after 5 seconds")
+		app.LogError("vpn", "Could not detect tun interface after 5 seconds")
 		return
 	}
-	log.Printf("VPN: VPN interface detected: %s", tunInterface)
+	app.LogDebug("vpn", "VPN interface detected: %s", tunInterface)
 
 	// Wait a bit more for routes to be configured
 	time.Sleep(1 * time.Second)
 
 	// Get VPN gateway (tunnel peer IP)
 	vpnGateway := m.getVPNGateway(tunInterface)
-	log.Printf("VPN: VPN Gateway: %s", vpnGateway)
+	app.LogDebug("vpn", "VPN Gateway: %s", vpnGateway)
 
 	switch profile.SplitTunnelMode {
 	case "include":
@@ -939,7 +954,7 @@ func (m *Manager) applySplitTunnelRoutes(conn *Connection) {
 		// Everything goes through VPN except specified routes
 		m.applySplitTunnelExcludeMode(conn, tunInterface, vpnGateway)
 	default:
-		log.Printf("VPN ERROR: Unknown split tunneling mode: %s", profile.SplitTunnelMode)
+		app.LogError("vpn", "Unknown split tunneling mode: %s", profile.SplitTunnelMode)
 	}
 }
 
@@ -957,7 +972,7 @@ func (m *Manager) detectTunInterface() string {
 				if len(fields) >= 2 {
 					name := strings.TrimSuffix(fields[1], ":")
 					if strings.HasPrefix(name, "tun") {
-						log.Printf("VPN: Detected interface: %s", name)
+						app.LogDebug("vpn", "Detected interface: %s", name)
 						return name
 					}
 				}
@@ -970,7 +985,7 @@ func (m *Manager) detectTunInterface() string {
 	if err == nil {
 		for _, f := range files {
 			if strings.HasPrefix(f.Name(), "tun") {
-				log.Printf("VPN: Detected interface via sysfs: %s", f.Name())
+				app.LogDebug("vpn", "Detected interface via sysfs: %s", f.Name())
 				return f.Name()
 			}
 		}
@@ -1007,7 +1022,7 @@ func (m *Manager) getVPNGateway(tunInterface string) string {
 	}
 
 	outputStr := string(output)
-	log.Printf("VPN: Interface info %s:\n%s", tunInterface, outputStr)
+	app.LogDebug("vpn", "Interface info %s:\n%s", tunInterface, outputStr)
 
 	lines := strings.Split(outputStr, "\n")
 	for _, line := range lines {
@@ -1018,7 +1033,7 @@ func (m *Manager) getVPNGateway(tunInterface string) string {
 				for i, field := range fields {
 					if field == "peer" && i+1 < len(fields) {
 						peerIP := strings.Split(fields[i+1], "/")[0]
-						log.Printf("VPN: Peer IP found: %s", peerIP)
+						app.LogDebug("vpn", "Peer IP found: %s", peerIP)
 						return peerIP
 					}
 				}
@@ -1042,7 +1057,7 @@ func (m *Manager) getDefaultGateway() string {
 	cmd := exec.Command("ip", "route", "show", "default")
 	output, err := cmd.Output()
 	if err != nil {
-		log.Printf("VPN: Warning: failed to get default gateway: %v", err)
+		app.LogWarn("vpn", "failed to get default gateway: %v", err)
 		return ""
 	}
 
@@ -1065,12 +1080,12 @@ func (m *Manager) AppTunnel() *AppTunnel {
 // applySplitTunnelIncludeMode configures "include" mode where only listed routes go through VPN
 func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vpnGateway string) {
 	profile := conn.Profile
-	log.Printf("VPN: Configuring INCLUDE mode - Only specified routes will use VPN")
+	app.LogDebug("vpn", "Configuring INCLUDE mode - Only specified routes will use VPN")
 
 	// Check current routes
 	cmd := exec.Command("ip", "route", "show")
 	output, _ := cmd.Output()
-	log.Printf("VPN: Current routes:\n%s", string(output))
+	app.LogDebug("vpn", "Current routes:\n%s", string(output))
 
 	for _, route := range profile.SplitTunnelRoutes {
 		route = strings.TrimSpace(route)
@@ -1081,7 +1096,7 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 		// Normalize the route: convert "192.168.1.1/24" to "192.168.1.0/24"
 		normalizedRoute := normalizeNetworkRoute(route)
 		if normalizedRoute == "" {
-			log.Printf("VPN: Invalid route, ignoring: %s", route)
+			app.LogDebug("vpn", "Invalid route, ignoring: %s", route)
 			continue
 		}
 
@@ -1096,17 +1111,17 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 
 		output, err := cmdRoute.CombinedOutput()
 		if err != nil {
-			log.Printf("VPN: Error adding route %s: %v - %s", normalizedRoute, err, string(output))
+			app.LogDebug("vpn", "Error adding route %s: %v - %s", normalizedRoute, err, string(output))
 			// Try without "via"
 			cmdRoute = exec.Command("ip", "route", "replace", normalizedRoute, "dev", tunInterface)
 			output, err = cmdRoute.CombinedOutput()
 			if err != nil {
-				log.Printf("VPN: Error (retry) adding route %s: %v - %s", normalizedRoute, err, string(output))
+				app.LogDebug("vpn", "Error (retry) adding route %s: %v - %s", normalizedRoute, err, string(output))
 			} else {
-				log.Printf("VPN: Route added (without via): %s -> %s", normalizedRoute, tunInterface)
+				app.LogDebug("vpn", "Route added (without via): %s -> %s", normalizedRoute, tunInterface)
 			}
 		} else {
-			log.Printf("VPN: Route added: %s -> VPN (%s)", normalizedRoute, tunInterface)
+			app.LogDebug("vpn", "Route added: %s -> VPN (%s)", normalizedRoute, tunInterface)
 		}
 	}
 
@@ -1114,31 +1129,31 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 	cmd = exec.Command("ip", "route", "show")
 	routeOutput, routeErr := cmd.Output()
 	if routeErr != nil {
-		log.Printf("VPN: Warning: Failed to get routes: %v", routeErr)
+		app.LogWarn("vpn", "Failed to get routes: %v", routeErr)
 	}
-	log.Printf("VPN: Routes after split tunneling:\n%s", string(routeOutput))
+	app.LogDebug("vpn", "Routes after split tunneling:\n%s", string(routeOutput))
 }
 
 // applySplitTunnelExcludeMode configures "exclude" mode where everything goes through VPN except listed routes
 func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, _, _ string) {
 	profile := conn.Profile
-	log.Printf("VPN: Configuring EXCLUDE mode - Everything will go through VPN except specified routes")
+	app.LogDebug("vpn", "Configuring EXCLUDE mode - Everything will go through VPN except specified routes")
 
 	// Get original default gateway (before VPN)
 	originalGateway := m.getOriginalGateway()
 	if originalGateway == "" {
-		log.Printf("VPN ERROR: Could not get original gateway")
+		app.LogError("vpn", "Could not get original gateway")
 		return
 	}
 
 	originalInterface := m.getOriginalInterface()
-	log.Printf("VPN: Original gateway: %s via %s", originalGateway, originalInterface)
+	app.LogDebug("vpn", "Original gateway: %s via %s", originalGateway, originalInterface)
 
 	for _, route := range profile.SplitTunnelRoutes {
 		// Normalize the route
 		normalizedRoute := normalizeNetworkRoute(route)
 		if normalizedRoute == "" {
-			log.Printf("VPN: Invalid route, ignoring: %s", route)
+			app.LogDebug("vpn", "Invalid route, ignoring: %s", route)
 			continue
 		}
 
@@ -1150,12 +1165,12 @@ func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, _, _ string) {
 			cmd = exec.Command("ip", "route", "replace", normalizedRoute, "via", originalGateway, "dev", originalInterface)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				log.Printf("VPN: Error adding bypass route %s: %v - %s", normalizedRoute, err, string(output))
+				app.LogDebug("vpn", "Error adding bypass route %s: %v - %s", normalizedRoute, err, string(output))
 			} else {
-				log.Printf("VPN: Bypass route added: %s -> Local network", normalizedRoute)
+				app.LogDebug("vpn", "Bypass route added: %s -> Local network", normalizedRoute)
 			}
 		} else {
-			log.Printf("VPN: Bypass route added: %s -> Local network", normalizedRoute)
+			app.LogDebug("vpn", "Bypass route added: %s -> Local network", normalizedRoute)
 		}
 	}
 }
@@ -1235,7 +1250,7 @@ func parseRouteForOpenVPN(route string) (network, netmask string) {
 	if strings.Contains(route, "/") {
 		_, ipNet, err := net.ParseCIDR(route)
 		if err != nil {
-			log.Printf("VPN: Error parsing CIDR %s: %v", route, err)
+			app.LogDebug("vpn", "Error parsing CIDR %s: %v", route, err)
 			return "", ""
 		}
 		// Convert mask to decimal format
@@ -1250,7 +1265,7 @@ func parseRouteForOpenVPN(route string) (network, netmask string) {
 		return route, "255.255.255.255"
 	}
 
-	log.Printf("VPN: Invalid route: %s", route)
+	app.LogDebug("vpn", "Invalid route: %s", route)
 	return "", ""
 }
 
@@ -1267,7 +1282,7 @@ func normalizeNetworkRoute(route string) string {
 	if strings.Contains(route, "/") {
 		_, ipNet, err := net.ParseCIDR(route)
 		if err != nil {
-			log.Printf("VPN: Error parsing CIDR %s: %v", route, err)
+			app.LogDebug("vpn", "Error parsing CIDR %s: %v", route, err)
 			return ""
 		}
 		// net.ParseCIDR returns the correct network address in ipNet.IP
@@ -1282,7 +1297,7 @@ func normalizeNetworkRoute(route string) string {
 		return route + "/32"
 	}
 
-	log.Printf("VPN: Invalid route: %s", route)
+	app.LogDebug("vpn", "Invalid route: %s", route)
 	return ""
 }
 
@@ -1299,7 +1314,7 @@ func (m *Manager) getVPNServerIP(profile *Profile) string {
 
 	data, err := os.ReadFile(profile.ConfigPath)
 	if err != nil {
-		log.Printf("VPN: Failed to read config for server IP: %v", err)
+		app.LogDebug("vpn", "Failed to read config for server IP: %v", err)
 		return ""
 	}
 
@@ -1327,7 +1342,7 @@ func (m *Manager) getVPNServerIP(profile *Profile) string {
 					}
 					return ips[0].String()
 				}
-				log.Printf("VPN: Could not resolve server hostname: %s", serverAddr)
+				app.LogDebug("vpn", "Could not resolve server hostname: %s", serverAddr)
 				return serverAddr // Return hostname as fallback
 			}
 		}

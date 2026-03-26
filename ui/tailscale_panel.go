@@ -5,10 +5,10 @@ package ui
 import (
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -41,7 +41,8 @@ type TailscalePanel struct {
 	peersBox *gtk.ListBox
 
 	// Update ticker
-	stopUpdates chan struct{}
+	stopUpdates     chan struct{}
+	stopUpdatesOnce sync.Once
 
 	// Peers cache to avoid unnecessary rebuilds (prevents scroll jump)
 	lastPeersSignature string
@@ -62,6 +63,12 @@ func NewTailscalePanel(mainWindow *MainWindow, provider *tailscale.Provider) *Ta
 // GetWidget returns the panel widget.
 func (tp *TailscalePanel) GetWidget() gtk.Widgetter {
 	return tp.box
+}
+
+// RefreshStatus refreshes the Tailscale status from the provider.
+// Called when window is shown from systray to sync UI with actual VPN state.
+func (tp *TailscalePanel) RefreshStatus() {
+	tp.updateStatus()
 }
 
 // createLayout builds the Tailscale panel UI.
@@ -261,7 +268,7 @@ func (tp *TailscalePanel) onConnectClicked() {
 	tp.connectBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Processing Tailscale connection...")
 
-	go func() {
+	app.SafeGoWithName("tailscale-connect", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -314,14 +321,14 @@ func (tp *TailscalePanel) onConnectClicked() {
 				tp.updateStatus()
 			})
 		}
-	}()
+	})
 }
 
 func (tp *TailscalePanel) onLoginClicked() {
 	tp.loginBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Starting Tailscale login...")
 
-	go func() {
+	app.SafeGoWithName("tailscale-login", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -352,14 +359,14 @@ func (tp *TailscalePanel) onLoginClicked() {
 
 			tp.updateStatus()
 		})
-	}()
+	})
 }
 
 func (tp *TailscalePanel) onLogoutClicked() {
 	tp.logoutBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Logging out of Tailscale...")
 
-	go func() {
+	app.SafeGoWithName("tailscale-logout", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -376,7 +383,7 @@ func (tp *TailscalePanel) onLogoutClicked() {
 			tp.mainWindow.SetStatus("Logged out of Tailscale")
 			tp.updateStatus()
 		})
-	}()
+	})
 }
 
 // openURL opens a URL in the default browser.
@@ -549,7 +556,7 @@ func (tp *TailscalePanel) updateStatus() {
 	if err != nil {
 		tp.statusLabel.SetText("Error")
 		tp.statusIcon.SetFromIconName("dialog-error-symbolic")
-		log.Printf("Tailscale status error: %v", err)
+		app.LogError("tailscale-panel", "status error: %v", err)
 		return
 	}
 
@@ -802,7 +809,7 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBox
 func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, enable bool) {
 	tp.mainWindow.SetStatus("Changing gateway...")
 
-	go func() {
+	app.SafeGoWithName("tailscale-set-exit-node", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -830,7 +837,7 @@ func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, e
 			}
 			tp.updateStatus()
 		})
-	}()
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -839,9 +846,11 @@ func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, e
 
 // StartUpdates starts periodic status updates.
 func (tp *TailscalePanel) StartUpdates() {
+	// Reset sync.Once and create new channel for this update cycle
+	tp.stopUpdatesOnce = sync.Once{}
 	tp.stopUpdates = make(chan struct{})
 
-	go func() {
+	app.SafeGoWithName("tailscale-periodic-updates", func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 
@@ -855,13 +864,14 @@ func (tp *TailscalePanel) StartUpdates() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // StopUpdates stops periodic status updates.
 func (tp *TailscalePanel) StopUpdates() {
-	if tp.stopUpdates != nil {
-		close(tp.stopUpdates)
-		tp.stopUpdates = nil
-	}
+	tp.stopUpdatesOnce.Do(func() {
+		if tp.stopUpdates != nil {
+			close(tp.stopUpdates)
+		}
+	})
 }

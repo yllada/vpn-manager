@@ -335,25 +335,43 @@ func (l *AppLogger) Error(msg string, args ...interface{}) {
 }
 
 // Shorthand functions for default logger.
+// These functions support two calling patterns:
+//   1. LogDebug("format %v", arg)              - direct format string
+//   2. LogDebug("context", "format %v", arg)   - context prefix + format string
+
+// logWithContext handles the common logic for context-aware logging.
+// If the first arg is a string, treat msgOrCtx as context and args[0] as format.
+func logWithContext(logFn func(string, ...interface{}), msgOrCtx string, args ...interface{}) {
+	if len(args) > 0 {
+		if format, ok := args[0].(string); ok {
+			// Pattern: Log("ctx", "format %v", arg)
+			msg := fmt.Sprintf("[%s] %s", msgOrCtx, format)
+			logFn(msg, args[1:]...)
+			return
+		}
+	}
+	// Pattern: Log("format %v", arg)
+	logFn(msgOrCtx, args...)
+}
 
 // LogDebug logs a debug message to the default logger.
-func LogDebug(msg string, args ...interface{}) {
-	GetLogger().Debug(msg, args...)
+func LogDebug(msgOrCtx string, args ...interface{}) {
+	logWithContext(GetLogger().Debug, msgOrCtx, args...)
 }
 
 // LogInfo logs an info message to the default logger.
-func LogInfo(msg string, args ...interface{}) {
-	GetLogger().Info(msg, args...)
+func LogInfo(msgOrCtx string, args ...interface{}) {
+	logWithContext(GetLogger().Info, msgOrCtx, args...)
 }
 
 // LogWarn logs a warning message to the default logger.
-func LogWarn(msg string, args ...interface{}) {
-	GetLogger().Warn(msg, args...)
+func LogWarn(msgOrCtx string, args ...interface{}) {
+	logWithContext(GetLogger().Warn, msgOrCtx, args...)
 }
 
 // LogError logs an error message to the default logger.
-func LogError(msg string, args ...interface{}) {
-	GetLogger().Error(msg, args...)
+func LogError(msgOrCtx string, args ...interface{}) {
+	logWithContext(GetLogger().Error, msgOrCtx, args...)
 }
 
 // Close closes the log file. Should be called on application shutdown.

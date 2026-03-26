@@ -6,7 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
+
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -82,7 +82,7 @@ func NewProvider() *Provider {
 
 	// Ensure profile directory exists
 	if err := os.MkdirAll(profileDir, 0700); err != nil {
-		log.Printf("WireGuard: Failed to create profile directory: %v", err)
+		app.LogDebug("wireguard", "Failed to create profile directory: %v", err)
 	}
 
 	client := &Client{}
@@ -183,14 +183,16 @@ func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app
 	p.connections[profile.ID()] = conn
 
 	// Start connection
-	go p.runConnection(ctx, conn)
+	app.SafeGoWithName("wireguard-run-connection", func() {
+		p.runConnection(ctx, conn)
+	})
 
 	return nil
 }
 
 // runConnection manages the WireGuard connection lifecycle.
 func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
-	log.Printf("WireGuard: Connecting to %s...", conn.Profile.Name())
+	app.LogDebug("wireguard", "Connecting to %s...", conn.Profile.Name())
 
 	configPath := conn.Profile.ConfigPath
 
@@ -215,7 +217,7 @@ func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("WireGuard: Connection failed: %v\n%s", err, output)
+		app.LogDebug("wireguard", "Connection failed: %v\n%s", err, output)
 		conn.mu.Lock()
 		conn.Status = StatusError
 		conn.LastError = fmt.Sprintf("Failed to connect: %v", err)
@@ -223,7 +225,7 @@ func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
 		return
 	}
 
-	log.Printf("WireGuard: Connected successfully to %s", conn.Profile.Name())
+	app.LogDebug("wireguard", "Connected successfully to %s", conn.Profile.Name())
 
 	conn.mu.Lock()
 	conn.Status = StatusConnected
@@ -233,10 +235,14 @@ func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Extract IP address from interface
-	go p.updateConnectionInfo(conn)
+	app.SafeGoWithName("wireguard-update-info", func() {
+		p.updateConnectionInfo(conn)
+	})
 
 	// Monitor connection status
-	go p.monitorConnection(ctx, conn)
+	app.SafeGoWithName("wireguard-monitor", func() {
+		p.monitorConnection(ctx, conn)
+	})
 }
 
 // updateConnectionInfo extracts connection details from the interface.
@@ -245,7 +251,7 @@ func (p *Provider) updateConnectionInfo(conn *Connection) {
 	cmd := exec.Command("ip", "-4", "addr", "show", conn.InterfaceID)
 	output, err := cmd.Output()
 	if err != nil {
-		log.Printf("WireGuard: Failed to get interface info: %v", err)
+		app.LogDebug("wireguard", "Failed to get interface info: %v", err)
 		return
 	}
 
@@ -261,7 +267,7 @@ func (p *Provider) updateConnectionInfo(conn *Connection) {
 				conn.mu.Lock()
 				conn.IPAddress = ip
 				conn.mu.Unlock()
-				log.Printf("WireGuard: Interface %s has IP %s", conn.InterfaceID, ip)
+				app.LogDebug("wireguard", "Interface %s has IP %s", conn.InterfaceID, ip)
 				return
 			}
 		}
@@ -298,7 +304,7 @@ func (p *Provider) updateStats(conn *Connection) {
 		conn.mu.RUnlock()
 
 		if status == StatusConnected {
-			log.Printf("WireGuard: Interface %s appears to be down", ifaceName)
+			app.LogDebug("wireguard", "Interface %s appears to be down", ifaceName)
 			conn.mu.Lock()
 			conn.Status = StatusDisconnected
 			conn.mu.Unlock()
@@ -371,14 +377,14 @@ func (p *Provider) disconnectOne(conn *Connection) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("WireGuard: Disconnect warning: %v\n%s", err, output)
+		app.LogDebug("wireguard", "Disconnect warning: %v\n%s", err, output)
 	}
 
 	conn.mu.Lock()
 	conn.Status = StatusDisconnected
 	conn.mu.Unlock()
 
-	log.Printf("WireGuard: Disconnected from %s", conn.Profile.Name())
+	app.LogDebug("wireguard", "Disconnected from %s", conn.Profile.Name())
 }
 
 // Status returns the provider status.
@@ -462,7 +468,7 @@ func (p *Provider) LoadProfiles() ([]*Profile, error) {
 		configPath := filepath.Join(p.profileDir, entry.Name())
 		profile, err := LoadProfile(configPath)
 		if err != nil {
-			log.Printf("WireGuard: Failed to load profile %s: %v", entry.Name(), err)
+			app.LogDebug("wireguard", "Failed to load profile %s: %v", entry.Name(), err)
 			continue
 		}
 
@@ -502,7 +508,7 @@ func (p *Provider) ImportProfile(configPath string) (*Profile, error) {
 	// Update profile path
 	profile.ConfigPath = destPath
 
-	log.Printf("WireGuard: Imported profile %s", profile.Name())
+	app.LogDebug("wireguard", "Imported profile %s", profile.Name())
 	return profile, nil
 }
 
@@ -521,7 +527,7 @@ func (p *Provider) DeleteProfile(profileID string) error {
 			}
 			// Delete metadata file (ignore error if doesn't exist)
 			_ = os.Remove(profile.metadataPath())
-			log.Printf("WireGuard: Deleted profile %s", profile.Name())
+			app.LogDebug("wireguard", "Deleted profile %s", profile.Name())
 			return nil
 		}
 	}

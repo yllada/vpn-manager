@@ -4,10 +4,12 @@ package ui
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -94,6 +96,12 @@ func (op *OpenVPNPanel) LoadProfiles() {
 	op.profileList.LoadProfiles()
 }
 
+// RefreshStatus refreshes the OpenVPN status from active connections.
+// Called when window is shown from systray to sync UI with actual VPN state.
+func (op *OpenVPNPanel) RefreshStatus() {
+	op.profileList.RefreshAllStatuses()
+}
+
 // UpdateStatus updates the global status display.
 func (op *OpenVPNPanel) UpdateStatus(connected bool, profileName string) {
 	if connected {
@@ -117,6 +125,7 @@ type ProfileList struct {
 	rows          map[string]*ProfileRow
 	statsUpdating bool
 	stopStats     chan struct{}
+	stopStatsOnce sync.Once
 }
 
 // ProfileRow represents a profile row in the list.
@@ -160,6 +169,34 @@ func NewProfileList(mainWindow *MainWindow) *ProfileList {
 // GetWidget returns the list widget to be added to a container.
 func (pl *ProfileList) GetWidget() gtk.Widgetter {
 	return pl.listBox
+}
+
+// RefreshAllStatuses refreshes the status of all profile rows from actual connections.
+// Called when window is shown from systray to sync UI with actual VPN state.
+func (pl *ProfileList) RefreshAllStatuses() {
+	connectedProfile := ""
+
+	for profileID, row := range pl.rows {
+		if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profileID); exists {
+			status := conn.GetStatus()
+			pl.updateRowStatus(profileID, status)
+			if status == vpn.StatusConnected {
+				connectedProfile = row.profile.Name
+			}
+		} else {
+			// No connection exists - ensure row shows disconnected
+			pl.updateRowStatus(profileID, vpn.StatusDisconnected)
+		}
+	}
+
+	// Update panel header status
+	if pl.mainWindow.openvpnPanel != nil {
+		if connectedProfile != "" {
+			pl.mainWindow.openvpnPanel.UpdateStatus(true, connectedProfile)
+		} else {
+			pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
+		}
+	}
 }
 
 // LoadProfiles loads profiles from the manager and displays them in the list.
@@ -793,7 +830,9 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 	}
 
 	// Monitor connection status
-	go pl.monitorConnection(profile.ID)
+	app.SafeGoWithName("openvpn-monitor-connection", func() {
+		pl.monitorConnection(profile.ID)
+	})
 }
 
 // monitorConnection monitors VPN connection status in the background.
@@ -1081,10 +1120,12 @@ func (pl *ProfileList) startStatsUpdate(profileID string) {
 	// Stop any existing update goroutine
 	pl.stopStatsUpdate()
 
+	// Reset sync.Once and create new channel for this update cycle
+	pl.stopStatsOnce = sync.Once{}
 	pl.stopStats = make(chan struct{})
 	pl.statsUpdating = true
 
-	go func() {
+	app.SafeGoWithName("openvpn-stats-update", func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
@@ -1098,15 +1139,17 @@ func (pl *ProfileList) startStatsUpdate(profileID string) {
 				})
 			}
 		}
-	}()
+	})
 }
 
 // stopStatsUpdate stops the statistics update goroutine.
 func (pl *ProfileList) stopStatsUpdate() {
-	if pl.statsUpdating && pl.stopStats != nil {
-		close(pl.stopStats)
-		pl.statsUpdating = false
-	}
+	pl.stopStatsOnce.Do(func() {
+		if pl.stopStats != nil {
+			close(pl.stopStats)
+			pl.statsUpdating = false
+		}
+	})
 }
 
 // updateStats updates the statistics display for a connected profile.

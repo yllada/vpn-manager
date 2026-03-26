@@ -11,6 +11,7 @@ package ui
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"fyne.io/systray"
@@ -44,14 +45,15 @@ type TrayIndicator struct {
 	connectedID      string
 	connectTime      time.Time
 	uptimeTicker     *time.Ticker
-	uptimeStop       chan bool
+	uptimeStop       chan struct{}
+	uptimeStopOnce   sync.Once
 }
 
 // NewTrayIndicator creates a new system tray indicator.
 func NewTrayIndicator(app *Application) *TrayIndicator {
 	return &TrayIndicator{
 		app:        app,
-		uptimeStop: make(chan bool),
+		uptimeStop: make(chan struct{}),
 	}
 }
 
@@ -88,11 +90,11 @@ func (t *TrayIndicator) onReady() {
 	// Disconnect - only shown when connected
 	t.disconnectItem = systray.AddMenuItem("Disconnect", "Disconnect from VPN")
 	t.disconnectItem.Hide()
-	go func() {
+	app.SafeGoWithName("tray-disconnect-handler", func() {
 		for range t.disconnectItem.ClickedCh {
 			t.disconnectCurrent()
 		}
-	}()
+	})
 
 	systray.AddSeparator()
 
@@ -101,19 +103,19 @@ func (t *TrayIndicator) onReady() {
 	// ════════════════════════════════════════════════════════════════════════
 
 	t.openAppItem = systray.AddMenuItem("Open VPN Manager", "Show main window")
-	go func() {
+	app.SafeGoWithName("tray-openapp-handler", func() {
 		for range t.openAppItem.ClickedCh {
 			t.app.showWindow()
 		}
-	}()
+	})
 
 	t.quitItem = systray.AddMenuItem("Quit", "Exit VPN Manager")
-	go func() {
+	app.SafeGoWithName("tray-quit-handler", func() {
 		for range t.quitItem.ClickedCh {
 			t.app.Quit()
 			systray.Quit()
 		}
-	}()
+	})
 }
 
 // onExit is called when the systray is about to exit.
@@ -198,10 +200,17 @@ func (t *TrayIndicator) SetConnecting(profileName string) {
 
 // startUptimeCounter starts the session timer display.
 func (t *TrayIndicator) startUptimeCounter() {
+	// Stop any existing counter first
 	t.stopUptimeCounter()
 
+	// Create a new stop channel for this counter instance
+	t.uptimeStop = make(chan struct{})
+	t.uptimeStopOnce = sync.Once{}
+
 	t.uptimeTicker = time.NewTicker(1 * time.Second)
-	go func() {
+	stopCh := t.uptimeStop // Capture for the goroutine
+
+	app.SafeGoWithName("tray-uptime-counter", func() {
 		for {
 			select {
 			case <-t.uptimeTicker.C:
@@ -212,23 +221,26 @@ func (t *TrayIndicator) startUptimeCounter() {
 				if t.uptimeItem != nil {
 					t.uptimeItem.SetTitle(fmt.Sprintf("⏱ Session: %02d:%02d:%02d", h, m, s))
 				}
-			case <-t.uptimeStop:
+			case <-stopCh:
 				return
 			}
 		}
-	}()
+	})
 }
 
 // stopUptimeCounter stops the session timer.
+// Uses sync.Once to ensure it only closes the channel once per instance.
 func (t *TrayIndicator) stopUptimeCounter() {
 	if t.uptimeTicker != nil {
 		t.uptimeTicker.Stop()
 		t.uptimeTicker = nil
 	}
-	select {
-	case t.uptimeStop <- true:
-	default:
-	}
+	// Safely signal the goroutine to stop
+	t.uptimeStopOnce.Do(func() {
+		if t.uptimeStop != nil {
+			close(t.uptimeStop)
+		}
+	})
 }
 
 // disconnectCurrent disconnects the active VPN connection.
@@ -311,7 +323,9 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 		})
 	}
 
-	go t.monitorConnection(profile.ID)
+	app.SafeGoWithName("tray-monitor-connection", func() {
+		t.monitorConnection(profile.ID)
+	})
 }
 
 // monitorConnection monitors VPN connection state.

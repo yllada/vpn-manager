@@ -3,7 +3,7 @@ package ui
 
 import (
 	"context"
-	"log"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -26,7 +26,8 @@ type WireGuardPanel struct {
 	statusLabel *gtk.Label
 
 	// Update management
-	stopUpdates chan struct{}
+	stopUpdates     chan struct{}
+	stopUpdatesOnce sync.Once
 }
 
 // WireGuardRow represents a single WireGuard profile in the list.
@@ -65,6 +66,12 @@ func NewWireGuardPanel(mainWindow *MainWindow, provider *wireguard.Provider) *Wi
 // GetWidget returns the panel widget.
 func (wp *WireGuardPanel) GetWidget() gtk.Widgetter {
 	return wp.box
+}
+
+// RefreshStatus refreshes the WireGuard status from the provider.
+// Called when window is shown from systray to sync UI with actual VPN state.
+func (wp *WireGuardPanel) RefreshStatus() {
+	wp.updateAllRows()
 }
 
 // createLayout builds the WireGuard panel UI.
@@ -119,7 +126,7 @@ func (wp *WireGuardPanel) createLayout() {
 func (wp *WireGuardPanel) loadProfiles() {
 	profiles, err := wp.provider.LoadProfiles()
 	if err != nil {
-		log.Printf("WireGuard: Failed to load profiles: %v", err)
+		app.LogError("WireGuard: Failed to load profiles: %v", err)
 		return
 	}
 
@@ -375,7 +382,7 @@ func (wp *WireGuardPanel) onImportProfile() {
 				path := file.Path()
 				_, err := wp.provider.ImportProfile(path)
 				if err != nil {
-					log.Printf("WireGuard: Import failed: %v", err)
+					app.LogError("WireGuard: Import failed: %v", err)
 					wp.showError("Import Failed", err.Error())
 				} else {
 					// Reload all profiles to ensure consistency
@@ -396,31 +403,31 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 	if conn != nil && conn.Status == wireguard.StatusConnected {
 		// Disconnect
 		row.connBtn.SetSensitive(false)
-		go func() {
+		app.SafeGoWithName("wireguard-disconnect", func() {
 			err := wp.provider.Disconnect(context.Background(), row.profile)
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
-					log.Printf("WireGuard: Disconnect error: %v", err)
+					app.LogError("WireGuard: Disconnect error: %v", err)
 					wp.showError("Disconnect Failed", err.Error())
 				}
 				wp.updateRowStatus(row)
 			})
-		}()
+		})
 	} else {
 		// Connect
 		row.connBtn.SetSensitive(false)
-		go func() {
+		app.SafeGoWithName("wireguard-connect", func() {
 			err := wp.provider.Connect(context.Background(), row.profile, app.AuthInfo{})
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
-					log.Printf("WireGuard: Connect error: %v", err)
+					app.LogError("WireGuard: Connect error: %v", err)
 					wp.showError("Connection Failed", err.Error())
 				}
 				wp.updateRowStatus(row)
 			})
-		}()
+		})
 	}
 }
 
@@ -430,13 +437,13 @@ func (wp *WireGuardPanel) onDeleteProfile(row *WireGuardRow) {
 	conn := wp.provider.GetConnection(row.profile.ID())
 	if conn != nil && conn.Status == wireguard.StatusConnected {
 		if err := wp.provider.Disconnect(context.Background(), row.profile); err != nil {
-			log.Printf("WireGuard: Disconnect before delete failed: %v", err)
+			app.LogWarn("WireGuard: Disconnect before delete failed: %v", err)
 		}
 	}
 
 	// Delete profile
 	if err := wp.provider.DeleteProfile(row.profile.ID()); err != nil {
-		log.Printf("WireGuard: Delete error: %v", err)
+		app.LogError("WireGuard: Delete error: %v", err)
 		wp.showError("Delete Failed", err.Error())
 		return
 	}
@@ -539,28 +546,34 @@ func (wp *WireGuardPanel) updateOverallStatus() {
 
 // StartUpdates starts periodic status updates.
 func (wp *WireGuardPanel) StartUpdates() {
-	go func() {
+	// Reset the stop channel for new updates
+	wp.stopUpdates = make(chan struct{})
+	wp.stopUpdatesOnce = sync.Once{}
+	stopCh := wp.stopUpdates // Capture for goroutine
+
+	app.SafeGoWithName("wireguard-status-updates", func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-wp.stopUpdates:
+			case <-stopCh:
 				return
 			case <-ticker.C:
 				glib.IdleAdd(wp.updateAllRows)
 			}
 		}
-	}()
+	})
 }
 
 // StopUpdates stops periodic status updates.
 // Safe to call multiple times (idempotent).
 func (wp *WireGuardPanel) StopUpdates() {
-	if wp.stopUpdates != nil {
-		close(wp.stopUpdates)
-		wp.stopUpdates = nil
-	}
+	wp.stopUpdatesOnce.Do(func() {
+		if wp.stopUpdates != nil {
+			close(wp.stopUpdates)
+		}
+	})
 }
 
 // showError displays an error notification.

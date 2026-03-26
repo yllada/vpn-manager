@@ -8,6 +8,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
@@ -124,12 +125,12 @@ func (mw *MainWindow) createTailscalePage() {
 	// Ensure current user is configured as Tailscale operator
 	// This allows running tailscale commands without password prompts
 	// Only prompts for password once if not already configured
-	go func() {
+	app.SafeGoWithName("tailscale-ensure-operator", func() {
 		if err := provider.EnsureOperator(); err != nil {
 			// Log but don't fail - user can still use pkexec fallback
-			fmt.Printf("[Tailscale] Warning: Could not configure operator: %v\n", err)
+			app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
 		}
-	}()
+	})
 
 	// Register provider with manager
 	mw.app.vpnManager.RegisterProvider(provider)
@@ -220,7 +221,7 @@ func (mw *MainWindow) setupActions() {
 	// Quit action (Ctrl+Q)
 	quitAction := gio.NewSimpleAction("quit", nil)
 	quitAction.ConnectActivate(func(_ *glib.Variant) {
-		mw.window.Close()
+		mw.app.Quit()
 	})
 	mw.app.app.AddAction(quitAction)
 	mw.app.app.SetAccelsForAction("app.quit", []string{"<Control>q"})
@@ -282,6 +283,25 @@ func (mw *MainWindow) createStatusBar() {
 // Show displays the window.
 func (mw *MainWindow) Show() {
 	mw.window.SetVisible(true)
+}
+
+// RefreshAllPanels refreshes the status of all VPN panels.
+// Called when window is shown from systray to sync UI with actual VPN state.
+func (mw *MainWindow) RefreshAllPanels() {
+	// Refresh OpenVPN panel
+	if mw.openvpnPanel != nil {
+		mw.openvpnPanel.RefreshStatus()
+	}
+
+	// Refresh Tailscale panel
+	if mw.tailscalePanel != nil {
+		mw.tailscalePanel.RefreshStatus()
+	}
+
+	// Refresh WireGuard panel
+	if mw.wireguardPanel != nil {
+		mw.wireguardPanel.RefreshStatus()
+	}
 }
 
 // SetStatus updates the status text.

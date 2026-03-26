@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
+
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,7 +167,9 @@ func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app
 	p.connections[profile.ID()] = conn
 
 	// Start connection in background
-	go p.runConnection(ctx, conn, auth)
+	app.SafeGoWithName("openvpn-run-connection", func() {
+		p.runConnection(ctx, conn, auth)
+	})
 
 	return nil
 }
@@ -220,7 +222,7 @@ func (p *Provider) disconnectOne(conn *Connection) {
 		if configPath != "" {
 			cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
 			if err := cmd.Run(); err != nil {
-				log.Printf("OpenVPN: Warning: openvpn3 disconnect failed: %v", err)
+				app.LogWarn("openvpn", "openvpn3 disconnect failed: %v", err)
 			}
 		}
 		// Also try to kill sessions by path pattern
@@ -238,7 +240,7 @@ func (p *Provider) disconnectOne(conn *Connection) {
 			pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
 			cmd := exec.Command("pkexec", "pkill", "-f", pattern)
 			if err := cmd.Run(); err != nil {
-				log.Printf("OpenVPN: pkill by pattern failed: %v, trying alternative methods", err)
+				app.LogDebug("openvpn", "pkill by pattern failed: %v, trying alternative methods", err)
 			}
 		}
 
@@ -260,7 +262,7 @@ func (p *Provider) disconnectOne(conn *Connection) {
 	conn.Status = StatusDisconnected
 	conn.mu.Unlock()
 
-	log.Printf("OpenVPN: Disconnected from %s", conn.ProfileID)
+	app.LogDebug("openvpn", "Disconnected from %s", conn.ProfileID)
 }
 
 // Status returns the provider status.
@@ -328,13 +330,13 @@ func (p *Provider) GetConnection(profileID string) (*Connection, bool) {
 
 // runConnection executes the OpenVPN connection.
 func (p *Provider) runConnection(_ context.Context, conn *Connection, auth app.AuthInfo) {
-	log.Printf("OpenVPN: Starting connection to %s", conn.Profile.name)
-	log.Printf("OpenVPN: Config file: %s", conn.Profile.ConfigPath)
+	app.LogDebug("openvpn", "Starting connection to %s", conn.Profile.name)
+	app.LogDebug("openvpn", "Config file: %s", conn.Profile.ConfigPath)
 
 	// Create credentials file
 	credFile, err := p.createCredentialsFile(auth.Username, auth.Password, auth.OTP)
 	if err != nil {
-		log.Printf("OpenVPN ERROR: Failed to create credentials: %v", err)
+		app.LogError("openvpn", "Failed to create credentials: %v", err)
 		p.handleError(conn, err)
 		return
 	}
@@ -406,19 +408,19 @@ func (p *Provider) runConnection(_ context.Context, conn *Connection, auth app.A
 		return
 	}
 
-	log.Printf("OpenVPN: Process started with PID %d", cmd.Process.Pid)
+	app.LogDebug("openvpn", "Process started with PID %d", cmd.Process.Pid)
 
 	// Remove creds early for security
 	if credFile != "" {
-		go func(path string) {
+		app.SafeGoWithName("openvpn-cleanup-credentials", func() {
 			time.Sleep(3 * time.Second)
-			_ = os.Remove(path)
-		}(credFile)
+			_ = os.Remove(credFile)
+		})
 	}
 
 	// Send credentials via stdin for OpenVPN3
 	if p.client.useV3 && stdin != nil {
-		go func() {
+		app.SafeGoWithName("openvpn3-stdin-credentials", func() {
 			defer func() { _ = stdin.Close() }()
 			_, _ = fmt.Fprintf(stdin, "%s\n", auth.Username)
 			if auth.OTP != "" {
@@ -426,12 +428,16 @@ func (p *Provider) runConnection(_ context.Context, conn *Connection, auth app.A
 			} else {
 				_, _ = fmt.Fprintf(stdin, "%s\n", auth.Password)
 			}
-		}()
+		})
 	}
 
 	// Monitor output
-	go p.monitorOutput(conn, stdout)
-	go p.monitorOutput(conn, stderr)
+	app.SafeGoWithName("openvpn-monitor-stdout", func() {
+		p.monitorOutput(conn, stdout)
+	})
+	app.SafeGoWithName("openvpn-monitor-stderr", func() {
+		p.monitorOutput(conn, stderr)
+	})
 
 	// Wait for process
 	err = cmd.Wait()
@@ -484,7 +490,7 @@ func (p *Provider) monitorOutput(conn *Connection, pipe io.Reader) {
 	scanner := bufio.NewScanner(pipe)
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Printf("OpenVPN: %s", line)
+		app.LogDebug("openvpn", "%s", line)
 
 		// Detect connection success
 		if strings.Contains(line, "Initialization Sequence Completed") {
@@ -494,7 +500,9 @@ func (p *Provider) monitorOutput(conn *Connection, pipe io.Reader) {
 
 			// Apply exclude mode split tunneling
 			if conn.Profile.SplitTunnelEnabled && conn.Profile.SplitTunnelMode == "exclude" {
-				go p.applySplitTunnelRoutes(conn)
+				app.SafeGoWithName("openvpn-split-tunnel-routes", func() {
+					p.applySplitTunnelRoutes(conn)
+				})
 			}
 		}
 
@@ -510,7 +518,9 @@ func (p *Provider) monitorOutput(conn *Connection, pipe io.Reader) {
 			conn.mu.Unlock()
 
 			if handler != nil && !called && needsOTP {
-				go handler(conn.Profile, true)
+				app.SafeGoWithName("openvpn-auth-failed-callback", func() {
+					handler(conn.Profile, true)
+				})
 			}
 		}
 
@@ -524,7 +534,9 @@ func (p *Provider) monitorOutput(conn *Connection, pipe io.Reader) {
 			conn.mu.Unlock()
 
 			if handler != nil && !called && needsOTP {
-				go handler(conn.Profile, true)
+				app.SafeGoWithName("openvpn-challenge-callback", func() {
+					handler(conn.Profile, true)
+				})
 			}
 		}
 
@@ -535,7 +547,7 @@ func (p *Provider) monitorOutput(conn *Connection, pipe io.Reader) {
 }
 
 func (p *Provider) handleError(conn *Connection, err error) {
-	log.Printf("OpenVPN ERROR: %v", err)
+	app.LogError("openvpn", "%v", err)
 	conn.mu.Lock()
 	conn.Status = StatusError
 	conn.LastError = err.Error()
@@ -546,7 +558,7 @@ func (p *Provider) applySplitTunnelRoutes(conn *Connection) {
 	// Detect tun interface
 	tunInterface := detectTunInterface()
 	if tunInterface == "" {
-		log.Printf("OpenVPN: Could not detect tun interface for split tunneling")
+		app.LogDebug("openvpn", "Could not detect tun interface for split tunneling")
 		return
 	}
 
@@ -557,7 +569,7 @@ func (p *Provider) applySplitTunnelRoutes(conn *Connection) {
 	// Get VPN gateway
 	vpnGateway := getVPNGateway(tunInterface)
 	if vpnGateway == "" {
-		log.Printf("OpenVPN: Could not determine VPN gateway")
+		app.LogDebug("openvpn", "Could not determine VPN gateway")
 		return
 	}
 
@@ -575,9 +587,9 @@ func (p *Provider) applySplitTunnelRoutes(conn *Connection) {
 		if network != "" {
 			cmd := exec.Command("pkexec", "ip", "route", "add", route, "via", defaultGW, "dev", defaultDev)
 			if err := cmd.Run(); err != nil {
-				log.Printf("OpenVPN: Failed to add exclude route %s: %v", route, err)
+				app.LogDebug("openvpn", "Failed to add exclude route %s: %v", route, err)
 			} else {
-				log.Printf("OpenVPN: Added exclude route %s via %s", route, defaultGW)
+				app.LogDebug("openvpn", "Added exclude route %s via %s", route, defaultGW)
 			}
 			_ = netmask // Used in include mode
 		}

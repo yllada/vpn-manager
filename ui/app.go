@@ -76,9 +76,11 @@ func (a *Application) onActivate() {
 	a.window = NewMainWindow(a)
 	a.window.Show()
 
-	// Start system tray indicator
+	// Start system tray indicator with panic recovery
 	a.tray = NewTrayIndicator(a)
-	go a.tray.Run()
+	app.SafeGoWithName("systray-main", func() {
+		a.tray.Run()
+	})
 
 	// Configure and start health checker if auto-reconnect is enabled
 	a.setupHealthChecker()
@@ -157,10 +159,13 @@ func (a *Application) GetWindow() *gtk.Window {
 	return nil
 }
 
-// showWindow shows the main window
+// showWindow shows the main window and refreshes all panel statuses.
+// This ensures UI reflects actual VPN state when returning from systray.
 func (a *Application) showWindow() {
 	if a.window != nil {
 		a.window.window.Present()
+		// Refresh all panel statuses to sync UI with actual VPN state
+		a.window.RefreshAllPanels()
 	}
 }
 
