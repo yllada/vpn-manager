@@ -7,6 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
 // PreferencesDialog represents the preferences dialog.
@@ -23,6 +24,13 @@ type PreferencesDialog struct {
 	tailscaleSwitch       *gtk.Switch
 	tailscaleRoutesSwitch *gtk.Switch
 	tailscaleDNSSwitch    *gtk.Switch
+
+	// Network Trust settings
+	trustEnabledSwitch     *gtk.Switch
+	trustDefaultActionDD   *gtk.DropDown
+	trustDefaultActionIDs  []string
+	trustBlockOnFailSwitch *gtk.Switch
+	trustEthernetSwitch    *gtk.Switch
 }
 
 // NewPreferencesDialog creates a new preferences dialog.
@@ -203,6 +211,115 @@ func (pd *PreferencesDialog) build() {
 	tailscaleSection.Append(tailscaleCard)
 	mainBox.Append(tailscaleSection)
 
+	// ═══════════════════════════════════════════════════════════════════
+	// NETWORK TRUST SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	trustSection := pd.createSection("Network Trust", "network-wireless-symbolic")
+	trustCard := pd.createCard()
+
+	// Get trust config from VPN manager
+	trustCfg := pd.mainWindow.app.vpnManager.TrustConfig()
+
+	// Enable Network Trust row
+	pd.trustEnabledSwitch = gtk.NewSwitch()
+	if trustCfg != nil {
+		pd.trustEnabledSwitch.SetActive(trustCfg.Enabled)
+	}
+	pd.trustEnabledSwitch.SetVAlign(gtk.AlignCenter)
+	trustEnabledRow := pd.createSettingRow(
+		"Enable Network Trust",
+		"Automatically manage VPN based on network trust levels",
+		pd.trustEnabledSwitch,
+	)
+	trustCard.Append(trustEnabledRow)
+	trustCard.Append(pd.createSeparator())
+
+	// Default action dropdown row
+	pd.trustDefaultActionIDs = []string{"prompt", "connect", "none"}
+	trustActionLabels := []string{"Ask Me", "Auto-Connect VPN", "Do Nothing"}
+	trustActionModel := gtk.NewStringList(trustActionLabels)
+	pd.trustDefaultActionDD = gtk.NewDropDown(trustActionModel, nil)
+	if trustCfg != nil {
+		pd.trustDefaultActionDD.SetSelected(pd.findTrustActionIndex(string(trustCfg.DefaultAction)))
+	}
+	pd.trustDefaultActionDD.SetVAlign(gtk.AlignCenter)
+	pd.trustDefaultActionDD.AddCSSClass("flat")
+
+	trustActionRow := pd.createSettingRow(
+		"Unknown Networks",
+		"Action when connecting to a network without a trust rule",
+		pd.trustDefaultActionDD,
+	)
+	trustCard.Append(trustActionRow)
+	trustCard.Append(pd.createSeparator())
+
+	// Block on failure row
+	pd.trustBlockOnFailSwitch = gtk.NewSwitch()
+	if trustCfg != nil {
+		pd.trustBlockOnFailSwitch.SetActive(trustCfg.BlockOnUntrustedFailure)
+	}
+	pd.trustBlockOnFailSwitch.SetVAlign(gtk.AlignCenter)
+	trustBlockRow := pd.createSettingRow(
+		"Block on VPN Failure",
+		"Activate kill switch if VPN fails on untrusted network",
+		pd.trustBlockOnFailSwitch,
+	)
+	trustCard.Append(trustBlockRow)
+	trustCard.Append(pd.createSeparator())
+
+	// Trust ethernet by default row
+	pd.trustEthernetSwitch = gtk.NewSwitch()
+	if trustCfg != nil {
+		pd.trustEthernetSwitch.SetActive(trustCfg.TrustEthernetByDefault)
+	}
+	pd.trustEthernetSwitch.SetVAlign(gtk.AlignCenter)
+	trustEthernetRow := pd.createSettingRow(
+		"Trust Wired Networks",
+		"Automatically trust ethernet connections",
+		pd.trustEthernetSwitch,
+	)
+	trustCard.Append(trustEthernetRow)
+	trustCard.Append(pd.createSeparator())
+
+	// Manage Rules button row
+	manageRulesRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	manageRulesRow.SetMarginTop(14)
+	manageRulesRow.SetMarginBottom(14)
+	manageRulesRow.SetMarginStart(16)
+	manageRulesRow.SetMarginEnd(16)
+
+	manageRulesTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	manageRulesTextBox.SetHExpand(true)
+
+	manageRulesTitleLabel := gtk.NewLabel("Network Rules")
+	manageRulesTitleLabel.SetXAlign(0)
+	manageRulesTitleLabel.AddCSSClass("settings-title")
+	manageRulesTextBox.Append(manageRulesTitleLabel)
+
+	manageRulesDescLabel := gtk.NewLabel("Configure trust levels for specific networks")
+	manageRulesDescLabel.SetXAlign(0)
+	manageRulesDescLabel.AddCSSClass("dim-label")
+	manageRulesDescLabel.AddCSSClass("caption")
+	manageRulesDescLabel.SetWrap(true)
+	manageRulesDescLabel.SetWrapMode(pango.WrapWordChar)
+	manageRulesTextBox.Append(manageRulesDescLabel)
+
+	manageRulesRow.Append(manageRulesTextBox)
+
+	manageRulesBtn := gtk.NewButtonWithLabel("Manage Rules")
+	manageRulesBtn.SetVAlign(gtk.AlignCenter)
+	manageRulesBtn.AddCSSClass("suggested-action")
+	manageRulesBtn.ConnectClicked(func() {
+		dialog := NewTrustRulesDialog(pd.mainWindow)
+		dialog.Show()
+	})
+	manageRulesRow.Append(manageRulesBtn)
+
+	trustCard.Append(manageRulesRow)
+
+	trustSection.Append(trustCard)
+	mainBox.Append(trustSection)
+
 	scrolled.SetChild(mainBox)
 	rootBox.Append(scrolled)
 
@@ -319,6 +436,16 @@ func (pd *PreferencesDialog) findThemeIndex(themeID string) uint {
 	return 0
 }
 
+// findTrustActionIndex returns the index of a trust action ID, or 0 if not found.
+func (pd *PreferencesDialog) findTrustActionIndex(actionID string) uint {
+	for i, id := range pd.trustDefaultActionIDs {
+		if id == actionID {
+			return uint(i)
+		}
+	}
+	return 0
+}
+
 // savePreferences saves the current preferences to the config file.
 func (pd *PreferencesDialog) savePreferences() {
 	pd.config.AutoStart = pd.autoStartSwitch.Active()
@@ -342,6 +469,32 @@ func (pd *PreferencesDialog) savePreferences() {
 	if err := pd.config.Save(); err != nil {
 		pd.mainWindow.showError("Error", "Could not save preferences: "+err.Error())
 		return
+	}
+
+	// Save Network Trust settings
+	trustCfg := pd.mainWindow.app.vpnManager.TrustConfig()
+	if trustCfg != nil {
+		// Save enabled state and toggle NetworkMonitor if changed
+		newEnabled := pd.trustEnabledSwitch.Active()
+		if trustCfg.Enabled != newEnabled {
+			if err := pd.mainWindow.app.vpnManager.SetTrustEnabled(newEnabled); err != nil {
+				pd.mainWindow.showError("Error", "Could not save trust settings: "+err.Error())
+				return
+			}
+		}
+
+		// Save other trust settings
+		trustActionIdx := pd.trustDefaultActionDD.Selected()
+		if int(trustActionIdx) < len(pd.trustDefaultActionIDs) {
+			trustCfg.DefaultAction = trust.DefaultAction(pd.trustDefaultActionIDs[trustActionIdx])
+		}
+		trustCfg.BlockOnUntrustedFailure = pd.trustBlockOnFailSwitch.Active()
+		trustCfg.TrustEthernetByDefault = pd.trustEthernetSwitch.Active()
+
+		if err := trustCfg.Save(); err != nil {
+			pd.mainWindow.showError("Error", "Could not save trust settings: "+err.Error())
+			return
+		}
 	}
 
 	pd.mainWindow.SetStatus("Settings saved")

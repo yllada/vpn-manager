@@ -49,9 +49,6 @@ type NetworkMonitor struct {
 	// debounceInterval is the delay before processing network changes.
 	debounceInterval time.Duration
 
-	// pendingNetwork holds the network info waiting for debounce.
-	pendingNetwork *NetworkInfo
-
 	// dbusFailed indicates D-Bus connection failed (fallback to polling).
 	dbusFailed bool
 }
@@ -353,13 +350,14 @@ func (nm *NetworkMonitor) getCurrentNetworkInfo() (*NetworkInfo, error) {
 	info.Connected = connected
 	info.Interface = iface
 
-	if netType == "wifi" || netType == "802-11-wireless" {
+	switch netType {
+	case "wifi", "802-11-wireless":
 		info.Type = NetworkTypeWiFi
 		// Get WiFi details
 		ssid, bssid := nm.getWiFiDetails(iface)
 		info.SSID = ssid
 		info.BSSID = bssid
-	} else if netType == "ethernet" || netType == "802-3-ethernet" {
+	case "ethernet", "802-3-ethernet":
 		info.Type = NetworkTypeEthernet
 	}
 
@@ -409,7 +407,7 @@ func (nm *NetworkMonitor) getActiveConnection() (bool, string, string) {
 func (nm *NetworkMonitor) getWiFiDetails(iface string) (ssid, bssid string) {
 	// If no interface specified, find the wireless interface
 	if iface == "" {
-		iface = nm.findWirelessInterface()
+		_ = nm.findWirelessInterface() // Interface discovery for potential future use
 	}
 
 	// Get active WiFi info

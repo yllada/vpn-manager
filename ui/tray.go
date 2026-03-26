@@ -20,6 +20,7 @@ import (
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
 // Pre-generated icons for performance.
@@ -40,6 +41,11 @@ type TrayIndicator struct {
 	openAppItem    *systray.MenuItem
 	quitItem       *systray.MenuItem
 
+	// Network trust menu items
+	networkInfoItem    *systray.MenuItem
+	trustNetworkItem   *systray.MenuItem
+	untrustNetworkItem *systray.MenuItem
+
 	// Connection state
 	connectedProfile string
 	connectedID      string
@@ -47,6 +53,10 @@ type TrayIndicator struct {
 	uptimeTicker     *time.Ticker
 	uptimeStop       chan struct{}
 	uptimeStopOnce   sync.Once
+
+	// Current network state
+	currentSSID  string
+	currentBSSID string
 }
 
 // NewTrayIndicator creates a new system tray indicator.
@@ -97,6 +107,42 @@ func (t *TrayIndicator) onReady() {
 	})
 
 	systray.AddSeparator()
+
+	// ════════════════════════════════════════════════════════════════════════
+	// NETWORK TRUST SECTION - Only shown when connected to a network
+	// ════════════════════════════════════════════════════════════════════════
+
+	t.networkInfoItem = systray.AddMenuItem("Network: Not connected", "Current network")
+	t.networkInfoItem.Disable()
+	t.networkInfoItem.Hide()
+
+	t.trustNetworkItem = systray.AddMenuItem("Trust This Network", "Mark current network as trusted")
+	t.trustNetworkItem.Hide()
+	app.SafeGoWithName("tray-trust-handler", func() {
+		for range t.trustNetworkItem.ClickedCh {
+			t.trustCurrentNetwork()
+		}
+	})
+
+	t.untrustNetworkItem = systray.AddMenuItem("Untrust This Network", "Mark current network as untrusted")
+	t.untrustNetworkItem.Hide()
+	app.SafeGoWithName("tray-untrust-handler", func() {
+		for range t.untrustNetworkItem.ClickedCh {
+			t.untrustCurrentNetwork()
+		}
+	})
+
+	systray.AddSeparator()
+
+	// Subscribe to network change events to update menu items
+	app.On(app.EventNetworkChanged, func(event *app.Event) {
+		if data, ok := event.Data.(*app.NetworkChangedData); ok {
+			t.updateNetworkTrustMenu(data.SSID, data.BSSID, data.Connected)
+		}
+	})
+
+	// Initialize trust menu based on current network
+	t.initNetworkTrustMenu()
 
 	// ════════════════════════════════════════════════════════════════════════
 	// APPLICATION SECTION
@@ -269,6 +315,186 @@ func (t *TrayIndicator) disconnectCurrent() {
 	glib.IdleAdd(func() {
 		if t.app.window != nil {
 			t.app.window.SetStatus("Disconnected")
+		}
+	})
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NETWORK TRUST METHODS
+// ════════════════════════════════════════════════════════════════════════════
+
+// initNetworkTrustMenu initializes the trust menu based on current network.
+func (t *TrayIndicator) initNetworkTrustMenu() {
+	// Try to get current network from NetworkMonitor
+	nm := t.app.vpnManager.NetworkMonitor()
+	if nm == nil {
+		return
+	}
+
+	netInfo, err := nm.GetCurrentNetwork()
+	if err != nil || netInfo == nil {
+		return
+	}
+
+	t.updateNetworkTrustMenu(netInfo.SSID, netInfo.BSSID, netInfo.Connected)
+}
+
+// updateNetworkTrustMenu updates the trust menu items based on network state.
+func (t *TrayIndicator) updateNetworkTrustMenu(ssid, bssid string, connected bool) {
+	t.currentSSID = ssid
+	t.currentBSSID = bssid
+
+	if !connected || ssid == "" {
+		// Not connected to a WiFi network
+		if t.networkInfoItem != nil {
+			t.networkInfoItem.Hide()
+		}
+		if t.trustNetworkItem != nil {
+			t.trustNetworkItem.Hide()
+		}
+		if t.untrustNetworkItem != nil {
+			t.untrustNetworkItem.Hide()
+		}
+		return
+	}
+
+	// Show network info and trust options
+	if t.networkInfoItem != nil {
+		t.networkInfoItem.SetTitle(fmt.Sprintf("Network: %s", ssid))
+		t.networkInfoItem.Show()
+	}
+	if t.trustNetworkItem != nil {
+		t.trustNetworkItem.Show()
+	}
+	if t.untrustNetworkItem != nil {
+		t.untrustNetworkItem.Show()
+	}
+}
+
+// trustCurrentNetwork marks the current network as trusted.
+func (t *TrayIndicator) trustCurrentNetwork() {
+	if t.currentSSID == "" {
+		return
+	}
+
+	trustMgr := t.app.vpnManager.TrustManager()
+	if trustMgr == nil {
+		return
+	}
+
+	// Create or update rule for this network
+	rule := trust.TrustRule{
+		SSID:       t.currentSSID,
+		TrustLevel: trust.TrustLevelTrusted,
+	}
+
+	// Add BSSID to known BSSIDs if available
+	if t.currentBSSID != "" {
+		rule.KnownBSSIDs = []string{t.currentBSSID}
+	}
+
+	// Check if rule already exists for this SSID
+	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(t.currentSSID)
+	if existingRule != nil {
+		// Update existing rule
+		rule.ID = existingRule.ID
+		rule.Created = existingRule.Created
+		// Merge known BSSIDs
+		for _, b := range existingRule.KnownBSSIDs {
+			found := false
+			for _, kb := range rule.KnownBSSIDs {
+				if kb == b {
+					found = true
+					break
+				}
+			}
+			if !found {
+				rule.KnownBSSIDs = append(rule.KnownBSSIDs, b)
+			}
+		}
+		if err := trustMgr.UpdateRule(existingRule.ID, rule); err != nil {
+			app.LogError("Failed to update trust rule: %v", err)
+			return
+		}
+	} else {
+		// Add new rule
+		if err := trustMgr.AddRule(rule); err != nil {
+			app.LogError("Failed to add trust rule: %v", err)
+			return
+		}
+	}
+
+	// Show notification
+	NotifyNetworkTrusted(t.currentSSID)
+
+	// Update main window status
+	glib.IdleAdd(func() {
+		if t.app.window != nil {
+			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as trusted", t.currentSSID))
+		}
+	})
+}
+
+// untrustCurrentNetwork marks the current network as untrusted.
+func (t *TrayIndicator) untrustCurrentNetwork() {
+	if t.currentSSID == "" {
+		return
+	}
+
+	trustMgr := t.app.vpnManager.TrustManager()
+	if trustMgr == nil {
+		return
+	}
+
+	// Create or update rule for this network
+	rule := trust.TrustRule{
+		SSID:       t.currentSSID,
+		TrustLevel: trust.TrustLevelUntrusted,
+	}
+
+	// Add BSSID to known BSSIDs if available
+	if t.currentBSSID != "" {
+		rule.KnownBSSIDs = []string{t.currentBSSID}
+	}
+
+	// Check if rule already exists for this SSID
+	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(t.currentSSID)
+	if existingRule != nil {
+		// Update existing rule
+		rule.ID = existingRule.ID
+		rule.Created = existingRule.Created
+		// Merge known BSSIDs
+		for _, b := range existingRule.KnownBSSIDs {
+			found := false
+			for _, kb := range rule.KnownBSSIDs {
+				if kb == b {
+					found = true
+					break
+				}
+			}
+			if !found {
+				rule.KnownBSSIDs = append(rule.KnownBSSIDs, b)
+			}
+		}
+		if err := trustMgr.UpdateRule(existingRule.ID, rule); err != nil {
+			app.LogError("Failed to update trust rule: %v", err)
+			return
+		}
+	} else {
+		// Add new rule
+		if err := trustMgr.AddRule(rule); err != nil {
+			app.LogError("Failed to add trust rule: %v", err)
+			return
+		}
+	}
+
+	// Show notification
+	NotifyNetworkUntrusted(t.currentSSID)
+
+	// Update main window status
+	glib.IdleAdd(func() {
+		if t.app.window != nil {
+			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as untrusted", t.currentSSID))
 		}
 	})
 }
