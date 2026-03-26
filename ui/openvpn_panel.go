@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
@@ -236,36 +237,27 @@ func (pl *ProfileList) LoadProfiles() {
 }
 
 // showEmptyState shows an empty state when no profiles are configured.
-// Displays an informative message to the user on how to add profiles.
+// Uses AdwStatusPage for a modern, consistent look.
 func (pl *ProfileList) showEmptyState() {
-	// Create centered main container
-	centerBox := gtk.NewBox(gtk.OrientationVertical, 24)
-	centerBox.SetHAlign(gtk.AlignCenter)
-	centerBox.SetVAlign(gtk.AlignCenter)
-	centerBox.SetMarginTop(48)
-	centerBox.SetMarginBottom(48)
-	centerBox.SetMarginStart(24)
-	centerBox.SetMarginEnd(24)
+	// Create AdwStatusPage for the empty state
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("network-vpn-symbolic")
+	statusPage.SetTitle("No VPN Profiles")
+	statusPage.SetDescription("Import your OpenVPN configuration files to get started")
 
-	// Large icon - use app icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("vpn-manager")
-	icon.SetPixelSize(96)
-	icon.AddCSSClass("dim-label")
-	centerBox.Append(icon)
-
-	// Title
-	titleLabel := gtk.NewLabel("No VPN profiles")
-	titleLabel.AddCSSClass("title-1")
-	centerBox.Append(titleLabel)
-
-	// Description
-	descLabel := gtk.NewLabel("Click the + button to add your first profile")
-	descLabel.AddCSSClass("dim-label")
-	centerBox.Append(descLabel)
+	// Add an import button as the child
+	importBtn := gtk.NewButton()
+	importBtn.SetLabel("Import Profile")
+	importBtn.AddCSSClass("suggested-action")
+	importBtn.AddCSSClass("pill")
+	importBtn.SetHAlign(gtk.AlignCenter)
+	importBtn.ConnectClicked(func() {
+		pl.mainWindow.onAddProfile()
+	})
+	statusPage.SetChild(importBtn)
 
 	emptyRow := gtk.NewListBoxRow()
-	emptyRow.SetChild(centerBox)
+	emptyRow.SetChild(statusPage)
 	emptyRow.SetSelectable(false)
 	emptyRow.SetActivatable(false)
 

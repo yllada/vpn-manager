@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -17,7 +18,8 @@ import (
 // MainWindow represents the main application window.
 type MainWindow struct {
 	app            *Application
-	window         *gtk.ApplicationWindow
+	window         *adw.ApplicationWindow
+	toastOverlay   *adw.ToastOverlay
 	headerBar      *gtk.HeaderBar
 	openvpnPanel   *OpenVPNPanel
 	tailscalePanel *TailscalePanel
@@ -34,11 +36,11 @@ func NewMainWindow(app *Application) *MainWindow {
 		app: app,
 	}
 
-	// Create GTK4 application window
-	mw.window = gtk.NewApplicationWindow(app.app)
+	// Create libadwaita application window
+	mw.window = adw.NewApplicationWindow(app.app)
 	mw.window.SetTitle("VPN Manager")
 	mw.window.SetDefaultSize(800, 600)
-	mw.window.SetResizable(false) // Disable maximize and resize
+	mw.window.SetSizeRequest(400, 300) // Minimum size to prevent UI breaking
 	mw.window.SetIconName("vpn-manager")
 
 	// Hide to tray instead of closing - like ProtonVPN behavior
@@ -66,11 +68,8 @@ func (mw *MainWindow) createLayout() {
 	menu := mw.createMenu()
 	menuButton.SetMenuModel(menu)
 
-	// Set header bar as titlebar (prevents double bar)
-	mw.window.SetTitlebar(mw.headerBar)
-
-	// Create main container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create main container for content (stack + status bar)
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
 
 	// Create stack for multiple providers
 	mw.stack = gtk.NewStack()
@@ -95,14 +94,24 @@ func (mw *MainWindow) createLayout() {
 	mw.stackSwitcher.SetStack(mw.stack)
 	mw.headerBar.SetTitleWidget(mw.stackSwitcher)
 
-	mainBox.Append(mw.stack)
+	contentBox.Append(mw.stack)
 
 	// Status bar
 	mw.createStatusBar()
-	mainBox.Append(mw.statusBar)
+	contentBox.Append(mw.statusBar)
 
-	// Set window content
-	mw.window.SetChild(mainBox)
+	// Use AdwToolbarView for proper headerbar integration with AdwApplicationWindow
+	// This is the correct pattern for libadwaita - SetTitlebar() is not supported
+	toolbarView := adw.NewToolbarView()
+	toolbarView.AddTopBar(mw.headerBar)
+	toolbarView.SetContent(contentBox)
+
+	// Wrap in ToastOverlay for in-app notifications
+	mw.toastOverlay = adw.NewToastOverlay()
+	mw.toastOverlay.SetChild(toolbarView)
+
+	// Set window content using the toast overlay
+	mw.window.SetContent(mw.toastOverlay)
 
 	// Load profiles
 	mw.openvpnPanel.LoadProfiles()
@@ -309,6 +318,35 @@ func (mw *MainWindow) SetStatus(text string) {
 	if mw.statusLabel != nil {
 		mw.statusLabel.SetText(text)
 	}
+}
+
+// ShowToast displays an in-app toast notification.
+// timeout is in seconds (0 for default, which is 5 seconds)
+func (mw *MainWindow) ShowToast(message string, timeout uint) {
+	if mw.toastOverlay == nil {
+		return
+	}
+
+	toast := adw.NewToast(message)
+	if timeout > 0 {
+		toast.SetTimeout(timeout)
+	}
+	mw.toastOverlay.AddToast(toast)
+}
+
+// ShowToastWithAction displays a toast with an action button.
+func (mw *MainWindow) ShowToastWithAction(message, actionLabel, actionName string, timeout uint) {
+	if mw.toastOverlay == nil {
+		return
+	}
+
+	toast := adw.NewToast(message)
+	if timeout > 0 {
+		toast.SetTimeout(timeout)
+	}
+	toast.SetButtonLabel(actionLabel)
+	toast.SetActionName(actionName)
+	mw.toastOverlay.AddToast(toast)
 }
 
 // Event handlers
@@ -562,7 +600,7 @@ func (mw *MainWindow) showInfo(title, message string) {
 func (mw *MainWindow) onExportProfiles() {
 	profiles := mw.app.vpnManager.ProfileManager().List()
 	if len(profiles) == 0 {
-		mw.showInfo("Export Profiles", "No profiles to export.")
+		mw.ShowToast("No profiles to export", 3)
 		return
 	}
 
@@ -646,7 +684,7 @@ func (mw *MainWindow) onImportProfiles() {
 				}
 
 				if count == 0 {
-					mw.showInfo("Import Complete", "No new profiles were imported.")
+					mw.ShowToast("No new profiles were imported", 3)
 					return
 				}
 

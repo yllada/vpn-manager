@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -63,6 +64,9 @@ func (a *Application) Run(args []string) int {
 
 // onActivate is called when the application is activated
 func (a *Application) onActivate() {
+	// Initialize libadwaita BEFORE creating any widgets
+	adw.Init()
+
 	// Apply configured theme
 	a.ApplyTheme(a.config.Theme)
 
@@ -135,21 +139,20 @@ func (a *Application) GetConfig() *app.Config {
 
 // ApplyTheme applies the specified theme to the application.
 // Supported values: "auto" (system default), "light", "dark"
+// Uses AdwStyleManager for proper libadwaita integration.
 func (a *Application) ApplyTheme(theme string) {
-	settings := gtk.SettingsGetDefault()
-	if settings == nil {
+	styleManager := adw.StyleManagerGetDefault()
+	if styleManager == nil {
 		return
 	}
 
 	switch theme {
 	case "light":
-		settings.SetObjectProperty("gtk-application-prefer-dark-theme", false)
+		styleManager.SetColorScheme(adw.ColorSchemeForceLight)
 	case "dark":
-		settings.SetObjectProperty("gtk-application-prefer-dark-theme", true)
-	default: // "auto" - follow system theme, don't override
-		// Reset to system default by not forcing any preference
-		// GTK will use the system's color scheme
-		settings.ResetProperty("gtk-application-prefer-dark-theme")
+		styleManager.SetColorScheme(adw.ColorSchemeForceDark)
+	default: // "auto" - follow system theme
+		styleManager.SetColorScheme(adw.ColorSchemeDefault)
 	}
 }
 
