@@ -217,7 +217,7 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 	delBtn.SetTooltipText("Delete profile")
 	delBtn.AddCSSClass("circular")
 	delBtn.AddCSSClass("flat")
-	delBtn.AddCSSClass("error")
+	delBtn.AddCSSClass("destructive-action")
 	delBtn.SetVAlign(gtk.AlignCenter)
 	expanderRow.AddSuffix(delBtn)
 

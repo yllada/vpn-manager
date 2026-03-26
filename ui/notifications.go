@@ -31,13 +31,13 @@ func ShowNotification(n Notification) {
 	if icon == "" {
 		switch n.Type {
 		case NotificationSuccess:
-			icon = "network-vpn"
+			icon = "network-vpn-symbolic"
 		case NotificationWarning:
-			icon = "dialog-warning"
+			icon = "dialog-warning-symbolic"
 		case NotificationError:
-			icon = "dialog-error"
+			icon = "dialog-error-symbolic"
 		default:
-			icon = "network-vpn"
+			icon = "network-vpn-symbolic"
 		}
 	}
 
@@ -70,7 +70,7 @@ func NotifyConnected(profileName string) {
 		Title:   "VPN Connected",
 		Message: "Connected to " + profileName,
 		Type:    NotificationSuccess,
-		Icon:    "network-vpn",
+		Icon:    "network-vpn-symbolic",
 	})
 }
 
@@ -80,7 +80,7 @@ func NotifyDisconnected(profileName string) {
 		Title:   "VPN Disconnected",
 		Message: "Disconnected from " + profileName,
 		Type:    NotificationInfo,
-		Icon:    "network-vpn-disconnected",
+		Icon:    "network-vpn-disconnected-symbolic",
 	})
 }
 
@@ -90,7 +90,7 @@ func NotifyError(profileName, errorMsg string) {
 		Title:   "Connection Error",
 		Message: profileName + ": " + errorMsg,
 		Type:    NotificationError,
-		Icon:    "network-vpn-error",
+		Icon:    "network-vpn-error-symbolic",
 	})
 }
 
@@ -100,7 +100,7 @@ func NotifyConnecting(profileName string) {
 		Title:   "Connecting VPN",
 		Message: "Connecting to " + profileName + "...",
 		Type:    NotificationInfo,
-		Icon:    "network-vpn-acquiring",
+		Icon:    "network-vpn-acquiring-symbolic",
 	})
 }
 
@@ -114,7 +114,7 @@ func NotifyNetworkTrusted(ssid string) {
 		Title:   "Network Trusted",
 		Message: "\"" + ssid + "\" is now trusted. VPN will disconnect on this network.",
 		Type:    NotificationSuccess,
-		Icon:    "network-wireless",
+		Icon:    "network-wireless-symbolic",
 	})
 }
 
@@ -124,7 +124,7 @@ func NotifyNetworkUntrusted(ssid string) {
 		Title:   "Network Untrusted",
 		Message: "\"" + ssid + "\" is now untrusted. VPN will auto-connect on this network.",
 		Type:    NotificationWarning,
-		Icon:    "network-wireless",
+		Icon:    "network-wireless-symbolic",
 	})
 }
 
@@ -135,7 +135,7 @@ func NotifyUnknownNetwork(ssid string) {
 		Title:   "Unknown Network Detected",
 		Message: "Connected to \"" + ssid + "\". How should VPN Manager treat this network?",
 		Type:    NotificationWarning,
-		Icon:    "network-wireless-signal-excellent",
+		Icon:    "network-wireless-signal-excellent-symbolic",
 	}, ssid)
 }
 
@@ -145,7 +145,7 @@ func NotifyEvilTwinWarning(ssid, newBSSID string) {
 		Title:   "Security Warning",
 		Message: "Network \"" + ssid + "\" has a new access point (BSSID: " + newBSSID + "). This could be a spoofed network.",
 		Type:    NotificationError,
-		Icon:    "dialog-warning",
+		Icon:    "dialog-warning-symbolic",
 	})
 }
 
@@ -155,7 +155,7 @@ func NotifyVPNFailedOnUntrusted(ssid string) {
 		Title:   "VPN Connection Failed",
 		Message: "Failed to connect VPN on untrusted network \"" + ssid + "\". Traffic may be blocked.",
 		Type:    NotificationError,
-		Icon:    "network-vpn-error",
+		Icon:    "network-vpn-error-symbolic",
 	})
 }
 
@@ -165,7 +165,7 @@ func NotifyVPNFailedOnUntrusted(ssid string) {
 func ShowNotificationWithActions(n Notification, ssid string) {
 	icon := n.Icon
 	if icon == "" {
-		icon = "network-wireless"
+		icon = "network-wireless-symbolic"
 	}
 
 	// Try with actions first

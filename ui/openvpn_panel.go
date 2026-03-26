@@ -318,7 +318,7 @@ func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
 	deleteBtn.SetTooltipText("Delete profile")
 	deleteBtn.AddCSSClass("circular")
 	deleteBtn.AddCSSClass("flat")
-	deleteBtn.AddCSSClass("error")
+	deleteBtn.AddCSSClass("destructive-action")
 	deleteBtn.SetVAlign(gtk.AlignCenter)
 	deleteBtn.ConnectClicked(func() {
 		pl.onDeleteClicked(profile)

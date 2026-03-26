@@ -29,45 +29,45 @@ const appCSS = `
 }
 
 .profile-card.connected {
-    border-left: 4px solid #2ec27e;
-    background-color: alpha(#2ec27e, 0.1);
+    border-left: 4px solid @success_color;
+    background-color: alpha(@success_color, 0.1);
 }
 
 .profile-card.connecting {
-    border-left: 4px solid #e5a50a;
-    background-color: alpha(#e5a50a, 0.1);
+    border-left: 4px solid @warning_color;
+    background-color: alpha(@warning_color, 0.1);
 }
 
 .profile-card.error {
-    border-left: 4px solid #e01b24;
-    background-color: alpha(#e01b24, 0.1);
+    border-left: 4px solid @error_color;
+    background-color: alpha(@error_color, 0.1);
 }
 
 /* Profile icon color */
 .profile-icon {
-    color: #3584e4;
+    color: @accent_color;
     -gtk-icon-style: symbolic;
 }
 
-/* Connect button - blue (Tailscale panel) */
+/* Connect button - accent color (Tailscale panel) */
 .connect-button {
-    background-color: #3584e4;
-    color: white;
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
 }
 
 .connect-button:hover {
-    background-color: #1c71d8;
+    background-color: shade(@accent_bg_color, 0.9);
 }
 
 .connect-button image {
-    color: white;
+    color: @accent_fg_color;
     -gtk-icon-style: symbolic;
 }
 
 /* Config/Settings button accent */
 button.accent {
-    background-color: #3584e4;
-    color: white;
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
 }
 
 /* List styling - transparent to inherit theme background */
@@ -91,27 +91,27 @@ button.pill {
 
 /* Success color class for icons */
 .success image {
-    color: #2ec27e;
+    color: @success_color;
 }
 
-/* Login button styling - amber/orange for "needs attention" */
+/* Login button styling - warning color for "needs attention" */
 button.login-button {
-    background-color: #e5a50a;
-    color: white;
+    background-color: @warning_bg_color;
+    color: @warning_fg_color;
 }
 
 button.login-button:hover {
-    background-color: #c88800;
+    background-color: shade(@warning_bg_color, 0.9);
 }
 
 button.login-button image {
-    color: white;
+    color: @warning_fg_color;
     -gtk-icon-style: symbolic;
 }
 
 /* Success label for connected status */
 .success-label {
-    color: #57e389;
+    color: @success_color;
 }
 `
 
