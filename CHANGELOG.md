@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Historical connection statistics
 - Bulk profile import
 
+## [1.6.0] - 2026-03-25
+
+### Added
+- **WireGuard test suite**: 70+ tests covering provider functionality
+- **Composite GitHub Action**: Reusable action for Go builds with GTK dependencies
+
+### Changed
+- **Refactored god objects**: Split monolithic components for better maintainability
+- **Centralized constants**: Configuration values now managed in single location
+- **Improved logging**: Structured log format for better debugging
+- **CI/CD improvements**: Enhanced linting configuration and build timeouts
+
+### Fixed
+- **App stability**: No longer crashes after extended runtime (panic recovery added)
+- **Quit button**: Now properly closes app instead of minimizing to tray
+- **Single password prompt**: Disconnect no longer asks for password twice
+- **Tray state sync**: VPN status now updates correctly when showing window from tray
+- **Theme changes**: Apply immediately without requiring app restart
+- **Resource management**: Improved error handling and cleanup throughout codebase
+- **CodeQL alert**: Removed useless assignment in VPN provider
+
+### Security
+- **Go 1.26.1 upgrade**: Fixes vulnerability GO-2026-4602
+
 ## [1.5.0] - 2026-03-23
 
 ### Fixed
@@ -92,7 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/yllada/vpn-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/yllada/vpn-manager/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/yllada/vpn-manager/compare/v1.0.2...v1.4.0
 [1.0.2]: https://github.com/yllada/vpn-manager/compare/v1.0.1...v1.0.2

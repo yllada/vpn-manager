@@ -21,7 +21,7 @@
   <a href="https://github.com/yllada/vpn-manager/actions/workflows/ci.yml"><img src="https://github.com/yllada/vpn-manager/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/github/v/release/yllada/vpn-manager?label=version&color=blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8.svg" alt="Go Version">
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8.svg" alt="Go Version">
   <img src="https://img.shields.io/badge/GTK-4.0-4A86CF.svg" alt="GTK Version">
   <img src="https://img.shields.io/badge/platform-Linux-orange.svg" alt="Platform">
   <a href="https://github.com/yllada/vpn-manager/blob/main/CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg" alt="Contributor Covenant"></a>
@@ -103,7 +103,7 @@ When I started using Linux and needed to connect to a VPN, I spent hours searchi
 
 ### Build Requirements
 
-- **Go** 1.24 or higher
+- **Go** 1.26 or higher
 - **GCC** (C compiler)
 - **GTK4 development libraries**
 
