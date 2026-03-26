@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/yllada/vpn-manager/app"
 )
@@ -538,13 +537,4 @@ func (c *Client) SSHCommand(target SSHTarget) *exec.Cmd {
 // BinaryPath returns the path to the tailscale binary.
 func (c *Client) BinaryPath() string {
 	return c.binaryPath
-}
-
-// runWithTimeout runs a command with the given timeout.
-func (c *Client) runWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
-	return cmd.CombinedOutput()
 }

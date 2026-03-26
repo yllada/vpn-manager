@@ -64,6 +64,9 @@ const (
 
 	// System events
 	EventShutdown EventType = "system.shutdown"
+
+	// Network events
+	EventNetworkChanged EventType = "network.changed"
 )
 
 // Event represents an event in the system.
@@ -146,6 +149,23 @@ type ErrorEventData struct {
 	Message     string
 	Error       error
 	Recoverable bool
+}
+
+// NetworkChangedData contains data for network change events.
+// This is emitted when the system detects a network connectivity change.
+type NetworkChangedData struct {
+	// SSID is the network name (empty for ethernet).
+	SSID string
+	// BSSID is the access point MAC address.
+	BSSID string
+	// Type is the connection type: "wifi", "ethernet", "unknown".
+	Type string
+	// Connected indicates if the network is currently connected.
+	Connected bool
+	// Interface is the network interface name (e.g., "wlan0").
+	Interface string
+	// Previous is the previous network info (nil on startup).
+	Previous *NetworkChangedData
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
