@@ -131,22 +131,18 @@ type ProfileList struct {
 
 // ProfileRow represents a profile row in the list.
 // Contains all widgets needed to display and control a VPN profile.
+// Uses AdwExpanderRow for progressive disclosure of connection details.
 type ProfileRow struct {
 	profile     *vpn.Profile
-	row         *gtk.ListBoxRow
-	mainBox     *gtk.Box
+	expanderRow *adw.ExpanderRow
 	connectBtn  *gtk.Button
 	configBtn   *gtk.Button
-	statusLabel *gtk.Label
-	statusIcon  *gtk.Image
 	deleteBtn   *gtk.Button
 	spinner     *gtk.Spinner
-	// Statistics widgets
-	statsBox     *gtk.Box
-	uptimeLabel  *gtk.Label
-	latencyLabel *gtk.Label
-	txLabel      *gtk.Label
-	rxLabel      *gtk.Label
+	// Detail rows inside expander (visible when expanded)
+	uptimeRow  *adw.ActionRow
+	latencyRow *adw.ActionRow
+	trafficRow *adw.ActionRow
 	// Track last status to avoid duplicate notifications
 	lastStatus vpn.ConnectionStatus
 }
@@ -160,7 +156,7 @@ func NewProfileList(mainWindow *MainWindow) *ProfileList {
 		rows:       make(map[string]*ProfileRow),
 	}
 
-	// List styling
+	// List styling - use boxed-list for AdwExpanderRow compatibility
 	pl.listBox.AddCSSClass("boxed-list")
 	pl.listBox.SetSelectionMode(gtk.SelectionNone)
 
@@ -264,224 +260,136 @@ func (pl *ProfileList) showEmptyState() {
 	pl.listBox.Append(emptyRow)
 }
 
-// addProfileRow adds a profile row to the list.
-// Creates all necessary widgets and configures events.
+// addProfileRow adds a profile row to the list using AdwExpanderRow.
+// Creates an expandable row with progressive disclosure:
+// - Collapsed: profile name, status, connect button
+// - Expanded: uptime, latency, traffic stats
 func (pl *ProfileList) addProfileRow(profile *vpn.Profile) {
-	// Create list row
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
-	row.AddCSSClass("profile-card")
+	// Create AdwExpanderRow for progressive disclosure
+	expanderRow := adw.NewExpanderRow()
+	expanderRow.SetTitle(profile.Name)
 
-	// Horizontal main container
-	mainBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	mainBox.SetMarginTop(12)
-	mainBox.SetMarginBottom(12)
-	mainBox.SetMarginStart(12)
-	mainBox.SetMarginEnd(12)
-
-	// Profile icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("vpn-manager")
-	icon.SetPixelSize(32)
-	icon.AddCSSClass("profile-icon")
-	mainBox.Append(icon)
-
-	// Info container (name and subtitle)
-	infoBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	infoBox.SetHExpand(true)
-	infoBox.SetVAlign(gtk.AlignCenter)
-
-	// Profile name
-	nameLabel := gtk.NewLabel(profile.Name)
-	nameLabel.SetXAlign(0)
-	nameLabel.AddCSSClass("heading")
-	nameLabel.AddCSSClass("profile-name")
-	infoBox.Append(nameLabel)
-
-	// Subtitle with date info
-	subtitle := fmt.Sprintf("Created: %s", profile.Created.Format("01/02/2006"))
-	if !profile.LastUsed.IsZero() {
-		subtitle = fmt.Sprintf("Last used: %s", profile.LastUsed.Format("01/02/2006 15:04"))
-	}
-	subtitleLabel := gtk.NewLabel(subtitle)
-	subtitleLabel.SetXAlign(0)
-	subtitleLabel.AddCSSClass("dim-label")
-	subtitleLabel.AddCSSClass("caption")
-	infoBox.Append(subtitleLabel)
-
-	// Badges container for OTP and Split Tunnel
-	badgeBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	badgeBox.SetMarginTop(4)
-
-	// OTP/2FA badge if enabled
+	// Build subtitle with status and features
+	subtitle := "Disconnected"
 	if profile.RequiresOTP {
-		otpBadge := gtk.NewLabel("2FA")
-		otpBadge.AddCSSClass("otp-badge")
-		badgeBox.Append(otpBadge)
+		subtitle += " • 2FA"
 	}
-
-	// Split Tunneling badge if enabled
 	if profile.SplitTunnelEnabled {
-		badgeLabel := gtk.NewLabel("Split Tunnel")
-		badgeLabel.AddCSSClass("split-tunnel-badge")
-		badgeBox.Append(badgeLabel)
+		subtitle += " • Split Tunnel"
 	}
+	expanderRow.SetSubtitle(subtitle)
 
-	// Only add badge box if there are badges
-	if profile.RequiresOTP || profile.SplitTunnelEnabled {
-		infoBox.Append(badgeBox)
-	}
-
-	// Statistics box (hidden by default, shown when connected)
-	statsBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	statsBox.SetMarginTop(4)
-	statsBox.SetVisible(false)
-
-	// Uptime label
-	uptimeIcon := gtk.NewImage()
-	uptimeIcon.SetFromIconName("appointment-symbolic")
-	uptimeIcon.SetPixelSize(12)
-	statsBox.Append(uptimeIcon)
-
-	uptimeLabel := gtk.NewLabel("")
-	uptimeLabel.AddCSSClass("caption")
-	uptimeLabel.AddCSSClass("dim-label")
-	statsBox.Append(uptimeLabel)
-
-	// Latency label
-	latencyIcon := gtk.NewImage()
-	latencyIcon.SetFromIconName("network-wireless-signal-good-symbolic")
-	latencyIcon.SetPixelSize(12)
-	latencyIcon.SetMarginStart(8)
-	statsBox.Append(latencyIcon)
-
-	latencyLabel := gtk.NewLabel("")
-	latencyLabel.AddCSSClass("caption")
-	latencyLabel.AddCSSClass("dim-label")
-	statsBox.Append(latencyLabel)
-
-	// TX label (upload)
-	txIcon := gtk.NewImage()
-	txIcon.SetFromIconName("go-up-symbolic")
-	txIcon.SetPixelSize(12)
-	txIcon.SetMarginStart(8)
-	statsBox.Append(txIcon)
-
-	txLabel := gtk.NewLabel("")
-	txLabel.AddCSSClass("caption")
-	txLabel.AddCSSClass("dim-label")
-	statsBox.Append(txLabel)
-
-	// RX label (download)
-	rxIcon := gtk.NewImage()
-	rxIcon.SetFromIconName("go-down-symbolic")
-	rxIcon.SetPixelSize(12)
-	rxIcon.SetMarginStart(8)
-	statsBox.Append(rxIcon)
-
-	rxLabel := gtk.NewLabel("")
-	rxLabel.AddCSSClass("caption")
-	rxLabel.AddCSSClass("dim-label")
-	statsBox.Append(rxLabel)
-
-	infoBox.Append(statsBox)
-
-	mainBox.Append(infoBox)
-
-	// Connection status
-	statusBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	statusBox.SetVAlign(gtk.AlignCenter)
-
-	// Spinner for connection state (hidden by default)
+	// Spinner for connecting state (added as prefix, hidden by default)
 	spinner := gtk.NewSpinner()
 	spinner.SetVisible(false)
-	statusBox.Append(spinner)
+	expanderRow.AddPrefix(spinner)
 
-	statusIcon := gtk.NewImage()
-	statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-	statusIcon.SetPixelSize(16)
-	statusBox.Append(statusIcon)
-
-	statusLabel := gtk.NewLabel("Disconnected")
-	statusLabel.AddCSSClass("status-disconnected")
-	statusBox.Append(statusLabel)
-
-	mainBox.Append(statusBox)
-
-	// Button container
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	buttonBox.SetVAlign(gtk.AlignCenter)
-	buttonBox.SetMarginStart(12)
-
-	// Connect button
+	// Connect button as suffix
 	connectBtn := gtk.NewButton()
 	connectBtn.SetIconName("media-playback-start-symbolic")
 	connectBtn.SetTooltipText("Connect")
 	connectBtn.AddCSSClass("circular")
-	connectBtn.AddCSSClass("connect-button")
-
+	connectBtn.AddCSSClass("flat")
+	connectBtn.SetVAlign(gtk.AlignCenter)
 	connectBtn.ConnectClicked(func() {
 		pl.onConnectClicked(profile)
 	})
-	buttonBox.Append(connectBtn)
+	expanderRow.AddSuffix(connectBtn)
 
-	// Configuration button (Profile Settings)
+	// Config button as suffix
 	configBtn := gtk.NewButton()
 	configBtn.SetIconName("emblem-system-symbolic")
 	configBtn.SetTooltipText("Profile Settings")
 	configBtn.AddCSSClass("circular")
 	configBtn.AddCSSClass("flat")
-
-	// Visual indicator if profile has OTP or split tunneling enabled
+	configBtn.SetVAlign(gtk.AlignCenter)
 	if profile.SplitTunnelEnabled || profile.RequiresOTP {
 		configBtn.RemoveCSSClass("flat")
 		configBtn.AddCSSClass("accent")
 	}
-
 	configBtn.ConnectClicked(func() {
 		pl.onConfigClicked(profile)
 	})
-	buttonBox.Append(configBtn)
+	expanderRow.AddSuffix(configBtn)
 
-	// Delete button
+	// Delete button as suffix
 	deleteBtn := gtk.NewButton()
 	deleteBtn.SetIconName("user-trash-symbolic")
 	deleteBtn.SetTooltipText("Delete profile")
 	deleteBtn.AddCSSClass("circular")
-	deleteBtn.AddCSSClass("destructive-action")
-
+	deleteBtn.AddCSSClass("flat")
+	deleteBtn.AddCSSClass("error")
+	deleteBtn.SetVAlign(gtk.AlignCenter)
 	deleteBtn.ConnectClicked(func() {
 		pl.onDeleteClicked(profile)
 	})
-	buttonBox.Append(deleteBtn)
+	expanderRow.AddSuffix(deleteBtn)
 
-	mainBox.Append(buttonBox)
+	// ─────────────────────────────────────────────────────────────────────
+	// EXPANDED CONTENT - Detail rows (visible when expanded)
+	// ─────────────────────────────────────────────────────────────────────
 
-	row.SetChild(mainBox)
-	pl.listBox.Append(row)
+	// Uptime row
+	uptimeRow := adw.NewActionRow()
+	uptimeRow.SetTitle("Uptime")
+	uptimeRow.SetSubtitle("--")
+	uptimeRow.AddPrefix(createRowIcon("appointment-symbolic"))
+	expanderRow.AddRow(uptimeRow)
 
-	// Guardar referencia
+	// Latency row
+	latencyRow := adw.NewActionRow()
+	latencyRow.SetTitle("Latency")
+	latencyRow.SetSubtitle("--")
+	latencyRow.AddPrefix(createRowIcon("network-wireless-signal-good-symbolic"))
+	expanderRow.AddRow(latencyRow)
+
+	// Traffic row (combined TX/RX)
+	trafficRow := adw.NewActionRow()
+	trafficRow.SetTitle("Traffic")
+	trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
+	trafficRow.AddPrefix(createRowIcon("network-transmit-receive-symbolic"))
+	expanderRow.AddRow(trafficRow)
+
+	// Profile info row (created/last used)
+	infoRow := adw.NewActionRow()
+	infoRow.SetTitle("Profile Info")
+	infoText := fmt.Sprintf("Created: %s", profile.Created.Format("01/02/2006"))
+	if !profile.LastUsed.IsZero() {
+		infoText = fmt.Sprintf("Last used: %s", profile.LastUsed.Format("01/02/2006 15:04"))
+	}
+	infoRow.SetSubtitle(infoText)
+	infoRow.AddPrefix(createRowIcon("document-properties-symbolic"))
+	expanderRow.AddRow(infoRow)
+
+	// Add to list
+	pl.listBox.Append(expanderRow)
+
+	// Store reference
 	pl.rows[profile.ID] = &ProfileRow{
-		profile:      profile,
-		row:          row,
-		mainBox:      mainBox,
-		connectBtn:   connectBtn,
-		configBtn:    configBtn,
-		statusLabel:  statusLabel,
-		statusIcon:   statusIcon,
-		deleteBtn:    deleteBtn,
-		spinner:      spinner,
-		statsBox:     statsBox,
-		uptimeLabel:  uptimeLabel,
-		latencyLabel: latencyLabel,
-		txLabel:      txLabel,
-		rxLabel:      rxLabel,
+		profile:     profile,
+		expanderRow: expanderRow,
+		connectBtn:  connectBtn,
+		configBtn:   configBtn,
+		deleteBtn:   deleteBtn,
+		spinner:     spinner,
+		uptimeRow:   uptimeRow,
+		latencyRow:  latencyRow,
+		trafficRow:  trafficRow,
 	}
 
 	// Update status if connected
 	if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
 		pl.updateRowStatus(profile.ID, conn.GetStatus())
 	}
+}
+
+// createRowIcon creates a small icon for ActionRow prefix.
+func createRowIcon(iconName string) *gtk.Image {
+	icon := gtk.NewImage()
+	icon.SetFromIconName(iconName)
+	icon.SetPixelSize(16)
+	icon.AddCSSClass("dim-label")
+	return icon
 }
 
 // onConfigClicked opens the Split Tunneling configuration dialog.
@@ -896,7 +804,7 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 }
 
 // updateRowStatus updates the visual state of a profile row.
-// Modifies icons, text and button styles according to state.
+// Uses AdwExpanderRow subtitle for status display.
 // Only sends notifications when status actually changes to prevent spam.
 func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionStatus) {
 	row, exists := pl.rows[profileID]
@@ -908,32 +816,32 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 	statusChanged := row.lastStatus != status
 	row.lastStatus = status
 
-	// Clear previous CSS classes
-	row.statusLabel.RemoveCSSClass("status-connected")
-	row.statusLabel.RemoveCSSClass("status-disconnected")
-	row.statusLabel.RemoveCSSClass("status-connecting")
-	row.statusLabel.RemoveCSSClass("status-error")
-	row.row.RemoveCSSClass("profile-card-connected")
-
-	// Update label
-	row.statusLabel.SetText(status.String())
+	// Build subtitle based on status and profile features
+	subtitle := status.String()
+	if row.profile.RequiresOTP {
+		subtitle += " • 2FA"
+	}
+	if row.profile.SplitTunnelEnabled {
+		subtitle += " • Split Tunnel"
+	}
+	row.expanderRow.SetSubtitle(subtitle)
 
 	// Update icon and button according to state
 	switch status {
 	case vpn.StatusDisconnected:
 		row.spinner.Stop()
 		row.spinner.SetVisible(false)
-		row.statusIcon.SetVisible(true)
-		row.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-		row.statusLabel.AddCSSClass("status-disconnected")
 		row.connectBtn.SetIconName("media-playback-start-symbolic")
 		row.connectBtn.SetTooltipText("Connect")
-		row.connectBtn.RemoveCSSClass("warning")
-		row.connectBtn.AddCSSClass("connect-button")
+		row.connectBtn.RemoveCSSClass("destructive-action")
+		row.connectBtn.AddCSSClass("flat")
 		row.deleteBtn.SetSensitive(true)
-		// Hide statistics box and stop updates
-		row.statsBox.SetVisible(false)
+		// Stop statistics update
 		pl.stopStatsUpdate()
+		// Reset detail rows
+		row.uptimeRow.SetSubtitle("--")
+		row.latencyRow.SetSubtitle("--")
+		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
 		// Update tray indicator if no other active connections
 		if tray := pl.mainWindow.app.GetTray(); tray != nil {
 			hasConnected := false
@@ -953,12 +861,10 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 	case vpn.StatusConnecting:
 		row.spinner.SetVisible(true)
 		row.spinner.Start()
-		row.statusIcon.SetVisible(false)
-		row.statusLabel.AddCSSClass("status-connecting")
 		row.connectBtn.SetIconName("process-stop-symbolic")
 		row.connectBtn.SetTooltipText("Cancel")
-		row.connectBtn.RemoveCSSClass("connect-button")
-		row.connectBtn.AddCSSClass("warning")
+		row.connectBtn.RemoveCSSClass("flat")
+		row.connectBtn.AddCSSClass("destructive-action")
 		row.deleteBtn.SetSensitive(false)
 		// Connection in progress notification - only if status changed
 		if statusChanged {
@@ -968,17 +874,13 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 	case vpn.StatusConnected:
 		row.spinner.Stop()
 		row.spinner.SetVisible(false)
-		row.statusIcon.SetVisible(true)
-		row.statusIcon.SetFromIconName("network-vpn-symbolic")
-		row.statusLabel.AddCSSClass("status-connected")
-		row.row.AddCSSClass("profile-card-connected")
 		row.connectBtn.SetIconName("media-playback-stop-symbolic")
 		row.connectBtn.SetTooltipText("Disconnect")
-		row.connectBtn.RemoveCSSClass("connect-button")
-		row.connectBtn.AddCSSClass("warning")
+		row.connectBtn.RemoveCSSClass("flat")
+		row.connectBtn.AddCSSClass("destructive-action")
 		row.deleteBtn.SetSensitive(false)
-		// Show statistics box
-		row.statsBox.SetVisible(true)
+		// Auto-expand to show connection details
+		row.expanderRow.SetExpanded(true)
 		// Start statistics update
 		pl.startStatsUpdate(profileID)
 		// Successful connection notification - only if status changed
@@ -993,11 +895,10 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 	case vpn.StatusError:
 		row.spinner.Stop()
 		row.spinner.SetVisible(false)
-		row.statusIcon.SetVisible(true)
-		row.statusIcon.SetFromIconName("dialog-error-symbolic")
-		row.statusLabel.AddCSSClass("status-error")
 		row.connectBtn.SetIconName("view-refresh-symbolic")
 		row.connectBtn.SetTooltipText("Retry")
+		row.connectBtn.RemoveCSSClass("destructive-action")
+		row.connectBtn.AddCSSClass("flat")
 		row.deleteBtn.SetSensitive(true)
 		// Error notification - only if status changed
 		if statusChanged {
@@ -1081,32 +982,32 @@ func (pl *ProfileList) onDeleteClicked(profile *vpn.Profile) {
 }
 
 // updateHealthIndicator updates the visual health indicator for a profile.
+// Updates the subtitle of the ExpanderRow to reflect health state.
 func (pl *ProfileList) updateHealthIndicator(profileID string, state vpn.HealthState) {
 	row, exists := pl.rows[profileID]
 	if !exists {
 		return
 	}
 
+	// Build subtitle based on health state and profile features
+	var healthText string
 	switch state {
 	case vpn.HealthHealthy:
-		row.statusIcon.SetFromIconName("network-vpn-symbolic")
-		row.statusLabel.SetText("Connected")
-		row.statusLabel.RemoveCSSClass("status-error")
-		row.statusLabel.RemoveCSSClass("status-warning")
-		row.statusLabel.AddCSSClass("status-connected")
+		healthText = "Connected"
 	case vpn.HealthDegraded:
-		row.statusIcon.SetFromIconName("network-vpn-acquiring-symbolic")
-		row.statusLabel.SetText("Connection unstable")
-		row.statusLabel.RemoveCSSClass("status-connected")
-		row.statusLabel.RemoveCSSClass("status-error")
-		row.statusLabel.AddCSSClass("status-warning")
+		healthText = "Connection unstable"
 	case vpn.HealthUnhealthy:
-		row.statusIcon.SetFromIconName("network-vpn-disconnected-symbolic")
-		row.statusLabel.SetText("Reconnecting...")
-		row.statusLabel.RemoveCSSClass("status-connected")
-		row.statusLabel.RemoveCSSClass("status-warning")
-		row.statusLabel.AddCSSClass("status-error")
+		healthText = "Reconnecting..."
 	}
+
+	subtitle := healthText
+	if row.profile.RequiresOTP {
+		subtitle += " • 2FA"
+	}
+	if row.profile.SplitTunnelEnabled {
+		subtitle += " • Split Tunnel"
+	}
+	row.expanderRow.SetSubtitle(subtitle)
 }
 
 // startStatsUpdate starts the goroutine that updates connection statistics.
@@ -1147,6 +1048,7 @@ func (pl *ProfileList) stopStatsUpdate() {
 }
 
 // updateStats updates the statistics display for a connected profile.
+// Updates the ActionRow subtitles in the expanded content.
 func (pl *ProfileList) updateStats(profileID string) {
 	row, exists := pl.rows[profileID]
 	if !exists {
@@ -1160,22 +1062,21 @@ func (pl *ProfileList) updateStats(profileID string) {
 
 	// Update uptime
 	uptime := conn.GetUptime()
-	row.uptimeLabel.SetText(formatDuration(uptime))
+	row.uptimeRow.SetSubtitle(formatDuration(uptime))
 
 	// Update latency from health checker if available
 	hc := pl.mainWindow.app.vpnManager.HealthChecker()
 	if hc != nil {
 		if health, exists := hc.GetHealth(profileID); exists && health.Latency > 0 {
-			row.latencyLabel.SetText(fmt.Sprintf("%dms", health.Latency.Milliseconds()))
+			row.latencyRow.SetSubtitle(fmt.Sprintf("%dms", health.Latency.Milliseconds()))
 		} else {
-			row.latencyLabel.SetText("--")
+			row.latencyRow.SetSubtitle("--")
 		}
 	}
 
 	// Update TX/RX statistics from interface
 	conn.UpdateStats()
-	row.txLabel.SetText(formatBytes(conn.BytesSent))
-	row.rxLabel.SetText(formatBytes(conn.BytesRecv))
+	row.trafficRow.SetSubtitle(fmt.Sprintf("↑ %s  ↓ %s", formatBytes(conn.BytesSent), formatBytes(conn.BytesRecv)))
 }
 
 // formatBytes formats a byte count in a human-readable format.

@@ -3,9 +3,11 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
@@ -31,23 +33,17 @@ type WireGuardPanel struct {
 }
 
 // WireGuardRow represents a single WireGuard profile in the list.
+// Uses AdwExpanderRow for progressive disclosure of connection details.
 type WireGuardRow struct {
-	row       *gtk.ListBoxRow
-	profile   *wireguard.Profile
-	nameLabel *gtk.Label
-	descLabel *gtk.Label
-	connBtn   *gtk.Button
-	configBtn *gtk.Button
-	delBtn    *gtk.Button
-	txLabel   *gtk.Label
-	rxLabel   *gtk.Label
-	statsBox  *gtk.Box
-	badgeBox  *gtk.Box
-
-	// Status indicators (matching OpenVPN)
-	statusIcon  *gtk.Image
-	statusLabel *gtk.Label
+	profile     *wireguard.Profile
+	expanderRow *adw.ExpanderRow
+	connBtn     *gtk.Button
+	configBtn   *gtk.Button
+	delBtn      *gtk.Button
 	spinner     *gtk.Spinner
+	// Detail rows inside expander (visible when expanded)
+	trafficRow  *adw.ActionRow
+	endpointRow *adw.ActionRow
 }
 
 // NewWireGuardPanel creates a new WireGuard panel.
@@ -174,168 +170,87 @@ func (wp *WireGuardPanel) showEmptyState() {
 	wp.listBox.Append(emptyRow)
 }
 
-// addProfileRow adds a row for a WireGuard profile.
+// addProfileRow adds a row for a WireGuard profile using AdwExpanderRow.
+// Creates an expandable row with progressive disclosure:
+// - Collapsed: profile name, status, connect button
+// - Expanded: endpoint, traffic stats
 func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
-	row.AddCSSClass("profile-card")
+	// Create AdwExpanderRow for progressive disclosure
+	expanderRow := adw.NewExpanderRow()
+	expanderRow.SetTitle(profile.Name())
 
-	// Horizontal main container
-	mainBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	mainBox.SetMarginTop(12)
-	mainBox.SetMarginBottom(12)
-	mainBox.SetMarginStart(12)
-	mainBox.SetMarginEnd(12)
-
-	// Profile icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("network-wired-symbolic")
-	icon.SetPixelSize(32)
-	icon.AddCSSClass("profile-icon")
-	mainBox.Append(icon)
-
-	// Info container (name and subtitle)
-	infoBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	infoBox.SetHExpand(true)
-	infoBox.SetVAlign(gtk.AlignCenter)
-
-	// Profile name
-	nameLabel := gtk.NewLabel(profile.Name())
-	nameLabel.SetXAlign(0)
-	nameLabel.AddCSSClass("heading")
-	nameLabel.AddCSSClass("profile-name")
-	infoBox.Append(nameLabel)
-
-	// Subtitle with endpoint info
-	descLabel := gtk.NewLabel(profile.Summary())
-	descLabel.SetXAlign(0)
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	infoBox.Append(descLabel)
-
-	// Badge container
-	badgeBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	badgeBox.SetMarginTop(4)
-
-	// WireGuard badge
-	wgBadge := gtk.NewLabel("WireGuard")
-	wgBadge.AddCSSClass("wg-badge")
-	badgeBox.Append(wgBadge)
-
-	// Split Tunnel badge if enabled
+	// Build subtitle with status and features
+	subtitle := "Disconnected"
 	if profile.SplitTunnelEnabled {
-		stBadge := gtk.NewLabel("Split Tunnel")
-		stBadge.AddCSSClass("split-tunnel-badge")
-		badgeBox.Append(stBadge)
+		subtitle += " • Split Tunnel"
 	}
+	expanderRow.SetSubtitle(subtitle)
 
-	infoBox.Append(badgeBox)
-
-	// Statistics box (hidden by default, shown when connected)
-	statsBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	statsBox.SetMarginTop(4)
-	statsBox.SetVisible(false)
-
-	// TX label (upload)
-	txIcon := gtk.NewImage()
-	txIcon.SetFromIconName("go-up-symbolic")
-	txIcon.SetPixelSize(12)
-	statsBox.Append(txIcon)
-
-	txLabel := gtk.NewLabel("0 B")
-	txLabel.AddCSSClass("caption")
-	txLabel.AddCSSClass("dim-label")
-	statsBox.Append(txLabel)
-
-	// RX label (download)
-	rxIcon := gtk.NewImage()
-	rxIcon.SetFromIconName("go-down-symbolic")
-	rxIcon.SetPixelSize(12)
-	rxIcon.SetMarginStart(8)
-	statsBox.Append(rxIcon)
-
-	rxLabel := gtk.NewLabel("0 B")
-	rxLabel.AddCSSClass("caption")
-	rxLabel.AddCSSClass("dim-label")
-	statsBox.Append(rxLabel)
-
-	infoBox.Append(statsBox)
-	mainBox.Append(infoBox)
-
-	// Connection status
-	statusBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	statusBox.SetVAlign(gtk.AlignCenter)
-
-	// Spinner for connection state (hidden by default)
+	// Spinner for connecting state (added as prefix, hidden by default)
 	spinner := gtk.NewSpinner()
 	spinner.SetVisible(false)
-	statusBox.Append(spinner)
+	expanderRow.AddPrefix(spinner)
 
-	statusIcon := gtk.NewImage()
-	statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-	statusIcon.SetPixelSize(16)
-	statusBox.Append(statusIcon)
-
-	statusLabel := gtk.NewLabel("Disconnected")
-	statusLabel.AddCSSClass("status-disconnected")
-	statusBox.Append(statusLabel)
-
-	mainBox.Append(statusBox)
-
-	// Button container
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	buttonBox.SetVAlign(gtk.AlignCenter)
-	buttonBox.SetMarginStart(12)
-
-	// Connect button
+	// Connect button as suffix
 	connBtn := gtk.NewButton()
 	connBtn.SetIconName("media-playback-start-symbolic")
 	connBtn.SetTooltipText("Connect")
 	connBtn.AddCSSClass("circular")
-	connBtn.AddCSSClass("connect-button")
-	buttonBox.Append(connBtn)
+	connBtn.AddCSSClass("flat")
+	connBtn.SetVAlign(gtk.AlignCenter)
+	expanderRow.AddSuffix(connBtn)
 
-	// Configuration button (Profile Settings)
+	// Config button as suffix
 	configBtn := gtk.NewButton()
 	configBtn.SetIconName("emblem-system-symbolic")
 	configBtn.SetTooltipText("Profile Settings")
 	configBtn.AddCSSClass("circular")
 	configBtn.AddCSSClass("flat")
-
-	// Highlight if split tunneling is configured
+	configBtn.SetVAlign(gtk.AlignCenter)
 	if profile.SplitTunnelEnabled {
 		configBtn.RemoveCSSClass("flat")
 		configBtn.AddCSSClass("accent")
 	}
-	buttonBox.Append(configBtn)
+	expanderRow.AddSuffix(configBtn)
 
-	// Delete button
+	// Delete button as suffix
 	delBtn := gtk.NewButton()
 	delBtn.SetIconName("user-trash-symbolic")
 	delBtn.SetTooltipText("Delete profile")
 	delBtn.AddCSSClass("circular")
-	delBtn.AddCSSClass("destructive-action")
-	buttonBox.Append(delBtn)
+	delBtn.AddCSSClass("flat")
+	delBtn.AddCSSClass("error")
+	delBtn.SetVAlign(gtk.AlignCenter)
+	expanderRow.AddSuffix(delBtn)
 
-	mainBox.Append(buttonBox)
-	row.SetChild(mainBox)
+	// ─────────────────────────────────────────────────────────────────────
+	// EXPANDED CONTENT - Detail rows (visible when expanded)
+	// ─────────────────────────────────────────────────────────────────────
+
+	// Endpoint row
+	endpointRow := adw.NewActionRow()
+	endpointRow.SetTitle("Endpoint")
+	endpointRow.SetSubtitle(profile.Summary())
+	endpointRow.AddPrefix(createRowIcon("network-server-symbolic"))
+	expanderRow.AddRow(endpointRow)
+
+	// Traffic row (combined TX/RX)
+	trafficRow := adw.NewActionRow()
+	trafficRow.SetTitle("Traffic")
+	trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
+	trafficRow.AddPrefix(createRowIcon("network-transmit-receive-symbolic"))
+	expanderRow.AddRow(trafficRow)
 
 	// Store row reference
 	wgRow := &WireGuardRow{
-		row:         row,
 		profile:     profile,
-		nameLabel:   nameLabel,
-		descLabel:   descLabel,
+		expanderRow: expanderRow,
 		connBtn:     connBtn,
 		configBtn:   configBtn,
 		delBtn:      delBtn,
-		txLabel:     txLabel,
-		rxLabel:     rxLabel,
-		statsBox:    statsBox,
-		badgeBox:    badgeBox,
-		statusIcon:  statusIcon,
-		statusLabel: statusLabel,
 		spinner:     spinner,
+		trafficRow:  trafficRow,
+		endpointRow: endpointRow,
 	}
 	wp.rows[profile.ID()] = wgRow
 
@@ -352,7 +267,7 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 		wp.onDeleteProfile(wgRow)
 	})
 
-	wp.listBox.Append(row)
+	wp.listBox.Append(expanderRow)
 }
 
 // onImportProfile handles importing a WireGuard config file.
@@ -462,55 +377,54 @@ func (wp *WireGuardPanel) onConfigProfile(row *WireGuardRow) {
 }
 
 // updateRowStatus updates a row's UI based on connection status.
+// Uses AdwExpanderRow subtitle for status display.
 func (wp *WireGuardPanel) updateRowStatus(row *WireGuardRow) {
 	conn := wp.provider.GetConnection(row.profile.ID())
+
+	// Build subtitle based on status and profile features
+	buildSubtitle := func(status string) string {
+		subtitle := status
+		if row.profile.SplitTunnelEnabled {
+			subtitle += " • Split Tunnel"
+		}
+		return subtitle
+	}
 
 	if conn == nil || conn.Status == wireguard.StatusDisconnected {
 		// Disconnected state
 		row.connBtn.SetIconName("media-playback-start-symbolic")
 		row.connBtn.SetTooltipText("Connect")
 		row.connBtn.RemoveCSSClass("destructive-action")
-		row.connBtn.AddCSSClass("connect-button")
-		row.statsBox.SetVisible(false)
+		row.connBtn.AddCSSClass("flat")
 		row.spinner.SetVisible(false)
 		row.spinner.Stop()
-		row.statusIcon.SetVisible(true)
-		row.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-		row.statusLabel.SetText("Disconnected")
-		row.statusLabel.RemoveCSSClass("status-connected")
-		row.statusLabel.RemoveCSSClass("status-connecting")
-		row.statusLabel.AddCSSClass("status-disconnected")
+		row.expanderRow.SetSubtitle(buildSubtitle("Disconnected"))
+		// Reset detail rows
+		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
 	} else if conn.Status == wireguard.StatusConnecting {
 		// Connecting state
 		row.connBtn.SetIconName("media-playback-stop-symbolic")
 		row.connBtn.SetTooltipText("Cancel")
+		row.connBtn.RemoveCSSClass("flat")
+		row.connBtn.AddCSSClass("destructive-action")
 		row.spinner.SetVisible(true)
 		row.spinner.Start()
-		row.statusIcon.SetVisible(false)
-		row.statusLabel.SetText("Connecting...")
-		row.statusLabel.RemoveCSSClass("status-connected")
-		row.statusLabel.RemoveCSSClass("status-disconnected")
-		row.statusLabel.AddCSSClass("status-connecting")
+		row.expanderRow.SetSubtitle(buildSubtitle("Connecting..."))
 	} else if conn.Status == wireguard.StatusConnected {
 		// Connected state
 		row.connBtn.SetIconName("media-playback-stop-symbolic")
 		row.connBtn.SetTooltipText("Disconnect")
-		row.connBtn.RemoveCSSClass("connect-button")
+		row.connBtn.RemoveCSSClass("flat")
 		row.connBtn.AddCSSClass("destructive-action")
-		row.statsBox.SetVisible(true)
 		row.spinner.SetVisible(false)
 		row.spinner.Stop()
-		row.statusIcon.SetVisible(true)
-		row.statusIcon.SetFromIconName("network-vpn-symbolic")
-		row.statusLabel.SetText("Connected")
-		row.statusLabel.RemoveCSSClass("status-disconnected")
-		row.statusLabel.RemoveCSSClass("status-connecting")
-		row.statusLabel.AddCSSClass("status-connected")
+		row.expanderRow.SetSubtitle(buildSubtitle("Connected"))
+		// Auto-expand to show connection details
+		row.expanderRow.SetExpanded(true)
 
 		// Update stats using thread-safe accessor
 		bytesSent, bytesRecv, _ := conn.GetStats()
-		row.txLabel.SetText(formatBytes(bytesSent))
-		row.rxLabel.SetText(formatBytes(bytesRecv))
+		row.trafficRow.SetSubtitle(fmt.Sprintf("↑ %s  ↓ %s", formatBytes(bytesSent), formatBytes(bytesRecv)))
 	}
 }
 

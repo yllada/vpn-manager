@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
@@ -18,27 +19,25 @@ import (
 )
 
 // TailscalePanel represents the Tailscale management panel.
-// Simplified to show only connection status and peers list.
+// Uses AdwExpanderRow for progressive disclosure of connection details and peer info.
 type TailscalePanel struct {
 	mainWindow *MainWindow
 	provider   *tailscale.Provider
 	box        *gtk.Box
 
-	// Status widgets
-	statusIcon    *gtk.Image
-	statusLabel   *gtk.Label
-	hostnameLabel *gtk.Label
-	ipLabel       *gtk.Label
-	versionLabel  *gtk.Label
-	networkLabel  *gtk.Label
+	// Main profile card (AdwExpanderRow for progressive disclosure)
+	profileExpanderRow *adw.ExpanderRow
+	ipRow              *adw.ActionRow
+	networkRow         *adw.ActionRow
+	versionRow         *adw.ActionRow
 
-	// Control buttons
+	// Control buttons (in expander row suffix)
 	connectBtn *gtk.Button
 	loginBtn   *gtk.Button
 	logoutBtn  *gtk.Button
 
-	// Peers list
-	peersBox *gtk.ListBox
+	// Peers list (AdwPreferencesGroup with AdwExpanderRows)
+	peersGroup *adw.PreferencesGroup
 
 	// Update ticker
 	stopUpdates     chan struct{}
@@ -46,6 +45,7 @@ type TailscalePanel struct {
 
 	// Peers cache to avoid unnecessary rebuilds (prevents scroll jump)
 	lastPeersSignature string
+	peerRows           map[string]*adw.ExpanderRow
 }
 
 // NewTailscalePanel creates a new Tailscale panel.
@@ -54,6 +54,7 @@ func NewTailscalePanel(mainWindow *MainWindow, provider *tailscale.Provider) *Ta
 		mainWindow:  mainWindow,
 		provider:    provider,
 		stopUpdates: make(chan struct{}),
+		peerRows:    make(map[string]*adw.ExpanderRow),
 	}
 
 	tp.createLayout()
@@ -93,94 +94,30 @@ func (tp *TailscalePanel) createLayout() {
 	tp.updateStatus()
 }
 
-// createProfileCard creates the main profile card showing connection status.
+// createProfileCard creates the main profile card using AdwExpanderRow.
+// Collapsed: Shows hostname, status, connect/login buttons
+// Expanded: Shows IP, network, version details
 func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
 	listBox := gtk.NewListBox()
 	listBox.SetSelectionMode(gtk.SelectionNone)
 	listBox.AddCSSClass("boxed-list")
 
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
-	row.AddCSSClass("profile-card")
+	// Create AdwExpanderRow for the profile
+	tp.profileExpanderRow = adw.NewExpanderRow()
+	tp.profileExpanderRow.SetTitle("Tailscale")
+	tp.profileExpanderRow.SetSubtitle("Not Connected")
+	tp.profileExpanderRow.SetExpanded(false)
+	tp.profileExpanderRow.SetShowEnableSwitch(false)
 
-	// Horizontal main container
-	mainBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	mainBox.SetMarginTop(12)
-	mainBox.SetMarginBottom(12)
-	mainBox.SetMarginStart(12)
-	mainBox.SetMarginEnd(12)
-
-	// Profile icon - Tailscale specific
+	// Prefix icon
 	icon := gtk.NewImage()
 	icon.SetFromIconName("network-workgroup-symbolic")
 	icon.SetPixelSize(32)
-	icon.AddCSSClass("profile-icon")
-	mainBox.Append(icon)
+	tp.profileExpanderRow.AddPrefix(icon)
 
-	// Info container (name and status details)
-	infoBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	infoBox.SetHExpand(true)
-	infoBox.SetVAlign(gtk.AlignCenter)
-
-	// Hostname as profile name
-	tp.hostnameLabel = gtk.NewLabel("Tailscale")
-	tp.hostnameLabel.SetXAlign(0)
-	tp.hostnameLabel.AddCSSClass("heading")
-	tp.hostnameLabel.AddCSSClass("profile-name")
-	infoBox.Append(tp.hostnameLabel)
-
-	// IP and network as subtitle
-	subtitleBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	tp.ipLabel = gtk.NewLabel("-")
-	tp.ipLabel.SetXAlign(0)
-	tp.ipLabel.AddCSSClass("dim-label")
-	tp.ipLabel.AddCSSClass("caption")
-	subtitleBox.Append(tp.ipLabel)
-
-	tp.networkLabel = gtk.NewLabel("")
-	tp.networkLabel.SetXAlign(0)
-	tp.networkLabel.AddCSSClass("dim-label")
-	tp.networkLabel.AddCSSClass("caption")
-	subtitleBox.Append(tp.networkLabel)
-	infoBox.Append(subtitleBox)
-
-	// Badges container
-	badgeBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	badgeBox.SetMarginTop(4)
-
-	// Tailscale badge
-	tsBadge := gtk.NewLabel("Tailscale")
-	tsBadge.AddCSSClass("tailscale-badge")
-	badgeBox.Append(tsBadge)
-
-	// Version badge
-	tp.versionLabel = gtk.NewLabel("")
-	tp.versionLabel.AddCSSClass("version-badge")
-	tp.versionLabel.SetVisible(false)
-	badgeBox.Append(tp.versionLabel)
-
-	infoBox.Append(badgeBox)
-	mainBox.Append(infoBox)
-
-	// Connection status
-	statusBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	statusBox.SetVAlign(gtk.AlignCenter)
-
-	tp.statusIcon = gtk.NewImage()
-	tp.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-	tp.statusIcon.SetPixelSize(16)
-	statusBox.Append(tp.statusIcon)
-
-	tp.statusLabel = gtk.NewLabel("Not Connected")
-	tp.statusLabel.AddCSSClass("status-disconnected")
-	statusBox.Append(tp.statusLabel)
-
-	mainBox.Append(statusBox)
-
-	// Button container
+	// Button container for suffix
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	buttonBox.SetVAlign(gtk.AlignCenter)
-	buttonBox.SetMarginStart(12)
 
 	// Connect button
 	tp.connectBtn = gtk.NewButton()
@@ -209,53 +146,61 @@ func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
 	tp.logoutBtn.ConnectClicked(tp.onLogoutClicked)
 	buttonBox.Append(tp.logoutBtn)
 
-	mainBox.Append(buttonBox)
+	tp.profileExpanderRow.AddSuffix(buttonBox)
 
-	row.SetChild(mainBox)
-	listBox.Append(row)
+	// Expanded content: IP, Network, Version rows
+	tp.ipRow = adw.NewActionRow()
+	tp.ipRow.SetTitle("IP Address")
+	tp.ipRow.SetSubtitle("-")
+	ipIcon := gtk.NewImage()
+	ipIcon.SetFromIconName("network-server-symbolic")
+	ipIcon.SetPixelSize(16)
+	tp.ipRow.AddPrefix(ipIcon)
+	tp.profileExpanderRow.AddRow(tp.ipRow)
 
+	tp.networkRow = adw.NewActionRow()
+	tp.networkRow.SetTitle("Exit Node")
+	tp.networkRow.SetSubtitle("None")
+	networkIcon := gtk.NewImage()
+	networkIcon.SetFromIconName("network-vpn-symbolic")
+	networkIcon.SetPixelSize(16)
+	tp.networkRow.AddPrefix(networkIcon)
+	tp.profileExpanderRow.AddRow(tp.networkRow)
+
+	tp.versionRow = adw.NewActionRow()
+	tp.versionRow.SetTitle("Version")
+	tp.versionRow.SetSubtitle("-")
+	versionIcon := gtk.NewImage()
+	versionIcon.SetFromIconName("help-about-symbolic")
+	versionIcon.SetPixelSize(16)
+	tp.versionRow.AddPrefix(versionIcon)
+	tp.profileExpanderRow.AddRow(tp.versionRow)
+
+	listBox.Append(tp.profileExpanderRow)
 	return listBox
 }
 
-// createPeersSection creates the peers list section.
+// createPeersSection creates the peers list section using AdwPreferencesGroup.
 func (tp *TailscalePanel) createPeersSection() *gtk.Box {
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 8)
+	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
 	mainBox.SetMarginTop(12)
 	mainBox.SetMarginStart(12)
 	mainBox.SetMarginEnd(12)
 	mainBox.SetMarginBottom(12)
 
-	// Section title
-	titleBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	titleBox.SetMarginBottom(8)
-
-	icon := gtk.NewImage()
-	icon.SetFromIconName("system-users-symbolic")
-	icon.SetPixelSize(16)
-	titleBox.Append(icon)
-
-	title := gtk.NewLabel("Devices")
-	title.AddCSSClass("heading")
-	titleBox.Append(title)
-
-	mainBox.Append(titleBox)
-
-	// Peers list in a card
-	card := gtk.NewBox(gtk.OrientationVertical, 0)
-	card.AddCSSClass("card")
-
+	// Scrolled window for the peers
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetMinContentHeight(150)
 	scrolled.SetMaxContentHeight(350)
 	scrolled.SetVExpand(true)
 
-	tp.peersBox = gtk.NewListBox()
-	tp.peersBox.AddCSSClass("boxed-list")
-	tp.peersBox.SetSelectionMode(gtk.SelectionNone)
+	// AdwPreferencesGroup for peers
+	tp.peersGroup = adw.NewPreferencesGroup()
+	tp.peersGroup.SetTitle("Devices")
+	tp.peersGroup.SetDescription("Devices on your tailnet")
 
-	scrolled.SetChild(tp.peersBox)
-	card.Append(scrolled)
-	mainBox.Append(card)
+	scrolled.SetChild(tp.peersGroup)
+	mainBox.Append(scrolled)
 
 	return mainBox
 }
@@ -547,25 +492,23 @@ func (tp *TailscalePanel) updateStatus() {
 
 	// Get version
 	if version, err := tp.provider.Version(); err == nil {
-		tp.versionLabel.SetText(version)
-		tp.versionLabel.SetVisible(true)
+		tp.versionRow.SetSubtitle(version)
 	}
 
 	// Get status
 	status, err := tp.provider.Status(ctx)
 	if err != nil {
-		tp.statusLabel.SetText("Error")
-		tp.statusIcon.SetFromIconName("dialog-error-symbolic")
+		tp.profileExpanderRow.SetSubtitle("Error")
 		app.LogError("tailscale-panel", "status error: %v", err)
 		return
 	}
 
+	// Build status parts for subtitle
+	var statusParts []string
+
 	// Update status display
 	if status.Connected {
-		tp.statusIcon.SetFromIconName("network-vpn-symbolic")
-		tp.statusLabel.SetText("Connected")
-		tp.statusLabel.RemoveCSSClass("status-disconnected")
-		tp.statusLabel.AddCSSClass("status-connected")
+		statusParts = append(statusParts, "Connected")
 		tp.connectBtn.SetIconName("media-playback-stop-symbolic")
 		tp.connectBtn.SetTooltipText("Disconnect")
 		tp.connectBtn.RemoveCSSClass("connect-button")
@@ -573,25 +516,21 @@ func (tp *TailscalePanel) updateStatus() {
 		tp.loginBtn.SetVisible(false)
 		tp.logoutBtn.SetVisible(true)
 	} else {
-		tp.statusIcon.SetFromIconName("network-vpn-offline-symbolic")
-
 		switch status.BackendState {
 		case "NeedsLogin":
-			tp.statusLabel.SetText("Needs Login")
+			statusParts = append(statusParts, "Needs Login")
 			tp.loginBtn.SetVisible(true)
 			tp.logoutBtn.SetVisible(false)
 		case "Stopped":
-			tp.statusLabel.SetText("Stopped")
+			statusParts = append(statusParts, "Stopped")
 			tp.loginBtn.SetVisible(false)
 			tp.logoutBtn.SetVisible(true)
 		default:
-			tp.statusLabel.SetText("Disconnected")
+			statusParts = append(statusParts, "Disconnected")
 			tp.loginBtn.SetVisible(false)
 			tp.logoutBtn.SetVisible(true)
 		}
 
-		tp.statusLabel.RemoveCSSClass("status-connected")
-		tp.statusLabel.AddCSSClass("status-disconnected")
 		tp.connectBtn.SetIconName("media-playback-start-symbolic")
 		tp.connectBtn.SetTooltipText("Connect")
 		tp.connectBtn.RemoveCSSClass("destructive-action")
@@ -601,25 +540,31 @@ func (tp *TailscalePanel) updateStatus() {
 	// Update connection info
 	if status.ConnectionInfo != nil {
 		if status.ConnectionInfo.Hostname != "" {
-			tp.hostnameLabel.SetText(status.ConnectionInfo.Hostname)
+			tp.profileExpanderRow.SetTitle(status.ConnectionInfo.Hostname)
 		} else {
-			tp.hostnameLabel.SetText("Tailscale")
+			tp.profileExpanderRow.SetTitle("Tailscale")
 		}
 
 		if len(status.ConnectionInfo.TailscaleIPs) > 0 {
-			tp.ipLabel.SetText(status.ConnectionInfo.TailscaleIPs[0])
+			tp.ipRow.SetSubtitle(status.ConnectionInfo.TailscaleIPs[0])
+		} else {
+			tp.ipRow.SetSubtitle("-")
 		}
 
 		if status.ConnectionInfo.ExitNode != "" {
-			tp.networkLabel.SetText(fmt.Sprintf("via %s", status.ConnectionInfo.ExitNode))
+			tp.networkRow.SetSubtitle(fmt.Sprintf("via %s", status.ConnectionInfo.ExitNode))
+			statusParts = append(statusParts, "Exit Node")
 		} else {
-			tp.networkLabel.SetText("")
+			tp.networkRow.SetSubtitle("None")
 		}
 	} else {
-		tp.hostnameLabel.SetText("Tailscale")
-		tp.ipLabel.SetText("-")
-		tp.networkLabel.SetText("")
+		tp.profileExpanderRow.SetTitle("Tailscale")
+		tp.ipRow.SetSubtitle("-")
+		tp.networkRow.SetSubtitle("None")
 	}
+
+	// Set the subtitle with status parts
+	tp.profileExpanderRow.SetSubtitle(strings.Join(statusParts, " • "))
 
 	// Update peers list
 	tp.updatePeers()
@@ -632,7 +577,7 @@ func (tp *TailscalePanel) updateStatus() {
 // PEERS LIST
 // ═══════════════════════════════════════════════════════════════════════════
 
-// updatePeers updates the peers list.
+// updatePeers updates the peers list using AdwPreferencesGroup.
 // Uses a signature-based cache to avoid rebuilding when peers haven't changed.
 func (tp *TailscalePanel) updatePeers() {
 	ctx := context.Background()
@@ -640,9 +585,11 @@ func (tp *TailscalePanel) updatePeers() {
 	if err != nil || tsStatus == nil || len(tsStatus.Peer) == 0 {
 		if tp.lastPeersSignature != "empty" {
 			tp.lastPeersSignature = "empty"
-			for tp.peersBox.FirstChild() != nil {
-				tp.peersBox.Remove(tp.peersBox.FirstChild())
+			// Clear all existing peer rows from the group
+			for _, row := range tp.peerRows {
+				tp.peersGroup.Remove(row)
 			}
+			tp.peerRows = make(map[string]*adw.ExpanderRow)
 			tp.showEmptyPeersState()
 		}
 		return
@@ -662,62 +609,65 @@ func (tp *TailscalePanel) updatePeers() {
 	}
 	tp.lastPeersSignature = newSignature
 
-	// Clear and rebuild
-	for tp.peersBox.FirstChild() != nil {
-		tp.peersBox.Remove(tp.peersBox.FirstChild())
+	// Clear all existing peer rows
+	for _, row := range tp.peerRows {
+		tp.peersGroup.Remove(row)
 	}
+	tp.peerRows = make(map[string]*adw.ExpanderRow)
 
+	// Add peer rows
 	for peerID, peer := range tsStatus.Peer {
 		if peer.ID == "" {
 			peer.ID = peerID
 		}
 		row := tp.createPeerRow(peer)
-		tp.peersBox.Append(row)
+		tp.peerRows[peerID] = row
+		tp.peersGroup.Add(row)
 	}
 }
 
 // showEmptyPeersState shows a placeholder when no peers are connected.
 func (tp *TailscalePanel) showEmptyPeersState() {
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
-
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(24)
-	box.SetMarginBottom(24)
-	box.SetHAlign(gtk.AlignCenter)
-	box.SetVAlign(gtk.AlignCenter)
+	// Create an ActionRow to show empty state
+	emptyRow := adw.NewActionRow()
+	emptyRow.SetTitle("No devices found")
+	emptyRow.SetSubtitle("Connect other devices to your tailnet")
 
 	icon := gtk.NewImage()
 	icon.SetFromIconName("network-workgroup-symbolic")
 	icon.SetPixelSize(32)
 	icon.AddCSSClass("dim-label")
-	box.Append(icon)
+	emptyRow.AddPrefix(icon)
 
-	label := gtk.NewLabel("No devices found")
-	label.AddCSSClass("dim-label")
-	box.Append(label)
-
-	hint := gtk.NewLabel("Connect other devices to your tailnet")
-	hint.AddCSSClass("dim-label")
-	hint.AddCSSClass("caption")
-	box.Append(hint)
-
-	row.SetChild(box)
-	tp.peersBox.Append(row)
+	// Store in peerRows with special key
+	tp.peerRows["__empty__"] = nil
+	tp.peersGroup.Add(emptyRow)
 }
 
-// createPeerRow creates a row for a peer.
-func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBoxRow {
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
+// createPeerRow creates an AdwExpanderRow for a peer.
+// Collapsed: Shows hostname, online status, gateway controls
+// Expanded: Shows IP addresses, OS, DNSName, and detailed info
+func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.ExpanderRow {
+	row := adw.NewExpanderRow()
+	row.SetTitle(peer.HostName)
+	row.SetExpanded(false)
+	row.SetShowEnableSwitch(false)
 
-	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	box.SetMarginTop(8)
-	box.SetMarginBottom(8)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	// Build subtitle with status
+	var subtitleParts []string
+	if peer.Online {
+		subtitleParts = append(subtitleParts, "Online")
+	} else {
+		subtitleParts = append(subtitleParts, "Offline")
+	}
+	if peer.ExitNode {
+		subtitleParts = append(subtitleParts, "Gateway Active")
+	} else if peer.ExitNodeOption {
+		subtitleParts = append(subtitleParts, "Exit Node")
+	}
+	row.SetSubtitle(strings.Join(subtitleParts, " • "))
 
-	// Online indicator
+	// Prefix: Online status icon
 	statusIcon := gtk.NewImage()
 	if peer.Online {
 		statusIcon.SetFromIconName("emblem-ok-symbolic")
@@ -727,60 +677,32 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBox
 		statusIcon.AddCSSClass("dim-label")
 	}
 	statusIcon.SetPixelSize(16)
-	box.Append(statusIcon)
+	row.AddPrefix(statusIcon)
 
-	// Peer info
-	infoBox := gtk.NewBox(gtk.OrientationVertical, 2)
-	infoBox.SetHExpand(true)
-
-	nameLabel := gtk.NewLabel(peer.HostName)
-	nameLabel.SetXAlign(0)
-	nameLabel.AddCSSClass("heading")
-	infoBox.Append(nameLabel)
-
-	// IP and OS
-	var details []string
-	if len(peer.TailscaleIPs) > 0 {
-		details = append(details, peer.TailscaleIPs[0])
-	}
-	if peer.OS != "" {
-		details = append(details, peer.OS)
-	}
-
-	if len(details) > 0 {
-		detailLabel := gtk.NewLabel(strings.Join(details, " • "))
-		detailLabel.SetXAlign(0)
-		detailLabel.AddCSSClass("dim-label")
-		detailLabel.AddCSSClass("caption")
-		infoBox.Append(detailLabel)
-	}
-
-	box.Append(infoBox)
-
-	// Exit node controls
+	// Suffix: Exit node controls
 	if peer.ExitNode {
-		// This peer IS currently the active gateway
-		activeLabel := gtk.NewLabel("Gateway")
-		activeLabel.AddCSSClass("success")
-		activeLabel.AddCSSClass("caption")
-		box.Append(activeLabel)
-
+		// This peer IS currently the active gateway - show stop button
 		stopBtn := gtk.NewButton()
 		stopBtn.SetIconName("process-stop-symbolic")
 		stopBtn.SetTooltipText("Stop using as gateway")
 		stopBtn.AddCSSClass("flat")
+		stopBtn.AddCSSClass("circular")
 		stopBtn.AddCSSClass("destructive-action")
+		stopBtn.SetVAlign(gtk.AlignCenter)
+		peerHostname := peer.HostName
 		stopBtn.ConnectClicked(func() {
-			tp.setExitNodeFromPeer("", peer.HostName, false)
+			tp.setExitNodeFromPeer("", peerHostname, false)
 		})
-		box.Append(stopBtn)
+		row.AddSuffix(stopBtn)
 	} else if peer.ExitNodeOption && peer.Online {
 		// This peer CAN be used as gateway
 		useBtn := gtk.NewButton()
 		useBtn.SetIconName("go-next-symbolic")
 		useBtn.SetTooltipText("Use as gateway")
 		useBtn.AddCSSClass("flat")
+		useBtn.AddCSSClass("circular")
 		useBtn.AddCSSClass("suggested-action")
+		useBtn.SetVAlign(gtk.AlignCenter)
 
 		// Use DNSName (or HostName fallback) - NOT the internal ID
 		peerIdentifier := peer.DNSName
@@ -791,16 +713,65 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *gtk.ListBox
 		useBtn.ConnectClicked(func() {
 			tp.setExitNodeFromPeer(peerIdentifier, peerName, true)
 		})
-		box.Append(useBtn)
-	} else if peer.ExitNodeOption && !peer.Online {
-		// Gateway available but offline
-		offlineLabel := gtk.NewLabel("Gateway (offline)")
-		offlineLabel.AddCSSClass("dim-label")
-		offlineLabel.AddCSSClass("caption")
-		box.Append(offlineLabel)
+		row.AddSuffix(useBtn)
 	}
 
-	row.SetChild(box)
+	// Expanded content: detailed peer info
+
+	// IP Address row
+	if len(peer.TailscaleIPs) > 0 {
+		ipRow := adw.NewActionRow()
+		ipRow.SetTitle("IP Address")
+		ipRow.SetSubtitle(strings.Join(peer.TailscaleIPs, ", "))
+		ipIcon := gtk.NewImage()
+		ipIcon.SetFromIconName("network-server-symbolic")
+		ipIcon.SetPixelSize(16)
+		ipRow.AddPrefix(ipIcon)
+		row.AddRow(ipRow)
+	}
+
+	// OS row
+	if peer.OS != "" {
+		osRow := adw.NewActionRow()
+		osRow.SetTitle("Operating System")
+		osRow.SetSubtitle(peer.OS)
+		osIcon := gtk.NewImage()
+		osIcon.SetFromIconName("computer-symbolic")
+		osIcon.SetPixelSize(16)
+		osRow.AddPrefix(osIcon)
+		row.AddRow(osRow)
+	}
+
+	// DNS Name row
+	if peer.DNSName != "" {
+		dnsRow := adw.NewActionRow()
+		dnsRow.SetTitle("DNS Name")
+		dnsRow.SetSubtitle(peer.DNSName)
+		dnsIcon := gtk.NewImage()
+		dnsIcon.SetFromIconName("network-workgroup-symbolic")
+		dnsIcon.SetPixelSize(16)
+		dnsRow.AddPrefix(dnsIcon)
+		row.AddRow(dnsRow)
+	}
+
+	// Exit Node capability row
+	if peer.ExitNodeOption {
+		exitRow := adw.NewActionRow()
+		exitRow.SetTitle("Exit Node")
+		if peer.ExitNode {
+			exitRow.SetSubtitle("Currently Active")
+		} else if peer.Online {
+			exitRow.SetSubtitle("Available")
+		} else {
+			exitRow.SetSubtitle("Offline")
+		}
+		exitIcon := gtk.NewImage()
+		exitIcon.SetFromIconName("network-vpn-symbolic")
+		exitIcon.SetPixelSize(16)
+		exitRow.AddPrefix(exitIcon)
+		row.AddRow(exitRow)
+	}
+
 	return row
 }
 
