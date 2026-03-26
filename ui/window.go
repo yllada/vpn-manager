@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -387,36 +388,31 @@ func (mw *MainWindow) ShowToastWithAction(message, actionLabel, actionName strin
 // Event handlers
 
 func (mw *MainWindow) onAddProfile() {
-	// Create dialog to select .ovpn file
-	//nolint:staticcheck // FileDialog migration requires async API refactor
-	dialog := gtk.NewFileChooserNative(
-		"Select VPN configuration file",
-		&mw.window.Window,
-		gtk.FileChooserActionOpen,
-		"Open",
-		"Cancel",
-	)
+	// Create FileDialog (GTK4 4.10+ async API)
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Select VPN configuration file")
+	dialog.SetModal(true)
 
 	// Filter for .ovpn files
 	filter := gtk.NewFileFilter()
 	filter.SetName("OpenVPN files (*.ovpn, *.conf)")
 	filter.AddPattern("*.ovpn")
 	filter.AddPattern("*.conf")
-	dialog.AddFilter(filter) //nolint:staticcheck // FileDialog migration requires async API refactor
 
-	// Show dialog
-	dialog.ConnectResponse(func(responseID int) {
-		if responseID == int(gtk.ResponseAccept) {
-			file := dialog.File() //nolint:staticcheck // FileDialog migration requires async API refactor
-			if file != nil {
-				path := file.Path()
-				mw.showAddProfileDialog(path)
-			}
+	filters := gio.NewListStore(gtk.GTypeFileFilter)
+	filters.Append(filter.Object)
+	dialog.SetFilters(filters)
+
+	// Open async - context.Background() for cancellable, parent window, callback
+	dialog.Open(context.Background(), &mw.window.Window, func(res gio.AsyncResulter) {
+		file, err := dialog.OpenFinish(res)
+		if err != nil {
+			// User cancelled or error - silently return
+			return
 		}
-		dialog.Destroy()
+		path := file.Path()
+		mw.showAddProfileDialog(path)
 	})
-
-	dialog.Show()
 }
 
 func (mw *MainWindow) showAddProfileDialog(configPath string) {
@@ -566,101 +562,97 @@ func (mw *MainWindow) onExportProfiles() {
 		return
 	}
 
-	//nolint:staticcheck // FileDialog migration requires async API refactor
-	dialog := gtk.NewFileChooserNative(
-		"Export VPN Profiles",
-		&mw.window.Window,
-		gtk.FileChooserActionSave,
-		"Export",
-		"Cancel",
-	)
+	// Create FileDialog (GTK4 4.10+ async API)
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Export VPN Profiles")
+	dialog.SetModal(true)
 
 	// Set suggested filename with date
 	suggestedName := fmt.Sprintf("vpn-profiles-backup-%s.yaml",
 		time.Now().Format("20060102"))
-	dialog.SetCurrentName(suggestedName) //nolint:staticcheck // FileDialog migration requires async API refactor
+	dialog.SetInitialName(suggestedName)
 
 	// Add file filter
 	filter := gtk.NewFileFilter()
 	filter.SetName("VPN Backup Files (*.yaml)")
 	filter.AddPattern("*.yaml")
 	filter.AddPattern("*.yml")
-	dialog.AddFilter(filter) //nolint:staticcheck // FileDialog migration requires async API refactor
 
-	dialog.ConnectResponse(func(response int) {
-		if response == int(gtk.ResponseAccept) {
-			file := dialog.File() //nolint:staticcheck // FileDialog migration requires async API refactor
-			if file != nil {
-				filePath := file.Path()
+	filters := gio.NewListStore(gtk.GTypeFileFilter)
+	filters.Append(filter.Object)
+	dialog.SetFilters(filters)
 
-				// Ensure .yaml extension
-				if !hasYAMLExtension(filePath) {
-					filePath += ".yaml"
-				}
-
-				err := mw.app.vpnManager.ProfileManager().Export(filePath)
-				if err != nil {
-					mw.showError("Export Failed", fmt.Sprintf("Failed to export profiles: %v", err))
-					return
-				}
-
-				mw.showInfo("Export Complete",
-					fmt.Sprintf("Successfully exported %d profile(s) to:\n%s",
-						len(profiles), filePath))
-				mw.SetStatus(fmt.Sprintf("Exported %d profiles", len(profiles)))
-			}
+	// Save async
+	dialog.Save(context.Background(), &mw.window.Window, func(res gio.AsyncResulter) {
+		file, err := dialog.SaveFinish(res)
+		if err != nil {
+			// User cancelled or error - silently return
+			return
 		}
-	})
+		filePath := file.Path()
 
-	dialog.Show()
+		// Ensure .yaml extension
+		if !hasYAMLExtension(filePath) {
+			filePath += ".yaml"
+		}
+
+		err = mw.app.vpnManager.ProfileManager().Export(filePath)
+		if err != nil {
+			mw.showError("Export Failed", fmt.Sprintf("Failed to export profiles: %v", err))
+			return
+		}
+
+		mw.showInfo("Export Complete",
+			fmt.Sprintf("Successfully exported %d profile(s) to:\n%s",
+				len(profiles), filePath))
+		mw.SetStatus(fmt.Sprintf("Exported %d profiles", len(profiles)))
+	})
 }
 
 // onImportProfiles handles the import profiles action.
 func (mw *MainWindow) onImportProfiles() {
-	//nolint:staticcheck // FileDialog migration requires async API refactor
-	dialog := gtk.NewFileChooserNative(
-		"Import VPN Profiles",
-		&mw.window.Window,
-		gtk.FileChooserActionOpen,
-		"Import",
-		"Cancel",
-	)
+	// Create FileDialog (GTK4 4.10+ async API)
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Import VPN Profiles")
+	dialog.SetModal(true)
 
 	// Add file filter
 	filter := gtk.NewFileFilter()
 	filter.SetName("VPN Backup Files (*.yaml, *.yml)")
 	filter.AddPattern("*.yaml")
 	filter.AddPattern("*.yml")
-	dialog.AddFilter(filter) //nolint:staticcheck // FileDialog migration requires async API refactor
 
-	dialog.ConnectResponse(func(response int) {
-		if response == int(gtk.ResponseAccept) {
-			file := dialog.File() //nolint:staticcheck // FileDialog migration requires async API refactor
-			if file != nil {
-				filePath := file.Path()
+	filters := gio.NewListStore(gtk.GTypeFileFilter)
+	filters.Append(filter.Object)
+	dialog.SetFilters(filters)
 
-				count, err := mw.app.vpnManager.ProfileManager().Import(filePath)
-				if err != nil {
-					mw.showError("Import Failed", fmt.Sprintf("Failed to import profiles: %v", err))
-					return
-				}
-
-				if count == 0 {
-					mw.ShowToast("No new profiles were imported", 3)
-					return
-				}
-
-				// Reload the profile list
-				mw.openvpnPanel.LoadProfiles()
-
-				mw.showInfo("Import Complete",
-					fmt.Sprintf("Successfully imported %d profile(s).\n\nNote: You'll need to re-enter credentials for imported profiles.", count))
-				mw.SetStatus(fmt.Sprintf("Imported %d profiles", count))
-			}
+	// Open async
+	dialog.Open(context.Background(), &mw.window.Window, func(res gio.AsyncResulter) {
+		file, err := dialog.OpenFinish(res)
+		if err != nil {
+			// User cancelled or error - silently return
+			return
 		}
-	})
+		filePath := file.Path()
 
-	dialog.Show()
+		count, err := mw.app.vpnManager.ProfileManager().Import(filePath)
+		if err != nil {
+			mw.showError("Import Failed", fmt.Sprintf("Failed to import profiles: %v", err))
+			return
+		}
+
+		if count == 0 {
+			mw.ShowToast("No new profiles were imported", 3)
+			return
+		}
+
+		// Reload the profile list
+		mw.openvpnPanel.LoadProfiles()
+
+		mw.showInfo("Import Complete",
+			fmt.Sprintf("Successfully imported %d profile(s).\n\nNote: You'll need to re-enter credentials for imported profiles.", count))
+		mw.SetStatus(fmt.Sprintf("Imported %d profiles", count))
+	})
 }
 
 // hasYAMLExtension checks if a file path has a YAML extension.

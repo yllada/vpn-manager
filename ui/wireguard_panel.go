@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
@@ -272,43 +273,37 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 
 // onImportProfile handles importing a WireGuard config file.
 func (wp *WireGuardPanel) onImportProfile() {
-	//nolint:staticcheck // FileDialog migration planned
-	dialog := gtk.NewFileChooserNative(
-		"Import WireGuard Configuration",
-		&wp.mainWindow.window.Window,
-		gtk.FileChooserActionOpen,
-		"Open",
-		"Cancel",
-	)
+	// Create FileDialog (GTK4 4.10+ async API)
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Import WireGuard Configuration")
+	dialog.SetModal(true)
 
 	// Filter for .conf files
 	filter := gtk.NewFileFilter()
 	filter.SetName("WireGuard Config (*.conf)")
 	filter.AddPattern("*.conf")
-	//nolint:staticcheck // FileDialog migration planned
-	dialog.AddFilter(filter)
 
-	// Show dialog
-	dialog.ConnectResponse(func(responseID int) {
-		if responseID == int(gtk.ResponseAccept) {
-			//nolint:staticcheck // FileDialog migration planned
-			file := dialog.File()
-			if file != nil {
-				path := file.Path()
-				_, err := wp.provider.ImportProfile(path)
-				if err != nil {
-					app.LogError("WireGuard: Import failed: %v", err)
-					wp.showError("Import Failed", err.Error())
-				} else {
-					// Reload all profiles to ensure consistency
-					wp.loadProfiles()
-				}
-			}
+	filters := gio.NewListStore(gtk.GTypeFileFilter)
+	filters.Append(filter.Object)
+	dialog.SetFilters(filters)
+
+	// Open async
+	dialog.Open(context.Background(), &wp.mainWindow.window.Window, func(res gio.AsyncResulter) {
+		file, err := dialog.OpenFinish(res)
+		if err != nil {
+			// User cancelled or error - silently return
+			return
 		}
-		dialog.Destroy()
+		path := file.Path()
+		_, importErr := wp.provider.ImportProfile(path)
+		if importErr != nil {
+			app.LogError("WireGuard: Import failed: %v", importErr)
+			wp.showError("Import Failed", importErr.Error())
+		} else {
+			// Reload all profiles to ensure consistency
+			wp.loadProfiles()
+		}
 	})
-
-	dialog.Show()
 }
 
 // onConnectProfile handles connect/disconnect for a profile.

@@ -9,13 +9,14 @@ import (
 
 // CSS styles for modern VPN Manager UI - Dark theme compatible
 // Uses theme-aware colors that work with system dark/light mode
+// Note: Many styles removed after migrating to libadwaita widgets
 const appCSS = `
 /* ============================================
-   VPN Manager - Modern UI Styles (GTK4)
-   Theme-aware styles
+   VPN Manager - Modern UI Styles (GTK4/Adwaita)
+   Theme-aware styles - minimal custom CSS
    ============================================ */
 
-/* Profile Cards - inherits from theme */
+/* Profile Cards - used by OpenVPN/WireGuard panels */
 .profile-card {
     border-radius: 12px;
     margin: 6px 12px;
@@ -42,46 +43,13 @@ const appCSS = `
     background-color: alpha(#e01b24, 0.1);
 }
 
-/* Profile Info */
-.profile-name {
-    font-weight: 600;
-    font-size: 14px;
-}
-
+/* Profile icon color */
 .profile-icon {
     color: #3584e4;
     -gtk-icon-style: symbolic;
 }
 
-/* Status Labels */
-.status-connected {
-    color: #2ec27e;
-    font-weight: 600;
-}
-
-.status-disconnected {
-    opacity: 0.6;
-}
-
-.status-connecting {
-    color: #e5a50a;
-    font-weight: 500;
-}
-
-.status-error {
-    color: #e01b24;
-    font-weight: 500;
-}
-
-/* Circular buttons */
-button.circular {
-    border-radius: 50%;
-    min-width: 36px;
-    min-height: 36px;
-    padding: 6px;
-}
-
-/* Connect button - blue */
+/* Connect button - blue (Tailscale panel) */
 .connect-button {
     background-color: #3584e4;
     color: white;
@@ -96,84 +64,10 @@ button.circular {
     -gtk-icon-style: symbolic;
 }
 
-/* Config/Settings button */
+/* Config/Settings button accent */
 button.accent {
     background-color: #3584e4;
     color: white;
-}
-
-/* Delete button - red */
-button.destructive-action {
-    background-color: #e01b24;
-    color: white;
-}
-
-button.destructive-action:hover {
-    background-color: #c01c28;
-}
-
-button.destructive-action image {
-    color: white;
-    -gtk-icon-style: symbolic;
-}
-
-/* Split Tunnel Badge */
-.split-tunnel-badge {
-    background-color: alpha(#3584e4, 0.2);
-    color: #3584e4;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-/* OTP/2FA Badge */
-.otp-badge {
-    background-color: alpha(#e5a50a, 0.2);
-    color: #e5a50a;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-/* WireGuard Badge */
-.wg-badge {
-    background-color: alpha(#88171a, 0.2);
-    color: #e01b24;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-/* Connection Timer */
-.connection-timer {
-    font-family: monospace;
-    font-size: 12px;
-    font-weight: 500;
-    color: #2ec27e;
-    padding: 4px 10px;
-    background-color: alpha(#2ec27e, 0.15);
-    border-radius: 14px;
-}
-
-/* Empty State */
-.empty-state-icon {
-    opacity: 0.4;
-}
-
-/* Status Bar */
-.status-bar {
-    border-top: 1px solid alpha(currentColor, 0.15);
-    padding: 6px 12px;
-    opacity: 0.8;
-}
-
-/* Entry fields */
-entry {
-    border-radius: 6px;
-    min-height: 34px;
 }
 
 /* List styling - transparent to inherit theme background */
@@ -189,155 +83,15 @@ list > row:hover {
     background-color: transparent;
 }
 
-/* Flat button */
-button.flat {
-    background-color: transparent;
-}
-
-button.flat:hover {
-    background-color: alpha(currentColor, 0.1);
-}
-
-/* ============================================
-   Preferences Dialog - Modern Card Design
-   ============================================ */
-
-/* Settings cards with subtle border */
-.preferences-card {
-    border-radius: 12px;
-    border: 1px solid alpha(currentColor, 0.12);
-    background-color: alpha(currentColor, 0.03);
-}
-
-/* Settings row title */
-.settings-title {
-    font-weight: 500;
-    font-size: 14px;
-}
-
-/* Caption text for descriptions */
-.caption {
-    font-size: 12px;
-}
-
-/* Dialog action buttons */
-.dialog-button {
-    min-width: 80px;
-    min-height: 34px;
-    padding: 6px 16px;
-    border-radius: 6px;
-}
-
-/* Dialog action area spacing */
-.dialog-action-area {
-    border-top: 1px solid alpha(currentColor, 0.1);
-    padding-top: 16px;
-}
-
-/* Heading style for section titles */
-.heading {
-    font-weight: 600;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-/* ============================================
-   Tailscale Panel Styles
-   ============================================ */
-
-/* Provider tabs/stack switcher */
-stackswitcher {
-    padding: 4px;
-}
-
-stackswitcher button {
-    min-width: 100px;
-}
-
-/* Card frames for Tailscale sections */
-.card {
-    border-radius: 12px;
-    border: 1px solid alpha(currentColor, 0.15);
-    margin: 6px 0;
-}
-
-/* Tailscale status indicator */
-.tailscale-connected {
-    color: #2ec27e;
-}
-
-.tailscale-disconnected {
-    color: alpha(currentColor, 0.5);
-}
-
 /* Pill-shaped buttons */
 button.pill {
     border-radius: 50px;
     padding: 8px 24px;
 }
 
-/* Success color class */
+/* Success color class for icons */
 .success image {
     color: #2ec27e;
-}
-
-/* Peer list rows */
-.peer-row {
-    padding: 8px 12px;
-    border-radius: 8px;
-}
-
-.peer-row:hover {
-    background-color: alpha(currentColor, 0.05);
-}
-
-/* Exit node online indicator */
-.exit-node-online {
-    color: #2ec27e;
-}
-
-.exit-node-offline {
-    color: alpha(currentColor, 0.3);
-}
-
-/* Tailscale Badge */
-.tailscale-badge {
-    background-color: alpha(#3584e4, 0.2);
-    color: #3584e4;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-/* Tailscale Notebook Tabs */
-.tailscale-notebook {
-    margin-top: 12px;
-}
-
-.tailscale-notebook > header {
-    background: transparent;
-}
-
-.tailscale-notebook > header > tabs > tab {
-    padding: 8px 16px;
-    border-radius: 8px 8px 0 0;
-    margin: 0 2px;
-}
-
-.tailscale-notebook > header > tabs > tab:checked {
-    background-color: alpha(currentColor, 0.08);
-}
-
-/* Version Badge */
-.version-badge {
-    background-color: alpha(currentColor, 0.1);
-    font-size: 10px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 10px;
-    opacity: 0.7;
 }
 
 /* Login button styling - amber/orange for "needs attention" */
