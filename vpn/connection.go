@@ -483,11 +483,26 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			if conn.Profile.SplitTunnelAppsEnabled && len(conn.Profile.SplitTunnelApps) > 0 {
 				tunIface := m.detectTunInterface()
 				gateway := m.getDefaultGateway()
+				// Apply app tunnel mode before enabling
+				if conn.Profile.SplitTunnelAppMode != "" {
+					m.appTunnel.SetMode(AppTunnelMode(conn.Profile.SplitTunnelAppMode))
+				}
+
+				// Configure split DNS if enabled in profile
+				if conn.Profile.SplitTunnelDNS {
+					// Get VPN DNS servers (default to gateway DNS if not specified)
+					vpnDNS := []string{DefaultVPNGatewayDNS}
+					// Detect system DNS (typically systemd-resolved stub)
+					systemDNS := m.detectSystemDNS()
+					m.appTunnel.SetSplitDNS(true, vpnDNS, systemDNS)
+					app.LogDebug("apptunnel", "Split DNS enabled (vpnDNS: %v, systemDNS: %s)", vpnDNS, systemDNS)
+				}
+
 				if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
 					app.LogWarn("apptunnel", "failed to enable: %v", err)
 				} else {
-					app.LogDebug("apptunnel", "Enabled for %d apps (mode: %s)",
-						len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode)
+					app.LogDebug("apptunnel", "Enabled for %d apps (mode: %s, splitDNS: %v)",
+						len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode, conn.Profile.SplitTunnelDNS)
 				}
 			}
 

@@ -195,6 +195,41 @@ func (m *Manager) getDefaultGateway() string {
 	return ""
 }
 
+// detectSystemDNS returns the system's DNS resolver address.
+// Typically 127.0.0.53 for systemd-resolved, or the first nameserver from resolv.conf.
+func (m *Manager) detectSystemDNS() string {
+	// First check for systemd-resolved stub listener (most common on modern Linux)
+	cmd := exec.Command("systemctl", "is-active", "systemd-resolved")
+	if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) == "active" {
+		// systemd-resolved is active, use its stub listener
+		return "127.0.0.53"
+	}
+
+	// Fall back to parsing resolv.conf
+	data, err := os.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		app.LogDebug("vpn", "failed to read resolv.conf: %v", err)
+		return "127.0.0.53" // Default fallback
+	}
+
+	// Find first nameserver that isn't a VPN-related one
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "nameserver ") {
+			dns := strings.TrimPrefix(line, "nameserver ")
+			dns = strings.TrimSpace(dns)
+			// Skip VPN gateway DNS (10.x.x.x range often used by VPNs)
+			if !strings.HasPrefix(dns, "10.") {
+				return dns
+			}
+		}
+	}
+
+	// Default to systemd-resolved stub if nothing found
+	return "127.0.0.53"
+}
+
 // applySplitTunnelIncludeMode configures "include" mode where only listed routes go through VPN
 func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vpnGateway string) {
 	profile := conn.Profile

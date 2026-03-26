@@ -36,6 +36,11 @@ type AppTunnel struct {
 	vpnInterface string
 	vpnGateway   string
 
+	// DNS Split Tunneling
+	splitDNSEnabled bool     // Whether to apply split DNS routing
+	vpnDNS          []string // VPN DNS servers (for include mode DNAT)
+	systemDNS       string   // System DNS (for exclude mode, typically 127.0.0.53)
+
 	// cgroup paths
 	cgroupPath string
 	classID    uint32
@@ -60,12 +65,15 @@ type AppConfig struct {
 // NewAppTunnel creates a new AppTunnel instance.
 func NewAppTunnel() *AppTunnel {
 	return &AppTunnel{
-		mode:         AppTunnelInclude,
-		cgroupPath:   "/sys/fs/cgroup/vpn_tunnel",
-		classID:      0x10001, // Class ID for packet marking
-		routingTable: 100,     // Custom routing table number
-		fwmark:       0x1,     // Firewall mark for packets
-		apps:         make([]AppConfig, 0),
+		mode:            AppTunnelInclude,
+		cgroupPath:      "/sys/fs/cgroup/vpn_tunnel",
+		classID:         0x10001, // Class ID for packet marking
+		routingTable:    100,     // Custom routing table number
+		fwmark:          0x1,     // Firewall mark for packets
+		apps:            make([]AppConfig, 0),
+		splitDNSEnabled: false,
+		vpnDNS:          []string{},
+		systemDNS:       "127.0.0.53", // Default systemd-resolved stub
 	}
 }
 
@@ -144,6 +152,27 @@ func (at *AppTunnel) RemoveApp(executable string) {
 	at.apps = newApps
 }
 
+// SetSplitDNS configures split DNS routing for per-app tunneling.
+// When enabled:
+//   - Exclude mode: marked apps bypass VPN DNS, using system DNS instead
+//   - Include mode: marked apps use VPN DNS, others use system DNS
+//
+// Parameters:
+//   - enabled: whether to enable split DNS routing
+//   - vpnDNS: VPN DNS servers (used for DNAT in include mode)
+//   - systemDNS: system DNS server (typically 127.0.0.53 for systemd-resolved)
+func (at *AppTunnel) SetSplitDNS(enabled bool, vpnDNS []string, systemDNS string) {
+	at.mu.Lock()
+	defer at.mu.Unlock()
+	at.splitDNSEnabled = enabled
+	at.vpnDNS = vpnDNS
+	if systemDNS != "" {
+		at.systemDNS = systemDNS
+	}
+	log.Printf("AppTunnel: Split DNS configured (enabled: %v, vpnDNS: %v, systemDNS: %s)",
+		enabled, vpnDNS, at.systemDNS)
+}
+
 // Enable activates per-app tunneling for the given VPN interface.
 func (at *AppTunnel) Enable(vpnInterface, vpnGateway string) error {
 	at.mu.Lock()
@@ -196,14 +225,57 @@ func (at *AppTunnel) buildEnableScript() string {
 			at.classID, at.fwmark))
 	}
 
-	// Routing setup
+	// Routing setup - mode-aware logic
+	// Always create the VPN routing table with the VPN gateway
 	script.WriteString(fmt.Sprintf(
 		"ip route add default via %s dev %s table %d 2>/dev/null || ip route replace default via %s dev %s table %d\n",
 		at.vpnGateway, at.vpnInterface, at.routingTable,
 		at.vpnGateway, at.vpnInterface, at.routingTable))
-	script.WriteString(fmt.Sprintf(
-		"ip rule add fwmark 0x%x table %d 2>/dev/null || true\n",
-		at.fwmark, at.routingTable))
+
+	if at.mode == AppTunnelExclude {
+		// Exclude mode: marked packets BYPASS VPN (use main table for normal routing)
+		// Unmarked packets use system default which goes through VPN
+		script.WriteString(fmt.Sprintf(
+			"ip rule add fwmark 0x%x lookup main priority 100 2>/dev/null || true\n",
+			at.fwmark))
+	} else {
+		// Include mode: marked packets USE VPN (route through custom table with VPN gateway)
+		// Unmarked packets use system default (no VPN)
+		script.WriteString(fmt.Sprintf(
+			"ip rule add fwmark 0x%x table %d 2>/dev/null || true\n",
+			at.fwmark, at.routingTable))
+	}
+
+	// DNS Split Tunneling rules
+	// These iptables rules control which DNS server marked packets use
+	if at.splitDNSEnabled {
+		if at.mode == AppTunnelExclude {
+			// Exclude mode + SplitDNS: marked apps should use system DNS (bypass VPN DNS)
+			// Since marked packets already bypass VPN via routing, DNS queries to VPN DNS
+			// would fail. We DNAT their DNS to system resolver.
+			// This ensures apps that bypass VPN can still resolve DNS properly.
+			if at.systemDNS != "" {
+				script.WriteString(fmt.Sprintf(
+					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53\n",
+					at.fwmark, at.systemDNS))
+				script.WriteString(fmt.Sprintf(
+					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53\n",
+					at.fwmark, at.systemDNS))
+			}
+		} else {
+			// Include mode + SplitDNS: marked apps should use VPN DNS
+			// DNAT DNS traffic from marked packets to VPN DNS server
+			if len(at.vpnDNS) > 0 {
+				vpnDNSServer := at.vpnDNS[0] // Use first VPN DNS server
+				script.WriteString(fmt.Sprintf(
+					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53\n",
+					at.fwmark, vpnDNSServer))
+				script.WriteString(fmt.Sprintf(
+					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53\n",
+					at.fwmark, vpnDNSServer))
+			}
+		}
+	}
 
 	return script.String()
 }
@@ -238,10 +310,16 @@ func (at *AppTunnel) buildDisableScript() string {
 	// Don't exit on error for cleanup - try all commands
 	script.WriteString("#!/bin/bash\n")
 
-	// Cleanup routing
+	// Cleanup routing - remove both possible rules (include and exclude mode)
+	// Remove include mode rule (fwmark -> custom table)
 	script.WriteString(fmt.Sprintf(
 		"ip rule del fwmark 0x%x table %d 2>/dev/null || true\n",
 		at.fwmark, at.routingTable))
+	// Remove exclude mode rule (fwmark -> main table with priority)
+	script.WriteString(fmt.Sprintf(
+		"ip rule del fwmark 0x%x lookup main priority 100 2>/dev/null || true\n",
+		at.fwmark))
+	// Flush the custom routing table
 	script.WriteString(fmt.Sprintf(
 		"ip route flush table %d 2>/dev/null || true\n",
 		at.routingTable))
@@ -255,6 +333,26 @@ func (at *AppTunnel) buildDisableScript() string {
 		script.WriteString(fmt.Sprintf(
 			"iptables -t mangle -D OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x 2>/dev/null || true\n",
 			at.classID, at.fwmark))
+	}
+
+	// Cleanup DNS split tunneling NAT rules (remove all possible combinations)
+	// Remove system DNS DNAT rule (exclude mode)
+	if at.systemDNS != "" {
+		script.WriteString(fmt.Sprintf(
+			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
+			at.fwmark, at.systemDNS))
+		script.WriteString(fmt.Sprintf(
+			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
+			at.fwmark, at.systemDNS))
+	}
+	// Remove VPN DNS DNAT rules (include mode)
+	for _, vpnDNS := range at.vpnDNS {
+		script.WriteString(fmt.Sprintf(
+			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
+			at.fwmark, vpnDNS))
+		script.WriteString(fmt.Sprintf(
+			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
+			at.fwmark, vpnDNS))
 	}
 
 	// Cleanup cgroup - move processes to root cgroup first
