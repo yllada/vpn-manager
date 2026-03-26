@@ -19,6 +19,8 @@
   <img src="assets/screen/cap.png" alt="VPN Manager Screenshot" width="600">
 </p>
 
+<!-- TODO: Screenshots need updating for v1.8.0 libadwaita UI redesign -->
+
 ---
 
 ## Why?
@@ -27,6 +29,9 @@ Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you c
 
 ## Features
 
+- **Modern libadwaita UI** — Native GNOME experience with responsive layout
+- **Dark/Light theme support** — Follows system preference with accent color support
+- **GNOME HIG compliant** — Consistent with modern GNOME design guidelines
 - **OpenVPN, WireGuard, Tailscale** — All in one app
 - **Import .ovpn files** — Drag and drop configuration
 - **Secure credentials** — Stored in system keyring
@@ -34,7 +39,6 @@ Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you c
 - **Auto-reconnect** — Restores connection if lost
 - **Kill switch** — Blocks traffic if VPN disconnects
 - **System tray** — Quick access without opening the app
-- **Light/Dark theme** — Follows your system preference
 - **Network Trust Rules** — Auto-manage VPN based on network trust (connect on untrusted, disconnect on trusted)
 
 ## Network Trust Rules
@@ -59,7 +63,10 @@ Automatically manage your VPN connection based on network trust levels:
 
 ### Requirements
 
-- Linux with GTK4 (Ubuntu 22.04+, Fedora 38+, Arch)
+- **GTK4 4.14+**
+- **libadwaita 1.5+**
+- **Go 1.21+**
+- Linux (Ubuntu 24.04+, Fedora 40+, Arch)
 - OpenVPN, WireGuard, or Tailscale installed
 
 ### Build from Source

@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Historical connection statistics
 - Bulk profile import
 
+## [1.8.0] - 2026-03-26
+
+### Added
+- Modern libadwaita UI foundation (AdwApplicationWindow, AdwToolbarView)
+- Responsive navigation with AdwViewSwitcher and AdwViewSwitcherBar (adapts to window width)
+- Action buttons in header bar (Add Profile, Refresh)
+- Menu icons for all menu items
+- AdwStatusPage for empty states with icons and descriptions
+- Theme-aware colors using libadwaita CSS variables (@accent_color, @success_color, etc.)
+
+### Changed
+- Migrated all dialogs to AdwDialog and AdwAlertDialog
+- Migrated preferences to AdwPreferencesDialog with AdwSwitchRow, AdwComboRow
+- Migrated profile cards to AdwExpanderRow with progressive disclosure
+- Migrated file dialogs from FileChooserNative to gtk.FileDialog (async API)
+- Migrated About dialog to AdwAboutDialog
+- Replaced manual section headers with AdwPreferencesGroup
+- All icons now use -symbolic suffix for proper theming
+- Colors adapt to system theme and user accent color
+
+### Removed
+- Redundant panel headers (ViewSwitcher already shows panel name)
+- 65% of custom CSS (now using native libadwaita styling)
+- Deprecated CreatePanelHeader helper
+
+### Technical
+- Requires libadwaita 1.5+ and GTK4 4.14+
+- Uses gotk4-adwaita adw-1.5 branch
+
 ## [1.7.0] - 2026-03-26
 
 ### Added
@@ -132,7 +161,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/yllada/vpn-manager/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/yllada/vpn-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/yllada/vpn-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/yllada/vpn-manager/compare/v1.4.0...v1.5.0
