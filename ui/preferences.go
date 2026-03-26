@@ -15,8 +15,6 @@ type PreferencesDialog struct {
 	window                *gtk.Window
 	mainWindow            *MainWindow
 	config                *app.Config
-	autoStartSwitch       *gtk.Switch
-	minimizeSwitch        *gtk.Switch
 	notifySwitch          *gtk.Switch
 	reconnectSwitch       *gtk.Switch
 	themeDropDown         *gtk.DropDown
@@ -67,40 +65,6 @@ func (pd *PreferencesDialog) build() {
 	mainBox.SetMarginBottom(16)
 	mainBox.SetMarginStart(24)
 	mainBox.SetMarginEnd(24)
-
-	// ═══════════════════════════════════════════════════════════════════
-	// STARTUP SECTION
-	// ═══════════════════════════════════════════════════════════════════
-	startupSection := pd.createSection("Startup", "system-run-symbolic")
-	startupCard := pd.createCard()
-
-	// Auto-start row
-	pd.autoStartSwitch = gtk.NewSwitch()
-	pd.autoStartSwitch.SetActive(pd.config.AutoStart)
-	pd.autoStartSwitch.SetVAlign(gtk.AlignCenter)
-	autoStartRow := pd.createSettingRow(
-		"Launch at Login",
-		"Automatically start VPN Manager when you log in",
-		pd.autoStartSwitch,
-	)
-	startupCard.Append(autoStartRow)
-
-	// Separator
-	startupCard.Append(pd.createSeparator())
-
-	// Minimize to tray row
-	pd.minimizeSwitch = gtk.NewSwitch()
-	pd.minimizeSwitch.SetActive(pd.config.MinimizeToTray)
-	pd.minimizeSwitch.SetVAlign(gtk.AlignCenter)
-	minimizeRow := pd.createSettingRow(
-		"Minimize to Tray",
-		"Keep running in system tray when window is closed",
-		pd.minimizeSwitch,
-	)
-	startupCard.Append(minimizeRow)
-
-	startupSection.Append(startupCard)
-	mainBox.Append(startupSection)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// CONNECTION SECTION
@@ -189,24 +153,24 @@ func (pd *PreferencesDialog) build() {
 	pd.tailscaleRoutesSwitch = gtk.NewSwitch()
 	pd.tailscaleRoutesSwitch.SetActive(pd.config.Tailscale.AcceptRoutes)
 	pd.tailscaleRoutesSwitch.SetVAlign(gtk.AlignCenter)
-	routesRow := pd.createSettingRow(
+	tailscaleRoutesRow := pd.createSettingRow(
 		"Accept Routes",
 		"Accept subnet routes advertised by other nodes",
 		pd.tailscaleRoutesSwitch,
 	)
-	tailscaleCard.Append(routesRow)
+	tailscaleCard.Append(tailscaleRoutesRow)
 	tailscaleCard.Append(pd.createSeparator())
 
 	// Accept DNS row
 	pd.tailscaleDNSSwitch = gtk.NewSwitch()
 	pd.tailscaleDNSSwitch.SetActive(pd.config.Tailscale.AcceptDNS)
 	pd.tailscaleDNSSwitch.SetVAlign(gtk.AlignCenter)
-	dnsRow := pd.createSettingRow(
+	tailscaleDNSRow := pd.createSettingRow(
 		"Accept DNS",
-		"Use Tailscale DNS settings (MagicDNS)",
+		"Use DNS settings from your Tailscale network",
 		pd.tailscaleDNSSwitch,
 	)
-	tailscaleCard.Append(dnsRow)
+	tailscaleCard.Append(tailscaleDNSRow)
 
 	tailscaleSection.Append(tailscaleCard)
 	mainBox.Append(tailscaleSection)
@@ -448,8 +412,6 @@ func (pd *PreferencesDialog) findTrustActionIndex(actionID string) uint {
 
 // savePreferences saves the current preferences to the config file.
 func (pd *PreferencesDialog) savePreferences() {
-	pd.config.AutoStart = pd.autoStartSwitch.Active()
-	pd.config.MinimizeToTray = pd.minimizeSwitch.Active()
 	pd.config.ShowNotifications = pd.notifySwitch.Active()
 	pd.config.AutoReconnect = pd.reconnectSwitch.Active()
 
