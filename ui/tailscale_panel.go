@@ -351,135 +351,61 @@ func (tp *TailscalePanel) openURL(url string) error {
 
 // showAuthURLDialog shows a dialog with the auth URL for manual copying.
 func (tp *TailscalePanel) showAuthURLDialog(url string) {
-	window := gtk.NewWindow()
-	window.SetTitle("Tailscale Login")
-	window.SetTransientFor(&tp.mainWindow.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(500, 200)
-	window.SetResizable(false)
+	// Create AdwAlertDialog for the auth URL
+	dialog := adw.NewAlertDialog(
+		"Tailscale Login",
+		"Open this URL to authenticate:\n\n"+url,
+	)
 
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 16)
-	mainBox.SetMarginTop(24)
-	mainBox.SetMarginBottom(24)
-	mainBox.SetMarginStart(24)
-	mainBox.SetMarginEnd(24)
+	// Add responses
+	dialog.AddResponse("copy", "Copy URL")
+	dialog.AddResponse("ok", "OK")
+	dialog.SetDefaultResponse("ok")
+	dialog.SetCloseResponse("ok")
 
-	titleLabel := gtk.NewLabel("Open this URL to authenticate:")
-	titleLabel.AddCSSClass("heading")
-	titleLabel.SetHAlign(gtk.AlignCenter)
-	mainBox.Append(titleLabel)
-
-	urlFrame := gtk.NewFrame("")
-	urlFrame.AddCSSClass("card")
-	urlBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	urlBox.SetMarginTop(12)
-	urlBox.SetMarginBottom(12)
-	urlBox.SetMarginStart(12)
-	urlBox.SetMarginEnd(12)
-
-	urlLabel := gtk.NewLabel(url)
-	urlLabel.SetSelectable(true)
-	urlLabel.AddCSSClass("monospace")
-	urlLabel.SetWrap(true)
-	urlLabel.SetMaxWidthChars(50)
-	urlBox.Append(urlLabel)
-
-	copyBtn := gtk.NewButtonFromIconName("edit-copy-symbolic")
-	copyBtn.SetTooltipText("Copy to clipboard")
-	copyBtn.ConnectClicked(func() {
-		clipboard := tp.mainWindow.window.Clipboard()
-		clipboard.SetText(url)
-		tp.mainWindow.SetStatus("URL copied to clipboard")
+	// Connect response signal
+	dialog.ConnectResponse(func(response string) {
+		if response == "copy" {
+			clipboard := tp.mainWindow.window.Clipboard()
+			clipboard.SetText(url)
+			tp.mainWindow.SetStatus("URL copied to clipboard")
+		}
 	})
-	urlBox.Append(copyBtn)
 
-	urlFrame.SetChild(urlBox)
-	mainBox.Append(urlFrame)
-
-	okBtn := gtk.NewButtonWithLabel("OK")
-	okBtn.SetHAlign(gtk.AlignCenter)
-	okBtn.SetMarginTop(8)
-	okBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	mainBox.Append(okBtn)
-
-	window.SetChild(mainBox)
-	window.Present()
+	// Present the dialog
+	dialog.Present(tp.mainWindow.window)
 }
 
 // showOperatorSetupDialog shows a dialog explaining how to fix permission issues.
 func (tp *TailscalePanel) showOperatorSetupDialog() {
-	window := gtk.NewWindow()
-	window.SetTitle("Tailscale Permissions Required")
-	window.SetTransientFor(&tp.mainWindow.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(450, 280)
-	window.SetResizable(false)
+	command := "sudo tailscale set --operator=$USER"
 
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 16)
-	mainBox.SetMarginTop(24)
-	mainBox.SetMarginBottom(24)
-	mainBox.SetMarginStart(24)
-	mainBox.SetMarginEnd(24)
+	// Create AdwAlertDialog for operator setup
+	dialog := adw.NewAlertDialog(
+		"Operator Permissions Required",
+		"Tailscale requires operator permissions to manage connections without sudo.\n\n"+
+			"Run this command once in a terminal:\n\n"+
+			command+"\n\n"+
+			"After running the command, try logging in again.",
+	)
 
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-warning-symbolic")
-	icon.SetPixelSize(48)
-	icon.SetHAlign(gtk.AlignCenter)
-	mainBox.Append(icon)
+	// Add responses
+	dialog.AddResponse("copy", "Copy Command")
+	dialog.AddResponse("ok", "OK")
+	dialog.SetDefaultResponse("ok")
+	dialog.SetCloseResponse("ok")
 
-	titleLabel := gtk.NewLabel("Operator Permissions Required")
-	titleLabel.AddCSSClass("heading")
-	titleLabel.SetHAlign(gtk.AlignCenter)
-	mainBox.Append(titleLabel)
-
-	msgLabel := gtk.NewLabel("Tailscale requires operator permissions to manage connections without sudo.\n\nRun this command once in a terminal:")
-	msgLabel.SetWrap(true)
-	msgLabel.SetMaxWidthChars(50)
-	msgLabel.SetJustify(gtk.JustifyCenter)
-	mainBox.Append(msgLabel)
-
-	cmdFrame := gtk.NewFrame("")
-	cmdFrame.AddCSSClass("card")
-	cmdBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	cmdBox.SetMarginTop(12)
-	cmdBox.SetMarginBottom(12)
-	cmdBox.SetMarginStart(12)
-	cmdBox.SetMarginEnd(12)
-
-	cmdLabel := gtk.NewLabel("sudo tailscale set --operator=$USER")
-	cmdLabel.SetSelectable(true)
-	cmdLabel.AddCSSClass("monospace")
-	cmdBox.Append(cmdLabel)
-
-	copyBtn := gtk.NewButtonFromIconName("edit-copy-symbolic")
-	copyBtn.SetTooltipText("Copy to clipboard")
-	copyBtn.ConnectClicked(func() {
-		clipboard := tp.mainWindow.window.Clipboard()
-		clipboard.SetText("sudo tailscale set --operator=$USER")
-		tp.mainWindow.SetStatus("Command copied to clipboard")
+	// Connect response signal
+	dialog.ConnectResponse(func(response string) {
+		if response == "copy" {
+			clipboard := tp.mainWindow.window.Clipboard()
+			clipboard.SetText(command)
+			tp.mainWindow.SetStatus("Command copied to clipboard")
+		}
 	})
-	cmdBox.Append(copyBtn)
 
-	cmdFrame.SetChild(cmdBox)
-	mainBox.Append(cmdFrame)
-
-	infoLabel := gtk.NewLabel("After running the command, try logging in again.")
-	infoLabel.AddCSSClass("dim-label")
-	infoLabel.SetHAlign(gtk.AlignCenter)
-	mainBox.Append(infoLabel)
-
-	okBtn := gtk.NewButtonWithLabel("OK")
-	okBtn.SetHAlign(gtk.AlignCenter)
-	okBtn.SetMarginTop(8)
-	okBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	mainBox.Append(okBtn)
-
-	window.SetChild(mainBox)
-	window.SetVisible(true)
+	// Present the dialog
+	dialog.Present(tp.mainWindow.window)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

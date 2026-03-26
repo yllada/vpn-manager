@@ -347,24 +347,48 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 }
 
 // onDeleteProfile handles deleting a profile.
+// Shows an AdwAlertDialog confirmation before deleting.
 func (wp *WireGuardPanel) onDeleteProfile(row *WireGuardRow) {
-	// First disconnect if connected
-	conn := wp.provider.GetConnection(row.profile.ID())
-	if conn != nil && conn.Status == wireguard.StatusConnected {
-		if err := wp.provider.Disconnect(context.Background(), row.profile); err != nil {
-			app.LogWarn("WireGuard: Disconnect before delete failed: %v", err)
+	// Create AdwAlertDialog for delete confirmation
+	dialog := adw.NewAlertDialog(
+		fmt.Sprintf("Delete \"%s\"?", row.profile.Name()),
+		"This action cannot be undone. The profile configuration will be permanently removed.",
+	)
+
+	// Add responses
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("delete", "Delete")
+
+	// Style the destructive action
+	dialog.SetResponseAppearance("delete", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
+
+	// Connect response signal
+	dialog.ConnectResponse(func(response string) {
+		if response == "delete" {
+			// First disconnect if connected
+			conn := wp.provider.GetConnection(row.profile.ID())
+			if conn != nil && conn.Status == wireguard.StatusConnected {
+				if err := wp.provider.Disconnect(context.Background(), row.profile); err != nil {
+					app.LogWarn("WireGuard: Disconnect before delete failed: %v", err)
+				}
+			}
+
+			// Delete profile
+			if err := wp.provider.DeleteProfile(row.profile.ID()); err != nil {
+				app.LogError("WireGuard: Delete error: %v", err)
+				wp.showError("Delete Failed", err.Error())
+				return
+			}
+
+			// Reload profiles to update UI (including empty state if needed)
+			wp.loadProfiles()
 		}
-	}
+	})
 
-	// Delete profile
-	if err := wp.provider.DeleteProfile(row.profile.ID()); err != nil {
-		app.LogError("WireGuard: Delete error: %v", err)
-		wp.showError("Delete Failed", err.Error())
-		return
-	}
-
-	// Reload profiles to update UI (including empty state if needed)
-	wp.loadProfiles()
+	// Present the dialog using the AdwApplicationWindow
+	dialog.Present(wp.mainWindow.window)
 }
 
 // onConfigProfile opens the settings dialog for a WireGuard profile.

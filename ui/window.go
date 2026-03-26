@@ -543,88 +543,30 @@ SOFTWARE.`)
 	about.SetVisible(true)
 }
 
-// showError displays an error dialog.
+// showError displays an error dialog using AdwAlertDialog.
 func (mw *MainWindow) showError(title, message string) {
-	window := gtk.NewWindow()
-	window.SetTitle(title)
-	window.SetTransientFor(&mw.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(350, 150)
-	window.SetResizable(false)
+	dialog := adw.NewAlertDialog(title, message)
 
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	mainBox.SetMarginTop(24)
-	mainBox.SetMarginBottom(24)
-	mainBox.SetMarginStart(24)
-	mainBox.SetMarginEnd(24)
-	mainBox.SetHAlign(gtk.AlignCenter)
+	// Add OK response
+	dialog.AddResponse("ok", "OK")
+	dialog.SetDefaultResponse("ok")
+	dialog.SetCloseResponse("ok")
 
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-error-symbolic")
-	icon.SetPixelSize(48)
-	mainBox.Append(icon)
-
-	titleLabel := gtk.NewLabel(title)
-	titleLabel.AddCSSClass("heading")
-	mainBox.Append(titleLabel)
-
-	msgLabel := gtk.NewLabel(message)
-	msgLabel.SetWrap(true)
-	msgLabel.SetMaxWidthChars(40)
-	mainBox.Append(msgLabel)
-
-	okBtn := gtk.NewButtonWithLabel("OK")
-	okBtn.SetHAlign(gtk.AlignCenter)
-	okBtn.SetMarginTop(12)
-	okBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	mainBox.Append(okBtn)
-
-	window.SetChild(mainBox)
-	window.SetVisible(true)
+	// Present the dialog
+	dialog.Present(mw.window)
 }
 
-// showInfo displays an information dialog.
+// showInfo displays an information dialog using AdwAlertDialog.
 func (mw *MainWindow) showInfo(title, message string) {
-	window := gtk.NewWindow()
-	window.SetTitle(title)
-	window.SetTransientFor(&mw.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(350, 150)
-	window.SetResizable(false)
+	dialog := adw.NewAlertDialog(title, message)
 
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	mainBox.SetMarginTop(24)
-	mainBox.SetMarginBottom(24)
-	mainBox.SetMarginStart(24)
-	mainBox.SetMarginEnd(24)
-	mainBox.SetHAlign(gtk.AlignCenter)
+	// Add OK response
+	dialog.AddResponse("ok", "OK")
+	dialog.SetDefaultResponse("ok")
+	dialog.SetCloseResponse("ok")
 
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-information-symbolic")
-	icon.SetPixelSize(48)
-	mainBox.Append(icon)
-
-	titleLabel := gtk.NewLabel(title)
-	titleLabel.AddCSSClass("heading")
-	mainBox.Append(titleLabel)
-
-	msgLabel := gtk.NewLabel(message)
-	msgLabel.SetWrap(true)
-	msgLabel.SetMaxWidthChars(40)
-	mainBox.Append(msgLabel)
-
-	okBtn := gtk.NewButtonWithLabel("OK")
-	okBtn.SetHAlign(gtk.AlignCenter)
-	okBtn.SetMarginTop(12)
-	okBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	mainBox.Append(okBtn)
-
-	window.SetChild(mainBox)
-	window.SetVisible(true)
+	// Present the dialog
+	dialog.Present(mw.window)
 }
 
 // =============================================================================

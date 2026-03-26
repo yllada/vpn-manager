@@ -908,77 +908,41 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 }
 
 // onDeleteClicked handles the delete button click.
-// Shows a confirmation dialog before deleting the profile.
+// Shows an AdwAlertDialog confirmation before deleting the profile.
 func (pl *ProfileList) onDeleteClicked(profile *vpn.Profile) {
-	window := gtk.NewWindow()
-	window.SetTitle("Delete profile")
-	window.SetTransientFor(&pl.mainWindow.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(350, 180)
-	window.SetResizable(false)
+	// Create AdwAlertDialog for delete confirmation
+	dialog := adw.NewAlertDialog(
+		fmt.Sprintf("Delete \"%s\"?", profile.Name),
+		"This action cannot be undone. The profile configuration will be permanently removed.",
+	)
 
-	// Main container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Add responses
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("delete", "Delete")
 
-	// Content
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
-	contentBox.SetHAlign(gtk.AlignCenter)
+	// Style the destructive action
+	dialog.SetResponseAppearance("delete", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
 
-	// Warning icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-warning-symbolic")
-	icon.SetPixelSize(48)
-	contentBox.Append(icon)
+	// Connect response signal
+	dialog.ConnectResponse(func(response string) {
+		if response == "delete" {
+			// Delete from keyring
+			_ = keyring.Delete(profile.ID)
 
-	// Message
-	titleLabel := gtk.NewLabel(fmt.Sprintf("Delete profile '%s'?", profile.Name))
-	titleLabel.AddCSSClass("heading")
-	contentBox.Append(titleLabel)
-
-	subtitleLabel := gtk.NewLabel("This action cannot be undone.")
-	subtitleLabel.AddCSSClass("dim-label")
-	contentBox.Append(subtitleLabel)
-
-	mainBox.Append(contentBox)
-
-	// Button bar
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignCenter)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	buttonBox.Append(cancelBtn)
-
-	deleteBtn := gtk.NewButtonWithLabel("Delete")
-	deleteBtn.AddCSSClass("destructive-action")
-	deleteBtn.ConnectClicked(func() {
-		window.Close()
-
-		// Delete from keyring
-		_ = keyring.Delete(profile.ID)
-
-		// Delete profile
-		if err := pl.mainWindow.app.vpnManager.ProfileManager().Remove(profile.ID); err != nil {
-			pl.mainWindow.showError("Error deleting", err.Error())
-		} else {
-			pl.LoadProfiles()
-			pl.mainWindow.SetStatus(fmt.Sprintf("Profile '%s' deleted", profile.Name))
+			// Delete profile
+			if err := pl.mainWindow.app.vpnManager.ProfileManager().Remove(profile.ID); err != nil {
+				pl.mainWindow.showError("Error deleting", err.Error())
+			} else {
+				pl.LoadProfiles()
+				pl.mainWindow.SetStatus(fmt.Sprintf("Profile '%s' deleted", profile.Name))
+			}
 		}
 	})
-	buttonBox.Append(deleteBtn)
 
-	mainBox.Append(buttonBox)
-
-	window.SetChild(mainBox)
-	window.SetVisible(true)
+	// Present the dialog using the AdwApplicationWindow
+	dialog.Present(pl.mainWindow.window)
 }
 
 // updateHealthIndicator updates the visual health indicator for a profile.
