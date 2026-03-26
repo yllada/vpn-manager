@@ -60,11 +60,27 @@ func (mw *MainWindow) createLayout() {
 	// Create AdwHeaderBar for proper libadwaita integration
 	mw.headerBar = adw.NewHeaderBar()
 
-	// Menu button
+	// Add profile button (left side)
+	addBtn := gtk.NewButton()
+	addBtn.SetIconName("list-add-symbolic")
+	addBtn.SetTooltipText("Add profile")
+	addBtn.AddCSSClass("flat")
+	addBtn.ConnectClicked(func() { mw.onAddProfile() })
+	mw.headerBar.PackStart(addBtn)
+
+	// Menu button (right side, outermost)
 	menuButton := gtk.NewMenuButton()
 	menuButton.SetIconName("open-menu-symbolic")
 	menuButton.SetTooltipText("Menu")
 	mw.headerBar.PackEnd(menuButton)
+
+	// Refresh button (right side, left of menu button)
+	refreshBtn := gtk.NewButton()
+	refreshBtn.SetIconName("view-refresh-symbolic")
+	refreshBtn.SetTooltipText("Refresh profiles")
+	refreshBtn.AddCSSClass("flat")
+	refreshBtn.ConnectClicked(func() { mw.RefreshAllPanels() })
+	mw.headerBar.PackEnd(refreshBtn)
 
 	// Create menu
 	menu := mw.createMenu()
@@ -201,19 +217,37 @@ func (mw *MainWindow) createMenu() *gio.Menu {
 
 	// Profiles section
 	profilesSection := gio.NewMenu()
-	profilesSection.Append("Import Profiles...", "app.import")
-	profilesSection.Append("Export Profiles...", "app.export")
-	menu.AppendSection("", &profilesSection.MenuModel)
+
+	importItem := gio.NewMenuItem("Import Profiles...", "app.import")
+	importItem.SetAttributeValue("icon", glib.NewVariantString("document-open-symbolic"))
+	profilesSection.AppendItem(importItem)
+
+	exportItem := gio.NewMenuItem("Export Profiles...", "app.export")
+	exportItem.SetAttributeValue("icon", glib.NewVariantString("document-save-symbolic"))
+	profilesSection.AppendItem(exportItem)
+
+	menu.AppendSection("Profiles", &profilesSection.MenuModel)
 
 	// Settings section
 	settingsSection := gio.NewMenu()
-	settingsSection.Append("Preferences", "app.preferences")
+
+	prefsItem := gio.NewMenuItem("Preferences", "app.preferences")
+	prefsItem.SetAttributeValue("icon", glib.NewVariantString("preferences-system-symbolic"))
+	settingsSection.AppendItem(prefsItem)
+
 	menu.AppendSection("", &settingsSection.MenuModel)
 
 	// App section
 	appSection := gio.NewMenu()
-	appSection.Append("About", "app.about")
-	appSection.Append("Quit", "app.quit")
+
+	aboutItem := gio.NewMenuItem("About VPN Manager", "app.about")
+	aboutItem.SetAttributeValue("icon", glib.NewVariantString("help-about-symbolic"))
+	appSection.AppendItem(aboutItem)
+
+	quitItem := gio.NewMenuItem("Quit", "app.quit")
+	quitItem.SetAttributeValue("icon", glib.NewVariantString("application-exit-symbolic"))
+	appSection.AppendItem(quitItem)
+
 	menu.AppendSection("", &appSection.MenuModel)
 
 	// Connect actions
