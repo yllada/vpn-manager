@@ -340,17 +340,26 @@ func (l *AppLogger) Error(msg string, args ...interface{}) {
 //   2. LogDebug("context", "format %v", arg)   - context prefix + format string
 
 // logWithContext handles the common logic for context-aware logging.
-// If the first arg is a string, treat msgOrCtx as context and args[0] as format.
+// Supports two patterns:
+//  1. Log("format %v", arg)           - direct format string
+//  2. Log("ctx", "format %v", arg)    - context prefix + format string
 func logWithContext(logFn func(string, ...interface{}), msgOrCtx string, args ...interface{}) {
+	// If msgOrCtx contains format verbs (%), treat it as a format string directly
+	if strings.Contains(msgOrCtx, "%") {
+		logFn(msgOrCtx, args...)
+		return
+	}
+
+	// Otherwise, treat as context + format pattern: Log("ctx", "format %v", arg)
 	if len(args) > 0 {
 		if format, ok := args[0].(string); ok {
-			// Pattern: Log("ctx", "format %v", arg)
 			msg := fmt.Sprintf("[%s] %s", msgOrCtx, format)
 			logFn(msg, args[1:]...)
 			return
 		}
 	}
-	// Pattern: Log("format %v", arg)
+
+	// Fallback: just log the message
 	logFn(msgOrCtx, args...)
 }
 

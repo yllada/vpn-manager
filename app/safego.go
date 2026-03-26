@@ -121,8 +121,8 @@ func (sc *SafeChannel[T]) SendBlocking(value T) bool {
 	}
 	sc.mu.RUnlock()
 
-	// Note: There's a small race window here, but it's acceptable
-	// because the defer recover will catch any panic
+	// Track whether send actually succeeded
+	sent := false
 	defer func() {
 		if r := recover(); r != nil {
 			LogWarn("SafeChannel: attempted to send on closed channel")
@@ -130,7 +130,8 @@ func (sc *SafeChannel[T]) SendBlocking(value T) bool {
 	}()
 
 	sc.ch <- value
-	return true
+	sent = true
+	return sent
 }
 
 // Receive returns the underlying channel for receiving values.

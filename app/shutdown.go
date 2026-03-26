@@ -311,14 +311,20 @@ done:
 
 // ForceShutdown immediately terminates without waiting.
 func (sm *ShutdownManager) ForceShutdown() {
-	LogWarn("Shutdown: Force shutdown initiated")
+	LogWarn("shutdown", "Force shutdown initiated")
 	sm.setPhase(PhaseForcedShutdown)
 
 	if sm.cancelFunc != nil {
 		sm.cancelFunc()
 	}
 
-	close(sm.completedCh)
+	// Safe close - check if already closed
+	select {
+	case <-sm.completedCh:
+		// Already closed, do nothing
+	default:
+		close(sm.completedCh)
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -333,12 +339,12 @@ func InstallSignalHandlers() context.Context {
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	go func() {
+	SafeGoWithName("signal-handler", func() {
 		sig := <-sigCh
 		LogInfo("Received signal: %v", sig)
 
 		// Start graceful shutdown
-		go func() { _ = GetShutdownManager().Shutdown(ctx) }()
+		SafeGoWithName("graceful-shutdown", func() { _ = GetShutdownManager().Shutdown(ctx) })
 
 		// Wait for second signal for force quit
 		select {
@@ -350,7 +356,7 @@ func InstallSignalHandlers() context.Context {
 		case <-GetShutdownManager().CompletedChan():
 			cancel()
 		}
-	}()
+	})
 
 	return ctx
 }
