@@ -4,7 +4,6 @@
 package ui
 
 import (
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -43,26 +42,6 @@ func CreatePanelBox(cfg PanelConfig) *gtk.Box {
 	return box
 }
 
-// CreatePanelHeader creates the header section with logo and title.
-// Deprecated: Panel headers are redundant when using AdwViewSwitcher navigation.
-// The ViewSwitcher already shows the panel name, so this function is no longer needed.
-// Returns a gtk.Box containing the icon and title label.
-func CreatePanelHeader(cfg PanelConfig) *gtk.Box {
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignCenter)
-
-	logoIcon := gtk.NewImage()
-	logoIcon.SetFromIconName(cfg.IconName)
-	logoIcon.SetPixelSize(48)
-	headerBox.Append(logoIcon)
-
-	titleLabel := gtk.NewLabel(cfg.Title)
-	titleLabel.AddCSSClass("title-1")
-	headerBox.Append(titleLabel)
-
-	return headerBox
-}
-
 // StatusBar holds references to status bar components for updates.
 type StatusBar struct {
 	Box   *gtk.Box
@@ -90,50 +69,4 @@ func CreateStatusBar(cfg PanelConfig) *StatusBar {
 		Icon:  statusIcon,
 		Label: statusLabel,
 	}
-}
-
-// CreateProfileRowBase creates the base structure for a profile row.
-// Returns the ListBoxRow and the main content Box for adding profile-specific content.
-func CreateProfileRowBase() (*gtk.ListBoxRow, *gtk.Box) {
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
-	row.AddCSSClass("profile-card")
-
-	mainBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	mainBox.SetMarginTop(12)
-	mainBox.SetMarginBottom(12)
-	mainBox.SetMarginStart(12)
-	mainBox.SetMarginEnd(12)
-
-	row.SetChild(mainBox)
-	return row, mainBox
-}
-
-// CreateProfileIcon creates a standard profile icon.
-func CreateProfileIcon(iconName string) *gtk.Image {
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(32)
-	icon.AddCSSClass("profile-icon")
-	return icon
-}
-
-// CreateActionButton creates a circular action button with an icon.
-func CreateActionButton(iconName, tooltip string) *gtk.Button {
-	btn := gtk.NewButton()
-	btn.SetIconName(iconName)
-	btn.SetTooltipText(tooltip)
-	btn.AddCSSClass("circular")
-	btn.AddCSSClass("flat")
-	return btn
-}
-
-// CreateEmptyState creates an AdwStatusPage placeholder for when no profiles exist.
-// Returns an AdwStatusPage with icon, title (message), and optional description.
-func CreateEmptyState(message, iconName string) *adw.StatusPage {
-	statusPage := adw.NewStatusPage()
-	statusPage.SetIconName(iconName)
-	statusPage.SetTitle(message)
-	statusPage.SetVExpand(true)
-	return statusPage
 }
