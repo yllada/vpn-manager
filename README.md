@@ -35,6 +35,25 @@ Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you c
 - **Kill switch** — Blocks traffic if VPN disconnects
 - **System tray** — Quick access without opening the app
 - **Light/Dark theme** — Follows your system preference
+- **Network Trust Rules** — Auto-manage VPN based on network trust (connect on untrusted, disconnect on trusted)
+
+## Network Trust Rules
+
+Automatically manage your VPN connection based on network trust levels:
+
+| Trust Level | Behavior |
+|-------------|----------|
+| **Trusted** | VPN disconnects automatically (home, office) |
+| **Untrusted** | VPN connects automatically (public WiFi, hotels) |
+| **Unknown** | Prompts you to classify the network |
+
+### Security Features
+- **Evil twin detection** — Warns if a known network appears with a different access point (BSSID)
+- **Kill switch on failure** — Blocks traffic if VPN fails on untrusted networks
+
+### Quick Actions
+- Right-click the tray icon → "Trust/Untrust This Network"
+- Preferences → Network Trust → Manage Rules
 
 ## Installation
 
@@ -100,6 +119,7 @@ vpn-manager --status                  # Show status
 - **Profiles**: `~/.config/vpn-manager/profiles/`
 - **Settings**: `~/.config/vpn-manager/config.yaml`
 - **Logs**: `~/.config/vpn-manager/logs/`
+- **Trust Rules**: `~/.config/vpn-manager/trust-rules.yaml`
 
 ## Contributing
 

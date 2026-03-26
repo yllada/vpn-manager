@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Historical connection statistics
 - Bulk profile import
 
+## [1.7.0] - 2026-03-26
+
+### Added
+- **Network Trust Rules** - Automatic VPN management based on network trust levels
+  - Auto-connect VPN on untrusted networks (public WiFi)
+  - Auto-disconnect on trusted networks (home/office)
+  - Prompt for unknown networks
+  - Evil twin detection (warns about suspicious access points)
+  - Kill switch integration when VPN fails on untrusted networks
+- **Network Trust UI** in Preferences
+- **Trust Rules management dialog**
+- **Quick trust/untrust actions** in system tray
+
+### Fixed
+- **Critical split tunneling bugs**: mode handling, routing, and DNS resolution
+
 ## [1.6.0] - 2026-03-25
 
 ### Added
@@ -116,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/yllada/vpn-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/yllada/vpn-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/yllada/vpn-manager/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/yllada/vpn-manager/compare/v1.0.2...v1.4.0
