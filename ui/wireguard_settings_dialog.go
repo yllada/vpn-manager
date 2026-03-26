@@ -6,31 +6,32 @@ import (
 	"net"
 	"strings"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
 // WireGuardSettingsDialog represents the settings dialog for WireGuard profiles.
 type WireGuardSettingsDialog struct {
-	window       *gtk.Window
-	mainWindow   *MainWindow
-	profile      *wireguard.Profile
-	onSave       func()
-	enabledCheck *gtk.CheckButton
-	modeDropDown *gtk.DropDown
-	modeIDs      []string
-	dnsCheck     *gtk.CheckButton
-	routesList   *gtk.ListBox
-	routes       []string
+	dialog      *adw.Dialog
+	mainWindow  *MainWindow
+	profile     *wireguard.Profile
+	onSave      func()
+	enabledRow  *adw.SwitchRow
+	modeRow     *adw.ComboRow
+	modeIDs     []string
+	dnsRow      *adw.SwitchRow
+	routesGroup *adw.PreferencesGroup
+	routes      []string
 
 	// Per-app tunneling
-	appsEnabledCheck *gtk.CheckButton
-	appModeDropDown  *gtk.DropDown
-	appModeIDs       []string
-	appsList         *gtk.ListBox
-	apps             []string
+	appsEnabledRow  *adw.SwitchRow
+	appModeRow      *adw.ComboRow
+	appModeIDs      []string
+	appsGroup       *adw.PreferencesGroup
+	apps            []string
+	appOptionsGroup *adw.PreferencesGroup
 }
 
 // NewWireGuardSettingsDialog creates a new WireGuard settings dialog.
@@ -57,198 +58,123 @@ func NewWireGuardSettingsDialog(mainWindow *MainWindow, profile *wireguard.Profi
 	return d
 }
 
-// build constructs the dialog UI.
+// build constructs the dialog UI using AdwDialog.
 func (d *WireGuardSettingsDialog) build() {
-	d.window = gtk.NewWindow()
-	d.window.SetTitle("Profile Settings")
-	d.window.SetTransientFor(&d.mainWindow.window.Window)
-	d.window.SetModal(true)
-	d.window.SetDefaultSize(520, 550)
-	d.window.SetResizable(true)
+	d.dialog = adw.NewDialog()
+	d.dialog.SetTitle("Profile Settings")
+	d.dialog.SetContentWidth(520)
+	d.dialog.SetContentHeight(600)
 
-	rootBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
+
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
+
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
+	cancelBtn.ConnectClicked(func() {
+		d.dialog.Close()
+	})
+	headerBar.PackStart(cancelBtn)
+
+	// Save button in header
+	saveBtn := gtk.NewButton()
+	saveBtn.SetLabel("Save")
+	saveBtn.AddCSSClass("suggested-action")
+	saveBtn.ConnectClicked(func() {
+		d.save()
+	})
+	headerBar.PackEnd(saveBtn)
+
+	toolbarView.AddTopBar(headerBar)
 
 	// Scrollable content
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetVExpand(true)
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 20)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(16)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
+	// Create content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+	prefsPage.SetTitle(d.profile.Name())
 
-	// Header Card
-	headerCard := gtk.NewBox(gtk.OrientationHorizontal, 16)
-	headerCard.AddCSSClass("card")
-	headerCard.AddCSSClass("preferences-card")
-	headerCard.SetMarginBottom(4)
+	// Header info group
+	headerGroup := adw.NewPreferencesGroup()
+	headerGroup.SetDescription("Configure split tunneling options for this WireGuard profile")
+	prefsPage.Add(headerGroup)
 
-	headerInner := gtk.NewBox(gtk.OrientationHorizontal, 14)
-	headerInner.SetMarginTop(16)
-	headerInner.SetMarginBottom(16)
-	headerInner.SetMarginStart(16)
-	headerInner.SetMarginEnd(16)
-
-	headerIcon := gtk.NewImage()
-	headerIcon.SetFromIconName("network-wired-symbolic")
-	headerIcon.SetPixelSize(40)
-	headerIcon.AddCSSClass("accent")
-	headerInner.Append(headerIcon)
-
-	headerTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	headerTextBox.SetVAlign(gtk.AlignCenter)
-
-	titleLabel := gtk.NewLabel(d.profile.Name())
-	titleLabel.AddCSSClass("title-2")
-	titleLabel.SetXAlign(0)
-	headerTextBox.Append(titleLabel)
-
-	descLabel := gtk.NewLabel("Configure split tunneling options")
-	descLabel.SetXAlign(0)
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	headerTextBox.Append(descLabel)
-
-	headerInner.Append(headerTextBox)
-	headerCard.Append(headerInner)
-	contentBox.Append(headerCard)
-
-	// Split Tunneling Section
-	splitSection := d.createSection("Split Tunneling", "network-workgroup-symbolic")
-	splitCard := d.createCard()
+	// ═══════════════════════════════════════════════════════════════════
+	// SPLIT TUNNELING SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	splitGroup := adw.NewPreferencesGroup()
+	splitGroup.SetTitle("Split Tunneling")
 
 	// Enable split tunneling row
-	d.enabledCheck = gtk.NewCheckButton()
-	d.enabledCheck.SetActive(d.profile.SplitTunnelEnabled)
+	d.enabledRow = adw.NewSwitchRow()
+	d.enabledRow.SetTitle("Enable Split Tunneling")
+	d.enabledRow.SetSubtitle("Route only specific traffic through VPN")
+	d.enabledRow.SetActive(d.profile.SplitTunnelEnabled)
+	splitGroup.Add(d.enabledRow)
 
-	enableRow := d.createSettingRowWithCheckbox(
-		"Enable Split Tunneling",
-		"Route only specific traffic through VPN",
-		d.enabledCheck,
-	)
-	splitCard.Append(enableRow)
+	prefsPage.Add(splitGroup)
 
-	splitSection.Append(splitCard)
-	contentBox.Append(splitSection)
+	// ═══════════════════════════════════════════════════════════════════
+	// ROUTING MODE SECTION (conditional on split tunnel enabled)
+	// ═══════════════════════════════════════════════════════════════════
+	modeGroup := adw.NewPreferencesGroup()
+	modeGroup.SetTitle("Routing Mode")
 
-	// Routing Options (conditional on split tunnel enabled)
-	optionsBox := gtk.NewBox(gtk.OrientationVertical, 20)
-
-	// Mode Section
-	modeSection := d.createSection("Routing Mode", "preferences-system-network-symbolic")
-	modeCard := d.createCard()
-
-	modeRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	modeRow.SetMarginTop(14)
-	modeRow.SetMarginBottom(14)
-	modeRow.SetMarginStart(16)
-	modeRow.SetMarginEnd(16)
-
-	modeTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	modeTextBox.SetHExpand(true)
-
-	modeTitleLabel := gtk.NewLabel("Traffic Mode")
-	modeTitleLabel.SetXAlign(0)
-	modeTitleLabel.AddCSSClass("settings-title")
-	modeTextBox.Append(modeTitleLabel)
-
-	modeDescLabel := gtk.NewLabel("Choose which traffic passes through VPN")
-	modeDescLabel.SetXAlign(0)
-	modeDescLabel.AddCSSClass("dim-label")
-	modeDescLabel.AddCSSClass("caption")
-	modeTextBox.Append(modeDescLabel)
-
-	modeRow.Append(modeTextBox)
-
+	// Traffic mode combo row
 	d.modeIDs = []string{"include", "exclude"}
 	modeLabels := []string{"Only listed IPs", "All except listed"}
 	modeModel := gtk.NewStringList(modeLabels)
-	d.modeDropDown = gtk.NewDropDown(modeModel, nil)
-	d.modeDropDown.SetSelected(d.findModeIndex(d.profile.SplitTunnelMode))
-	d.modeDropDown.SetVAlign(gtk.AlignCenter)
-	d.modeDropDown.AddCSSClass("flat")
-	modeRow.Append(d.modeDropDown)
 
-	modeCard.Append(modeRow)
+	d.modeRow = adw.NewComboRow()
+	d.modeRow.SetTitle("Traffic Mode")
+	d.modeRow.SetSubtitle("Choose which traffic passes through VPN")
+	d.modeRow.SetModel(modeModel)
+	d.modeRow.SetSelected(d.findModeIndex(d.profile.SplitTunnelMode))
+	modeGroup.Add(d.modeRow)
 
 	// DNS option row
-	modeCard.Append(d.createSeparator())
+	d.dnsRow = adw.NewSwitchRow()
+	d.dnsRow.SetTitle("Use VPN DNS")
+	d.dnsRow.SetSubtitle("Route DNS queries through VPN server")
+	d.dnsRow.SetActive(d.profile.RouteDNS)
+	modeGroup.Add(d.dnsRow)
 
-	d.dnsCheck = gtk.NewCheckButton()
-	d.dnsCheck.SetActive(d.profile.RouteDNS)
+	prefsPage.Add(modeGroup)
 
-	dnsRow := d.createSettingRowWithCheckbox(
-		"Use VPN DNS",
-		"Route DNS queries through VPN server",
-		d.dnsCheck,
-	)
-	modeCard.Append(dnsRow)
+	// ═══════════════════════════════════════════════════════════════════
+	// ROUTES SECTION
+	// ═══════════════════════════════════════════════════════════════════
+	d.routesGroup = adw.NewPreferencesGroup()
+	d.routesGroup.SetTitle("IPs and Networks")
+	d.routesGroup.SetDescription("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
 
-	modeSection.Append(modeCard)
-	optionsBox.Append(modeSection)
-
-	// Routes Section
-	routesSection := d.createSection("IPs and Networks", "network-server-symbolic")
-	routesCard := d.createCard()
-	routesInner := gtk.NewBox(gtk.OrientationVertical, 12)
-	routesInner.SetMarginTop(14)
-	routesInner.SetMarginBottom(14)
-	routesInner.SetMarginStart(16)
-	routesInner.SetMarginEnd(16)
-
-	routesHelpLabel := gtk.NewLabel("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
-	routesHelpLabel.SetXAlign(0)
-	routesHelpLabel.AddCSSClass("dim-label")
-	routesHelpLabel.AddCSSClass("caption")
-	routesHelpLabel.SetWrap(true)
-	routesInner.Append(routesHelpLabel)
-
-	// Add route input
-	addRouteBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	routeEntry := gtk.NewEntry()
-	routeEntry.SetPlaceholderText("192.168.1.0/24 or 10.0.0.1")
-	routeEntry.SetHExpand(true)
-	addRouteBox.Append(routeEntry)
-
-	addBtn := gtk.NewButtonWithLabel("Add")
-	addBtn.AddCSSClass("suggested-action")
-	addBtn.ConnectClicked(func() {
-		route := strings.TrimSpace(routeEntry.Text())
-		if route != "" && d.validateRoute(route) {
-			d.addRoute(route)
-			routeEntry.SetText("")
-		}
+	// Add route button as header suffix
+	addRouteBtn := gtk.NewButton()
+	addRouteBtn.SetIconName("list-add-symbolic")
+	addRouteBtn.AddCSSClass("flat")
+	addRouteBtn.SetTooltipText("Add Route")
+	addRouteBtn.SetVAlign(gtk.AlignCenter)
+	addRouteBtn.ConnectClicked(func() {
+		d.showAddRouteDialog()
 	})
-	addRouteBox.Append(addBtn)
-	routesInner.Append(addRouteBox)
+	d.routesGroup.SetHeaderSuffix(addRouteBtn)
 
-	// Routes list
-	routesFrame := gtk.NewFrame("")
-
-	d.routesList = gtk.NewListBox()
-	d.routesList.AddCSSClass("boxed-list")
-	d.routesList.SetSelectionMode(gtk.SelectionNone)
-	routesFrame.SetChild(d.routesList)
-
-	routesInner.Append(routesFrame)
-
-	// Load existing routes
+	// Populate routes
 	d.refreshRoutesList()
 
-	// Quick add common routes
-	quickAddLabel := gtk.NewLabel("Quick Add")
-	quickAddLabel.SetXAlign(0)
-	quickAddLabel.SetMarginTop(8)
-	quickAddLabel.AddCSSClass("dim-label")
-	quickAddLabel.AddCSSClass("caption")
-	routesInner.Append(quickAddLabel)
-
+	// Quick add buttons
 	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	quickAddBox.SetHomogeneous(true)
+	quickAddBox.SetMarginTop(8)
+	quickAddBox.SetHAlign(gtk.AlignCenter)
 
-	privateBtn := gtk.NewButtonWithLabel("Private Networks")
+	privateBtn := gtk.NewButton()
+	privateBtn.SetLabel("Private Networks")
 	privateBtn.AddCSSClass("flat")
 	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
 	privateBtn.ConnectClicked(func() {
@@ -258,7 +184,8 @@ func (d *WireGuardSettingsDialog) build() {
 	})
 	quickAddBox.Append(privateBtn)
 
-	localBtn := gtk.NewButtonWithLabel("Local Network")
+	localBtn := gtk.NewButton()
+	localBtn.SetLabel("Local Network")
 	localBtn.AddCSSClass("flat")
 	localBtn.SetTooltipText("192.168.0.0/16")
 	localBtn.ConnectClicked(func() {
@@ -266,169 +193,116 @@ func (d *WireGuardSettingsDialog) build() {
 	})
 	quickAddBox.Append(localBtn)
 
-	routesInner.Append(quickAddBox)
-	routesCard.Append(routesInner)
-	routesSection.Append(routesCard)
-	optionsBox.Append(routesSection)
+	// Wrap quick add in a ListBoxRow for the PreferencesGroup
+	quickAddRow := adw.NewActionRow()
+	quickAddRow.SetTitle("Quick Add")
+	quickAddRow.AddSuffix(quickAddBox)
+	d.routesGroup.Add(quickAddRow)
+
+	prefsPage.Add(d.routesGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// PER-APP TUNNELING SECTION
 	// ═══════════════════════════════════════════════════════════════════
-	appSection := d.createSection("Per-Application Routing", "application-x-executable-symbolic")
-	appCard := d.createCard()
+	appSection := adw.NewPreferencesGroup()
+	appSection.SetTitle("Per-Application Routing")
 
 	// Enable per-app tunneling
-	d.appsEnabledCheck = gtk.NewCheckButton()
-	d.appsEnabledCheck.SetActive(d.profile.SplitTunnelAppsEnabled)
+	d.appsEnabledRow = adw.NewSwitchRow()
+	d.appsEnabledRow.SetTitle("Enable App Routing")
+	d.appsEnabledRow.SetSubtitle("Route specific applications through VPN")
+	d.appsEnabledRow.SetActive(d.profile.SplitTunnelAppsEnabled)
+	appSection.Add(d.appsEnabledRow)
 
-	appEnableRow := d.createSettingRowWithCheckbox(
-		"Enable App Routing",
-		"Route specific applications through VPN",
-		d.appsEnabledCheck,
-	)
-	appCard.Append(appEnableRow)
-	appSection.Append(appCard)
-	optionsBox.Append(appSection)
+	prefsPage.Add(appSection)
 
-	// App options container
-	appOptionsBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	appOptionsBox.SetMarginTop(8)
+	// App options group (mode and apps list)
+	d.appOptionsGroup = adw.NewPreferencesGroup()
 
-	// App mode selection
-	appModeCard := d.createCard()
-	appModeRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	appModeRow.SetMarginTop(14)
-	appModeRow.SetMarginBottom(14)
-	appModeRow.SetMarginStart(16)
-	appModeRow.SetMarginEnd(16)
-
-	appModeTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	appModeTextBox.SetHExpand(true)
-
-	appModeTitleLabel := gtk.NewLabel("App Routing Mode")
-	appModeTitleLabel.SetXAlign(0)
-	appModeTitleLabel.AddCSSClass("settings-title")
-	appModeTextBox.Append(appModeTitleLabel)
-
-	appModeDescLabel := gtk.NewLabel("Choose which apps use VPN")
-	appModeDescLabel.SetXAlign(0)
-	appModeDescLabel.AddCSSClass("dim-label")
-	appModeDescLabel.AddCSSClass("caption")
-	appModeTextBox.Append(appModeDescLabel)
-	appModeRow.Append(appModeTextBox)
-
+	// App mode combo row
 	d.appModeIDs = []string{"include", "exclude"}
 	appModeLabels := []string{"Only selected apps", "All except selected"}
 	appModeModel := gtk.NewStringList(appModeLabels)
-	d.appModeDropDown = gtk.NewDropDown(appModeModel, nil)
-	d.appModeDropDown.SetSelected(d.findAppModeIndex(d.profile.SplitTunnelAppMode))
-	d.appModeDropDown.SetVAlign(gtk.AlignCenter)
-	d.appModeDropDown.AddCSSClass("flat")
-	appModeRow.Append(d.appModeDropDown)
 
-	appModeCard.Append(appModeRow)
-	appOptionsBox.Append(appModeCard)
+	d.appModeRow = adw.NewComboRow()
+	d.appModeRow.SetTitle("App Routing Mode")
+	d.appModeRow.SetSubtitle("Choose which apps use VPN")
+	d.appModeRow.SetModel(appModeModel)
+	d.appModeRow.SetSelected(d.findAppModeIndex(d.profile.SplitTunnelAppMode))
+	d.appOptionsGroup.Add(d.appModeRow)
 
-	// Apps list
-	appsListCard := d.createCard()
-	appsListInner := gtk.NewBox(gtk.OrientationVertical, 12)
-	appsListInner.SetMarginTop(14)
-	appsListInner.SetMarginBottom(14)
-	appsListInner.SetMarginStart(16)
-	appsListInner.SetMarginEnd(16)
+	prefsPage.Add(d.appOptionsGroup)
 
-	appsHelpLabel := gtk.NewLabel("Select applications to route through VPN")
-	appsHelpLabel.SetXAlign(0)
-	appsHelpLabel.AddCSSClass("dim-label")
-	appsHelpLabel.AddCSSClass("caption")
-	appsHelpLabel.SetWrap(true)
-	appsListInner.Append(appsHelpLabel)
+	// Apps list group
+	d.appsGroup = adw.NewPreferencesGroup()
+	d.appsGroup.SetTitle("Applications")
 
-	d.appsList = gtk.NewListBox()
-	d.appsList.AddCSSClass("boxed-list")
-	d.appsList.SetSelectionMode(gtk.SelectionNone)
-	d.refreshAppsList()
-	appsListInner.Append(d.appsList)
-
-	// Add app button
-	addAppBtn := gtk.NewButtonWithLabel("Add Application")
-	addAppBtn.AddCSSClass("flat")
+	// Add app button as header suffix
+	addAppBtn := gtk.NewButton()
 	addAppBtn.SetIconName("list-add-symbolic")
-	addAppBtn.SetHAlign(gtk.AlignStart)
+	addAppBtn.AddCSSClass("flat")
+	addAppBtn.SetTooltipText("Add Application")
+	addAppBtn.SetVAlign(gtk.AlignCenter)
 	addAppBtn.ConnectClicked(func() {
 		d.showAppSelector()
 	})
-	appsListInner.Append(addAppBtn)
+	d.appsGroup.SetHeaderSuffix(addAppBtn)
 
-	appsListCard.Append(appsListInner)
-	appOptionsBox.Append(appsListCard)
-	optionsBox.Append(appOptionsBox)
+	d.refreshAppsList()
 
-	// Toggle app options visibility
-	d.appsEnabledCheck.ConnectToggled(func() {
-		appOptionsBox.SetSensitive(d.appsEnabledCheck.Active())
+	prefsPage.Add(d.appsGroup)
+
+	// Toggle options visibility based on enabled checkboxes
+	d.enabledRow.ConnectStateFlagsChanged(func(_ gtk.StateFlags) {
+		enabled := d.enabledRow.Active()
+		modeGroup.SetSensitive(enabled)
+		d.routesGroup.SetSensitive(enabled)
+		appSection.SetSensitive(enabled)
+		d.appOptionsGroup.SetSensitive(enabled && d.appsEnabledRow.Active())
+		d.appsGroup.SetSensitive(enabled && d.appsEnabledRow.Active())
 	})
-	appOptionsBox.SetSensitive(d.appsEnabledCheck.Active())
 
-	contentBox.Append(optionsBox)
-
-	// Update sensitivity based on enabled checkbox
-	d.enabledCheck.ConnectToggled(func() {
-		optionsBox.SetSensitive(d.enabledCheck.Active())
+	d.appsEnabledRow.ConnectStateFlagsChanged(func(_ gtk.StateFlags) {
+		enabled := d.enabledRow.Active() && d.appsEnabledRow.Active()
+		d.appOptionsGroup.SetSensitive(enabled)
+		d.appsGroup.SetSensitive(enabled)
 	})
-	optionsBox.SetSensitive(d.enabledCheck.Active())
 
-	scrolled.SetChild(contentBox)
-	rootBox.Append(scrolled)
+	// Initial sensitivity
+	splitEnabled := d.enabledRow.Active()
+	modeGroup.SetSensitive(splitEnabled)
+	d.routesGroup.SetSensitive(splitEnabled)
+	appSection.SetSensitive(splitEnabled)
+	appsEnabled := splitEnabled && d.appsEnabledRow.Active()
+	d.appOptionsGroup.SetSensitive(appsEnabled)
+	d.appsGroup.SetSensitive(appsEnabled)
 
-	// Action buttons
-	actionBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	actionBox.SetMarginTop(16)
-	actionBox.SetMarginBottom(16)
-	actionBox.SetMarginStart(24)
-	actionBox.SetMarginEnd(24)
-	actionBox.SetHAlign(gtk.AlignEnd)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.AddCSSClass("flat")
-	cancelBtn.ConnectClicked(func() {
-		d.window.Close()
-	})
-	actionBox.Append(cancelBtn)
-
-	saveBtn := gtk.NewButtonWithLabel("Save")
-	saveBtn.AddCSSClass("suggested-action")
-	saveBtn.ConnectClicked(func() {
-		d.save()
-	})
-	actionBox.Append(saveBtn)
-
-	rootBox.Append(actionBox)
-
-	d.window.SetChild(rootBox)
+	scrolled.SetChild(prefsPage)
+	toolbarView.SetContent(scrolled)
+	d.dialog.SetChild(toolbarView)
 }
 
 // Show displays the dialog.
 func (d *WireGuardSettingsDialog) Show() {
-	d.window.Present()
+	d.dialog.Present(d.mainWindow.window)
 }
 
 // save saves the settings and closes the dialog.
 func (d *WireGuardSettingsDialog) save() {
-	d.profile.SplitTunnelEnabled = d.enabledCheck.Active()
+	d.profile.SplitTunnelEnabled = d.enabledRow.Active()
 
-	selectedIndex := d.modeDropDown.Selected()
+	selectedIndex := d.modeRow.Selected()
 	if int(selectedIndex) < len(d.modeIDs) {
 		d.profile.SplitTunnelMode = d.modeIDs[selectedIndex]
 	}
 
-	d.profile.RouteDNS = d.dnsCheck.Active()
+	d.profile.RouteDNS = d.dnsRow.Active()
 	d.profile.SplitTunnelRoutes = d.routes
 
 	// Save per-app tunneling settings
-	if d.appsEnabledCheck != nil {
-		d.profile.SplitTunnelAppsEnabled = d.appsEnabledCheck.Active()
-		appModeIdx := d.appModeDropDown.Selected()
+	if d.appsEnabledRow != nil {
+		d.profile.SplitTunnelAppsEnabled = d.appsEnabledRow.Active()
+		appModeIdx := d.appModeRow.Selected()
 		if int(appModeIdx) < len(d.appModeIDs) {
 			d.profile.SplitTunnelAppMode = d.appModeIDs[appModeIdx]
 		}
@@ -445,85 +319,7 @@ func (d *WireGuardSettingsDialog) save() {
 		d.onSave()
 	}
 
-	d.window.Close()
-}
-
-// createSection creates a section with title and icon.
-func (d *WireGuardSettingsDialog) createSection(title, iconName string) *gtk.Box {
-	section := gtk.NewBox(gtk.OrientationVertical, 8)
-
-	header := gtk.NewBox(gtk.OrientationHorizontal, 8)
-
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(16)
-	icon.AddCSSClass("dim-label")
-	header.Append(icon)
-
-	label := gtk.NewLabel(title)
-	label.AddCSSClass("title-4")
-	label.SetXAlign(0)
-	header.Append(label)
-
-	section.Append(header)
-	return section
-}
-
-// createCard creates a card container.
-func (d *WireGuardSettingsDialog) createCard() *gtk.Box {
-	card := gtk.NewBox(gtk.OrientationVertical, 0)
-	card.AddCSSClass("card")
-	return card
-}
-
-// createSeparator creates a separator line.
-func (d *WireGuardSettingsDialog) createSeparator() *gtk.Separator {
-	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
-	return sep
-}
-
-// createSettingRowWithCheckbox creates a setting row with a checkbox.
-func (d *WireGuardSettingsDialog) createSettingRowWithCheckbox(title, desc string, check *gtk.CheckButton) *gtk.Box {
-	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	row.SetMarginTop(14)
-	row.SetMarginBottom(14)
-	row.SetMarginStart(16)
-	row.SetMarginEnd(16)
-
-	textBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	textBox.SetHExpand(true)
-
-	titleLabel := gtk.NewLabel(title)
-	titleLabel.SetXAlign(0)
-	titleLabel.AddCSSClass("settings-title")
-	textBox.Append(titleLabel)
-
-	descLabel := gtk.NewLabel(desc)
-	descLabel.SetXAlign(0)
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	descLabel.SetEllipsize(pango.EllipsizeEnd)
-	textBox.Append(descLabel)
-
-	row.Append(textBox)
-
-	// Use Switch style
-	switchBox := gtk.NewBox(gtk.OrientationHorizontal, 0)
-	switchBox.SetVAlign(gtk.AlignCenter)
-
-	sw := gtk.NewSwitch()
-	sw.SetActive(check.Active())
-	sw.ConnectStateSet(func(state bool) bool {
-		check.SetActive(state)
-		return false
-	})
-	check.ConnectToggled(func() {
-		sw.SetActive(check.Active())
-	})
-	switchBox.Append(sw)
-
-	row.Append(switchBox)
-	return row
+	d.dialog.Close()
 }
 
 // findModeIndex returns the index for the given mode.
@@ -547,6 +343,38 @@ func (d *WireGuardSettingsDialog) validateRoute(route string) bool {
 	// Try single IP
 	ip := net.ParseIP(route)
 	return ip != nil
+}
+
+// showAddRouteDialog shows a dialog to add a new route.
+func (d *WireGuardSettingsDialog) showAddRouteDialog() {
+	dialog := adw.NewAlertDialog("Add Route", "Enter an IP address or CIDR network")
+
+	// Create entry for route input
+	routeEntry := adw.NewEntryRow()
+	routeEntry.SetTitle("Route")
+	routeEntry.SetText("192.168.1.0/24")
+
+	// Wrap in a group for the extra child
+	group := adw.NewPreferencesGroup()
+	group.Add(routeEntry)
+	dialog.SetExtraChild(group)
+
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("add", "Add")
+	dialog.SetResponseAppearance("add", adw.ResponseSuggested)
+	dialog.SetDefaultResponse("add")
+	dialog.SetCloseResponse("cancel")
+
+	dialog.ConnectResponse(func(response string) {
+		if response == "add" {
+			route := strings.TrimSpace(routeEntry.Text())
+			if route != "" && d.validateRoute(route) {
+				d.addRoute(route)
+			}
+		}
+	})
+
+	dialog.Present(d.mainWindow.window)
 }
 
 // addRoute adds a route to the list.
@@ -574,55 +402,99 @@ func (d *WireGuardSettingsDialog) removeRoute(route string) {
 	d.refreshRoutesList()
 }
 
-// refreshRoutesList updates the routes list display.
+// refreshRoutesList updates the routes list display using AdwActionRow.
 func (d *WireGuardSettingsDialog) refreshRoutesList() {
-	// Clear existing
-	for d.routesList.FirstChild() != nil {
-		d.routesList.Remove(d.routesList.FirstChild())
-	}
+	// We need to rebuild the group content
+	// Get parent to replace
+	parent := d.routesGroup.Parent()
+
+	// Create new group
+	newGroup := adw.NewPreferencesGroup()
+	newGroup.SetTitle("IPs and Networks")
+	newGroup.SetDescription("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
+
+	// Add route button as header suffix
+	addRouteBtn := gtk.NewButton()
+	addRouteBtn.SetIconName("list-add-symbolic")
+	addRouteBtn.AddCSSClass("flat")
+	addRouteBtn.SetTooltipText("Add Route")
+	addRouteBtn.SetVAlign(gtk.AlignCenter)
+	addRouteBtn.ConnectClicked(func() {
+		d.showAddRouteDialog()
+	})
+	newGroup.SetHeaderSuffix(addRouteBtn)
 
 	if len(d.routes) == 0 {
-		emptyRow := gtk.NewListBoxRow()
-		emptyLabel := gtk.NewLabel("No routes configured")
-		emptyLabel.AddCSSClass("dim-label")
-		emptyLabel.SetMarginTop(12)
-		emptyLabel.SetMarginBottom(12)
-		emptyRow.SetChild(emptyLabel)
-		emptyRow.SetSelectable(false)
-		d.routesList.Append(emptyRow)
-		return
+		emptyRow := adw.NewActionRow()
+		emptyRow.SetTitle("No routes configured")
+		emptyRow.SetSubtitle("Click + to add a route")
+		newGroup.Add(emptyRow)
+	} else {
+		for _, route := range d.routes {
+			routeCopy := route
+			row := adw.NewActionRow()
+			row.SetTitle(route)
+
+			// Icon based on type
+			icon := gtk.NewImage()
+			if strings.Contains(route, "/") {
+				icon.SetFromIconName("network-workgroup-symbolic")
+			} else {
+				icon.SetFromIconName("computer-symbolic")
+			}
+			icon.SetPixelSize(16)
+			row.AddPrefix(icon)
+
+			// Delete button
+			delBtn := gtk.NewButton()
+			delBtn.SetIconName("edit-delete-symbolic")
+			delBtn.AddCSSClass("flat")
+			delBtn.SetVAlign(gtk.AlignCenter)
+			delBtn.ConnectClicked(func() {
+				d.removeRoute(routeCopy)
+			})
+			row.AddSuffix(delBtn)
+
+			newGroup.Add(row)
+		}
 	}
 
-	for _, route := range d.routes {
-		routeCopy := route
-		row := gtk.NewListBoxRow()
-		row.SetSelectable(false)
+	// Quick add row
+	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 
-		rowBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-		rowBox.SetMarginTop(8)
-		rowBox.SetMarginBottom(8)
-		rowBox.SetMarginStart(12)
-		rowBox.SetMarginEnd(12)
+	privateBtn := gtk.NewButton()
+	privateBtn.SetLabel("Private Networks")
+	privateBtn.AddCSSClass("flat")
+	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
+	privateBtn.ConnectClicked(func() {
+		d.addRoute("10.0.0.0/8")
+		d.addRoute("172.16.0.0/12")
+		d.addRoute("192.168.0.0/16")
+	})
+	quickAddBox.Append(privateBtn)
 
-		routeLabel := gtk.NewLabel(route)
-		routeLabel.SetXAlign(0)
-		routeLabel.SetHExpand(true)
-		routeLabel.AddCSSClass("monospace")
-		rowBox.Append(routeLabel)
+	localBtn := gtk.NewButton()
+	localBtn.SetLabel("Local Network")
+	localBtn.AddCSSClass("flat")
+	localBtn.SetTooltipText("192.168.0.0/16")
+	localBtn.ConnectClicked(func() {
+		d.addRoute("192.168.0.0/16")
+	})
+	quickAddBox.Append(localBtn)
 
-		delBtn := gtk.NewButton()
-		delBtn.SetIconName("edit-delete-symbolic")
-		delBtn.AddCSSClass("flat")
-		delBtn.AddCSSClass("circular")
-		delBtn.SetTooltipText("Remove route")
-		delBtn.ConnectClicked(func() {
-			d.removeRoute(routeCopy)
-		})
-		rowBox.Append(delBtn)
+	quickAddRow := adw.NewActionRow()
+	quickAddRow.SetTitle("Quick Add")
+	quickAddRow.AddSuffix(quickAddBox)
+	newGroup.Add(quickAddRow)
 
-		row.SetChild(rowBox)
-		d.routesList.Append(row)
+	// Replace old group with new one
+	if parent != nil {
+		if page, ok := parent.(*adw.PreferencesPage); ok {
+			page.Remove(d.routesGroup)
+			page.Add(newGroup)
+		}
 	}
+	d.routesGroup = newGroup
 }
 
 // findAppModeIndex returns the index for the given app mode.
@@ -635,75 +507,76 @@ func (d *WireGuardSettingsDialog) findAppModeIndex(mode string) uint {
 	return 0
 }
 
-// refreshAppsList updates the apps list display.
+// refreshAppsList updates the apps list display using AdwActionRow.
 func (d *WireGuardSettingsDialog) refreshAppsList() {
-	// Clear existing
-	for d.appsList.FirstChild() != nil {
-		d.appsList.Remove(d.appsList.FirstChild())
-	}
+	// Get parent to replace
+	parent := d.appsGroup.Parent()
+
+	// Create new group
+	newGroup := adw.NewPreferencesGroup()
+	newGroup.SetTitle("Applications")
+
+	// Add app button as header suffix
+	addAppBtn := gtk.NewButton()
+	addAppBtn.SetIconName("list-add-symbolic")
+	addAppBtn.AddCSSClass("flat")
+	addAppBtn.SetTooltipText("Add Application")
+	addAppBtn.SetVAlign(gtk.AlignCenter)
+	addAppBtn.ConnectClicked(func() {
+		d.showAppSelector()
+	})
+	newGroup.SetHeaderSuffix(addAppBtn)
 
 	if len(d.apps) == 0 {
-		emptyRow := gtk.NewListBoxRow()
-		emptyLabel := gtk.NewLabel("No applications configured")
-		emptyLabel.AddCSSClass("dim-label")
-		emptyLabel.SetMarginTop(12)
-		emptyLabel.SetMarginBottom(12)
-		emptyRow.SetChild(emptyLabel)
-		emptyRow.SetSelectable(false)
-		d.appsList.Append(emptyRow)
-		return
+		emptyRow := adw.NewActionRow()
+		emptyRow.SetTitle("No applications configured")
+		emptyRow.SetSubtitle("Click + to add an application")
+		newGroup.Add(emptyRow)
+	} else {
+		for _, app := range d.apps {
+			appCopy := app
+			row := d.createAppRow(appCopy)
+			newGroup.Add(row)
+		}
 	}
 
-	for _, app := range d.apps {
-		appCopy := app
-		row := d.createAppRowWithCallback(appCopy, func() {
-			d.removeApp(appCopy)
-		})
-		d.appsList.Append(row)
+	// Replace old group with new one
+	if parent != nil {
+		if page, ok := parent.(*adw.PreferencesPage); ok {
+			page.Remove(d.appsGroup)
+			page.Add(newGroup)
+		}
 	}
+	d.appsGroup = newGroup
 }
 
-// createAppRowWithCallback creates a row for an application with delete callback.
-func (d *WireGuardSettingsDialog) createAppRowWithCallback(executable string, onDelete func()) *gtk.ListBoxRow {
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
-	row.SetActivatable(false)
+// createAppRow creates an AdwActionRow for an application.
+func (d *WireGuardSettingsDialog) createAppRow(executable string) *adw.ActionRow {
+	row := adw.NewActionRow()
 
-	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	box.SetMarginTop(8)
-	box.SetMarginBottom(8)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	// App name (executable basename)
+	parts := strings.Split(executable, "/")
+	name := parts[len(parts)-1]
+	row.SetTitle(name)
+	row.SetSubtitle(executable)
 
 	// App icon
 	icon := gtk.NewImage()
 	icon.SetFromIconName("application-x-executable-symbolic")
 	icon.SetPixelSize(24)
-	box.Append(icon)
-
-	// App name (executable basename)
-	parts := strings.Split(executable, "/")
-	name := parts[len(parts)-1]
-
-	nameLabel := gtk.NewLabel(name)
-	nameLabel.SetXAlign(0)
-	nameLabel.SetHExpand(true)
-	box.Append(nameLabel)
+	row.AddPrefix(icon)
 
 	// Delete button
 	deleteBtn := gtk.NewButton()
 	deleteBtn.SetIconName("edit-delete-symbolic")
 	deleteBtn.AddCSSClass("flat")
-	deleteBtn.AddCSSClass("circular")
+	deleteBtn.SetVAlign(gtk.AlignCenter)
 	deleteBtn.SetTooltipText("Remove application")
 	deleteBtn.ConnectClicked(func() {
-		if onDelete != nil {
-			onDelete()
-		}
+		d.removeApp(executable)
 	})
-	box.Append(deleteBtn)
+	row.AddSuffix(deleteBtn)
 
-	row.SetChild(box)
 	return row
 }
 
@@ -732,24 +605,44 @@ func (d *WireGuardSettingsDialog) removeApp(executable string) {
 	d.refreshAppsList()
 }
 
-// showAppSelector shows a dialog to select an application.
+// showAppSelector shows an AdwDialog to select an application.
 func (d *WireGuardSettingsDialog) showAppSelector() {
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Select Application")
-	dialog.SetTransientFor(d.window)
-	dialog.SetModal(true)
-	dialog.SetDefaultSize(400, 500)
+	selectorDialog := adw.NewDialog()
+	selectorDialog.SetTitle("Select Application")
+	selectorDialog.SetContentWidth(400)
+	selectorDialog.SetContentHeight(500)
 
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	mainBox.SetMarginTop(12)
-	mainBox.SetMarginBottom(12)
-	mainBox.SetMarginStart(12)
-	mainBox.SetMarginEnd(12)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
+
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
+
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
+	cancelBtn.ConnectClicked(func() {
+		selectorDialog.Close()
+	})
+	headerBar.PackStart(cancelBtn)
+
+	selectBtn := gtk.NewButton()
+	selectBtn.SetLabel("Select")
+	selectBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(selectBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	contentBox.SetMarginTop(12)
+	contentBox.SetMarginStart(12)
+	contentBox.SetMarginEnd(12)
 
 	// Search entry
 	searchEntry := gtk.NewSearchEntry()
 	searchEntry.SetPlaceholderText("Search applications...")
-	mainBox.Append(searchEntry)
+	contentBox.Append(searchEntry)
 
 	// Scrolled list
 	scrolled := gtk.NewScrolledWindow()
@@ -810,20 +703,19 @@ func (d *WireGuardSettingsDialog) showAppSelector() {
 
 		row.ConnectActivate(func() {
 			d.addApp(appCopy.Executable)
-			dialog.Close()
+			selectorDialog.Close()
 		})
 
 		appList.Append(row)
 	}
 
-	// Filter function using SetFilterFunc
+	// Filter function
 	var currentQuery string
 	appList.SetFilterFunc(func(row *gtk.ListBoxRow) bool {
 		if currentQuery == "" {
 			return true
 		}
 		name := row.Name()
-		// Extract search part (before |)
 		if idx := strings.Index(name, "|"); idx > 0 {
 			name = name[:idx]
 		}
@@ -835,37 +727,20 @@ func (d *WireGuardSettingsDialog) showAppSelector() {
 		appList.InvalidateFilter()
 	})
 
-	scrolled.SetChild(appList)
-	mainBox.Append(scrolled)
-
-	// Button bar
-	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	buttonBar.SetHAlign(gtk.AlignEnd)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.AddCSSClass("flat")
-	cancelBtn.ConnectClicked(func() {
-		dialog.Close()
-	})
-	buttonBar.Append(cancelBtn)
-
-	selectBtn := gtk.NewButtonWithLabel("Select")
-	selectBtn.AddCSSClass("suggested-action")
 	selectBtn.ConnectClicked(func() {
 		if selected := appList.SelectedRow(); selected != nil {
-			// Extract executable from row name (after |)
 			name := selected.Name()
 			if idx := strings.Index(name, "|"); idx >= 0 && idx+1 < len(name) {
 				executable := name[idx+1:]
 				d.addApp(executable)
-				dialog.Close()
+				selectorDialog.Close()
 			}
 		}
 	})
-	buttonBar.Append(selectBtn)
 
-	mainBox.Append(buttonBar)
-
-	dialog.SetChild(mainBox)
-	dialog.Present()
+	scrolled.SetChild(appList)
+	contentBox.Append(scrolled)
+	toolbarView.SetContent(contentBox)
+	selectorDialog.SetChild(toolbarView)
+	selectorDialog.Present(d.mainWindow.window)
 }

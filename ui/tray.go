@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"fyne.io/systray"
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
@@ -621,161 +622,155 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 // FLOATING DIALOGS (for tray-initiated connections)
 // ════════════════════════════════════════════════════════════════════════════
 
-// showFloatingOTPDialog shows an OTP entry dialog.
+// showFloatingOTPDialog shows an OTP entry dialog using AdwWindow.
 func (t *TrayIndicator) showFloatingOTPDialog(profile *vpn.Profile, username, password string) {
-	window := gtk.NewWindow()
+	window := adw.NewWindow()
 	window.SetTitle("VPN Authentication")
 	window.SetModal(false)
-	window.SetDefaultSize(360, 200)
+	window.SetDefaultSize(380, 320)
 	window.SetResizable(false)
 
-	content := gtk.NewBox(gtk.OrientationVertical, 16)
-	content.SetMarginTop(24)
-	content.SetMarginBottom(24)
-	content.SetMarginStart(24)
-	content.SetMarginEnd(24)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
 
-	// Header
-	header := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	header.SetHAlign(gtk.AlignCenter)
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
 
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-password-symbolic")
-	icon.SetPixelSize(24)
-	header.Append(icon)
-
-	title := gtk.NewLabel(profile.Name)
-	title.AddCSSClass("title-3")
-	header.Append(title)
-	content.Append(header)
-
-	// Info label
-	info := gtk.NewLabel("Enter your authenticator code")
-	info.AddCSSClass("dim-label")
-	content.Append(info)
-
-	// OTP entry
-	otpEntry := gtk.NewEntry()
-	otpEntry.SetPlaceholderText("000000")
-	otpEntry.SetMaxLength(6)
-	otpEntry.SetHAlign(gtk.AlignCenter)
-	otpEntry.SetWidthChars(10)
-	content.Append(otpEntry)
-
-	// Buttons
-	btnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	btnBox.SetHAlign(gtk.AlignCenter)
-	btnBox.SetMarginTop(8)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		window.Close()
 	})
-	btnBox.Append(cancelBtn)
+	headerBar.PackStart(cancelBtn)
 
-	connectBtn := gtk.NewButtonWithLabel("Connect")
+	// Connect button in header
+	connectBtn := gtk.NewButton()
+	connectBtn.SetLabel("Connect")
 	connectBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(connectBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+
+	// Header with profile info
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("dialog-password-symbolic")
+	statusPage.SetTitle(profile.Name)
+	statusPage.SetDescription("Enter your authenticator code")
+
+	headerGroup := adw.NewPreferencesGroup()
+	headerGroup.Add(statusPage)
+	prefsPage.Add(headerGroup)
+
+	// OTP entry group
+	otpGroup := adw.NewPreferencesGroup()
+	otpRow := adw.NewEntryRow()
+	otpRow.SetTitle("Authentication Code")
+	otpRow.SetInputPurpose(gtk.InputPurposeDigits)
+	otpGroup.Add(otpRow)
+	prefsPage.Add(otpGroup)
+
+	// Connect action
 	connectBtn.ConnectClicked(func() {
-		otp := otpEntry.Text()
+		otp := otpRow.Text()
 		if otp == "" {
 			return
 		}
 		window.Close()
 		t.ConnectFromTray(profile, username, password+otp)
 	})
-	btnBox.Append(connectBtn)
 
-	otpEntry.ConnectActivate(func() {
+	otpRow.ConnectEntryActivated(func() {
 		connectBtn.Activate()
 	})
 
-	content.Append(btnBox)
-	window.SetChild(content)
+	toolbarView.SetContent(prefsPage)
+	window.SetContent(toolbarView)
 	window.SetVisible(true)
-	otpEntry.GrabFocus()
 }
 
-// ShowFloatingPasswordDialog shows a credentials entry dialog.
+// ShowFloatingPasswordDialog shows a credentials entry dialog using AdwWindow.
 func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
-	window := gtk.NewWindow()
+	window := adw.NewWindow()
 	window.SetTitle("VPN Credentials")
 	window.SetModal(false)
-	window.SetDefaultSize(380, 300)
+	window.SetDefaultSize(400, 450)
 	window.SetResizable(false)
 
-	content := gtk.NewBox(gtk.OrientationVertical, 12)
-	content.SetMarginTop(24)
-	content.SetMarginBottom(24)
-	content.SetMarginStart(24)
-	content.SetMarginEnd(24)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
 
-	// Header
-	header := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
 
-	icon := gtk.NewImage()
-	icon.SetFromIconName("network-vpn-symbolic")
-	icon.SetPixelSize(24)
-	header.Append(icon)
-
-	title := gtk.NewLabel(profile.Name)
-	title.AddCSSClass("title-3")
-	header.Append(title)
-	content.Append(header)
-
-	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
-	sep.SetMarginTop(8)
-	sep.SetMarginBottom(8)
-	content.Append(sep)
-
-	// Username
-	usernameLabel := gtk.NewLabel("Username")
-	usernameLabel.SetXAlign(0)
-	usernameLabel.AddCSSClass("dim-label")
-	content.Append(usernameLabel)
-
-	usernameEntry := gtk.NewEntry()
-	if profile.Username != "" {
-		usernameEntry.SetText(profile.Username)
-	}
-	content.Append(usernameEntry)
-
-	// Password
-	passwordLabel := gtk.NewLabel("Password")
-	passwordLabel.SetXAlign(0)
-	passwordLabel.AddCSSClass("dim-label")
-	passwordLabel.SetMarginTop(8)
-	content.Append(passwordLabel)
-
-	passwordEntry := gtk.NewPasswordEntry()
-	passwordEntry.SetShowPeekIcon(true)
-	content.Append(passwordEntry)
-
-	// Save checkbox
-	saveCheck := gtk.NewCheckButtonWithLabel("Remember credentials")
-	saveCheck.SetMarginTop(12)
-	content.Append(saveCheck)
-
-	// Buttons
-	btnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	btnBox.SetHAlign(gtk.AlignEnd)
-	btnBox.SetMarginTop(16)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		window.Close()
 	})
-	btnBox.Append(cancelBtn)
+	headerBar.PackStart(cancelBtn)
 
-	connectBtn := gtk.NewButtonWithLabel("Connect")
+	// Connect button in header
+	connectBtn := gtk.NewButton()
+	connectBtn.SetLabel("Connect")
 	connectBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(connectBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+
+	// Header with profile info
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("network-vpn-symbolic")
+	statusPage.SetTitle(profile.Name)
+	statusPage.SetDescription("Enter your VPN credentials")
+
+	headerGroup := adw.NewPreferencesGroup()
+	headerGroup.Add(statusPage)
+	prefsPage.Add(headerGroup)
+
+	// Credentials group
+	credGroup := adw.NewPreferencesGroup()
+	credGroup.SetTitle("Credentials")
+
+	usernameRow := adw.NewEntryRow()
+	usernameRow.SetTitle("Username")
+	if profile.Username != "" {
+		usernameRow.SetText(profile.Username)
+	}
+	credGroup.Add(usernameRow)
+
+	passwordRow := adw.NewPasswordEntryRow()
+	passwordRow.SetTitle("Password")
+	credGroup.Add(passwordRow)
+
+	prefsPage.Add(credGroup)
+
+	// Options group
+	optGroup := adw.NewPreferencesGroup()
+	saveRow := adw.NewSwitchRow()
+	saveRow.SetTitle("Remember Credentials")
+	saveRow.SetSubtitle("Save username and password")
+	optGroup.Add(saveRow)
+	prefsPage.Add(optGroup)
+
+	// Connect action
 	connectBtn.ConnectClicked(func() {
-		username := usernameEntry.Text()
-		password := passwordEntry.Text()
+		username := usernameRow.Text()
+		password := passwordRow.Text()
 		if username == "" || password == "" {
 			return
 		}
 
-		if saveCheck.Active() {
+		if saveRow.Active() {
 			profile.Username = username
 			profile.SavePassword = true
 			_ = keyring.Store(profile.ID, password)
@@ -790,15 +785,12 @@ func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
 			t.ConnectFromTray(profile, username, password)
 		}
 	})
-	btnBox.Append(connectBtn)
 
-	content.Append(btnBox)
-	window.SetChild(content)
+	passwordRow.ConnectEntryActivated(func() {
+		connectBtn.Activate()
+	})
+
+	toolbarView.SetContent(prefsPage)
+	window.SetContent(toolbarView)
 	window.SetVisible(true)
-
-	if profile.Username != "" {
-		passwordEntry.GrabFocus()
-	} else {
-		usernameEntry.GrabFocus()
-	}
 }

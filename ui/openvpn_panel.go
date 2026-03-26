@@ -441,75 +441,62 @@ func (pl *ProfileList) onConnectClicked(profile *vpn.Profile) {
 	pl.showPasswordDialog(profile)
 }
 
-// showOTPDialog shows a dialog to enter the OTP code.
+// showOTPDialog shows an AdwDialog to enter the OTP code.
 // Used after entering credentials or when already saved.
 func (pl *ProfileList) showOTPDialog(profile *vpn.Profile, username, password string, saveCredentials bool) {
-	window := gtk.NewWindow()
-	window.SetTitle("OTP Verification")
-	window.SetTransientFor(&pl.mainWindow.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(380, 220)
-	window.SetResizable(false)
+	dialog := adw.NewDialog()
+	dialog.SetTitle("OTP Verification")
+	dialog.SetContentWidth(380)
+	dialog.SetContentHeight(280)
 
-	// Main container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
 
-	// Content
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 16)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
 
-	// Header with icon
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerBox.SetHAlign(gtk.AlignCenter)
-
-	lockIcon := gtk.NewImage()
-	lockIcon.SetFromIconName("security-high-symbolic")
-	lockIcon.SetPixelSize(32)
-	headerBox.Append(lockIcon)
-
-	titleLabel := gtk.NewLabel(profile.Name)
-	titleLabel.AddCSSClass("title-3")
-	headerBox.Append(titleLabel)
-	contentBox.Append(headerBox)
-
-	// Info
-	infoLabel := gtk.NewLabel("Enter your authenticator code")
-	infoLabel.AddCSSClass("dim-label")
-	infoLabel.SetMarginBottom(8)
-	contentBox.Append(infoLabel)
-
-	// OTP code entry - centered and large
-	otpEntry := gtk.NewEntry()
-	otpEntry.SetPlaceholderText("000000")
-	otpEntry.SetMaxLength(6)
-	otpEntry.SetHAlign(gtk.AlignCenter)
-	otpEntry.SetWidthChars(8)
-	otpEntry.AddCSSClass("title-1")
-	contentBox.Append(otpEntry)
-
-	mainBox.Append(contentBox)
-
-	// Button bar
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
 	cancelBtn.ConnectClicked(func() {
-		window.Close()
+		dialog.Close()
 	})
-	buttonBox.Append(cancelBtn)
+	headerBar.PackStart(cancelBtn)
 
-	connectBtn := gtk.NewButtonWithLabel("Connect")
+	// Connect button in header
+	connectBtn := gtk.NewButton()
+	connectBtn.SetLabel("Connect")
 	connectBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(connectBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content using AdwPreferencesPage for consistent styling
+	prefsPage := adw.NewPreferencesPage()
+
+	// Header group with profile info
+	headerGroup := adw.NewPreferencesGroup()
+
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("security-high-symbolic")
+	statusPage.SetTitle(profile.Name)
+	statusPage.SetDescription("Enter your authenticator code")
+	headerGroup.Add(statusPage)
+	prefsPage.Add(headerGroup)
+
+	// OTP entry group
+	otpGroup := adw.NewPreferencesGroup()
+	otpRow := adw.NewEntryRow()
+	otpRow.SetTitle("Authentication Code")
+	// Set input purpose for numeric entry
+	otpRow.SetInputPurpose(gtk.InputPurposeDigits)
+	otpGroup.Add(otpRow)
+	prefsPage.Add(otpGroup)
+
+	// Connect button action
 	connectBtn.ConnectClicked(func() {
-		otp := otpEntry.Text()
+		otp := otpRow.Text()
 		fullPassword := password + otp
 
 		// Save credentials if requested
@@ -523,127 +510,104 @@ func (pl *ProfileList) showOTPDialog(profile *vpn.Profile, username, password st
 			_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
 		}
 
-		window.Close()
+		dialog.Close()
 		pl.connectWithCredentials(profile, username, fullPassword)
 	})
-	buttonBox.Append(connectBtn)
 
 	// Allow Enter to connect
-	otpEntry.ConnectActivate(func() {
+	otpRow.ConnectEntryActivated(func() {
 		connectBtn.Activate()
 	})
 
-	mainBox.Append(buttonBox)
-	window.SetChild(mainBox)
-	window.SetVisible(true)
-
-	// Focus on OTP field
-	otpEntry.GrabFocus()
+	toolbarView.SetContent(prefsPage)
+	dialog.SetChild(toolbarView)
+	dialog.Present(pl.mainWindow.window)
 }
 
-// showPasswordDialog shows a dialog to enter username and password.
+// showPasswordDialog shows an AdwDialog to enter username and password.
 // After validation, shows the OTP dialog.
 func (pl *ProfileList) showPasswordDialog(profile *vpn.Profile) {
-	window := gtk.NewWindow()
-	window.SetTitle("VPN Credentials")
-	window.SetTransientFor(&pl.mainWindow.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(400, 320)
-	window.SetResizable(false)
+	dialog := adw.NewDialog()
+	dialog.SetTitle("VPN Credentials")
+	dialog.SetContentWidth(400)
+	dialog.SetContentHeight(400)
 
-	// Main container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
 
-	// Content
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 8)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
 
-	// Header with icon and name
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	headerIcon := gtk.NewImage()
-	headerIcon.SetFromIconName("network-vpn-symbolic")
-	headerIcon.SetPixelSize(28)
-	headerBox.Append(headerIcon)
-
-	instructionLabel := gtk.NewLabel(profile.Name)
-	instructionLabel.AddCSSClass("title-2")
-	headerBox.Append(instructionLabel)
-	contentBox.Append(headerBox)
-
-	// Visual separator
-	separator := gtk.NewSeparator(gtk.OrientationHorizontal)
-	separator.SetMarginTop(12)
-	separator.SetMarginBottom(12)
-	contentBox.Append(separator)
-
-	// Username entry
-	usernameLabel := gtk.NewLabel("Username")
-	usernameLabel.SetXAlign(0)
-	usernameLabel.AddCSSClass("dim-label")
-	contentBox.Append(usernameLabel)
-
-	usernameEntry := gtk.NewEntry()
-	usernameEntry.SetPlaceholderText("username")
-	if profile.Username != "" {
-		usernameEntry.SetText(profile.Username)
-	}
-	contentBox.Append(usernameEntry)
-
-	// PIN/Password entry
-	pinLabel := gtk.NewLabel("Password")
-	pinLabel.SetXAlign(0)
-	pinLabel.SetMarginTop(12)
-	pinLabel.AddCSSClass("dim-label")
-	contentBox.Append(pinLabel)
-
-	pinEntry := gtk.NewPasswordEntry()
-	pinEntry.SetShowPeekIcon(true)
-	contentBox.Append(pinEntry)
-
-	// Separator
-	separator2 := gtk.NewSeparator(gtk.OrientationHorizontal)
-	separator2.SetMarginTop(16)
-	separator2.SetMarginBottom(8)
-	contentBox.Append(separator2)
-
-	// Checkbox to save
-	saveCheck := gtk.NewCheckButton()
-	saveCheck.SetLabel("Save credentials")
-	saveCheck.SetActive(profile.SavePassword || profile.Username != "")
-	contentBox.Append(saveCheck)
-
-	mainBox.Append(contentBox)
-
-	// Button bar
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
 	cancelBtn.ConnectClicked(func() {
-		window.Close()
+		dialog.Close()
 	})
-	buttonBox.Append(cancelBtn)
+	headerBar.PackStart(cancelBtn)
 
-	nextBtn := gtk.NewButtonWithLabel("Next")
+	// Next button in header
+	nextBtn := gtk.NewButton()
+	nextBtn.SetLabel("Next")
 	nextBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(nextBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+
+	// Header with profile name
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("network-vpn-symbolic")
+	statusPage.SetTitle(profile.Name)
+	statusPage.SetDescription("Enter your VPN credentials")
+
+	headerGroup := adw.NewPreferencesGroup()
+	headerGroup.Add(statusPage)
+	prefsPage.Add(headerGroup)
+
+	// Credentials group
+	credGroup := adw.NewPreferencesGroup()
+	credGroup.SetTitle("Credentials")
+
+	// Username entry row
+	usernameRow := adw.NewEntryRow()
+	usernameRow.SetTitle("Username")
+	if profile.Username != "" {
+		usernameRow.SetText(profile.Username)
+	}
+	credGroup.Add(usernameRow)
+
+	// Password entry row
+	passwordRow := adw.NewPasswordEntryRow()
+	passwordRow.SetTitle("Password")
+	credGroup.Add(passwordRow)
+
+	prefsPage.Add(credGroup)
+
+	// Options group
+	optGroup := adw.NewPreferencesGroup()
+	saveRow := adw.NewSwitchRow()
+	saveRow.SetTitle("Save Credentials")
+	saveRow.SetSubtitle("Remember username and password")
+	saveRow.SetActive(profile.SavePassword || profile.Username != "")
+	optGroup.Add(saveRow)
+	prefsPage.Add(optGroup)
+
+	// Next button action
 	nextBtn.ConnectClicked(func() {
-		username := usernameEntry.Text()
-		password := pinEntry.Text()
-		saveCredentials := saveCheck.Active()
+		username := usernameRow.Text()
+		password := passwordRow.Text()
+		saveCredentials := saveRow.Active()
 
 		if username == "" || password == "" {
 			pl.mainWindow.SetStatus("Enter username and password")
 			return
 		}
 
-		window.Close()
+		dialog.Close()
 
 		// Save credentials if requested (regardless of OTP requirement)
 		if saveCredentials {
@@ -665,23 +629,15 @@ func (pl *ProfileList) showPasswordDialog(profile *vpn.Profile) {
 			pl.connectWithCredentials(profile, username, password)
 		}
 	})
-	buttonBox.Append(nextBtn)
 
 	// Enter on password goes to next
-	pinEntry.ConnectActivate(func() {
+	passwordRow.ConnectEntryActivated(func() {
 		nextBtn.Activate()
 	})
 
-	mainBox.Append(buttonBox)
-	window.SetChild(mainBox)
-	window.SetVisible(true)
-
-	// Focus on appropriate field
-	if profile.Username != "" {
-		pinEntry.GrabFocus()
-	} else {
-		usernameEntry.GrabFocus()
-	}
+	toolbarView.SetContent(prefsPage)
+	dialog.SetChild(toolbarView)
+	dialog.Present(pl.mainWindow.window)
 }
 
 // connectWithCredentials initiates VPN connection with specific credentials.

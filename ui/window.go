@@ -420,56 +420,59 @@ func (mw *MainWindow) onAddProfile() {
 }
 
 func (mw *MainWindow) showAddProfileDialog(configPath string) {
-	// Create window to configure profile
-	window := gtk.NewWindow()
-	window.SetTitle("Configure VPN profile")
-	window.SetTransientFor(&mw.window.Window)
-	window.SetModal(true)
-	window.SetDefaultSize(400, 200)
-	window.SetResizable(false)
+	// Create AdwDialog to configure profile
+	dialog := adw.NewDialog()
+	dialog.SetTitle("Configure VPN Profile")
+	dialog.SetContentWidth(400)
+	dialog.SetContentHeight(250)
 
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
 
-	// Name entry
-	entry := gtk.NewEntry()
-	entry.SetPlaceholderText("My VPN")
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
 
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(12)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
-
-	lbl := gtk.NewLabel("Enter a name for this VPN profile")
-	lbl.SetXAlign(0)
-	contentBox.Append(lbl)
-	contentBox.Append(entry)
-
-	mainBox.Append(contentBox)
-
-	// Button bar
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetMarginBottom(24)
-	buttonBox.SetMarginStart(24)
-	buttonBox.SetMarginEnd(24)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
 	cancelBtn.ConnectClicked(func() {
-		window.Close()
+		dialog.Close()
 	})
-	buttonBox.Append(cancelBtn)
+	headerBar.PackStart(cancelBtn)
 
-	acceptBtn := gtk.NewButtonWithLabel("Accept")
+	// Accept button in header
+	acceptBtn := gtk.NewButton()
+	acceptBtn.SetLabel("Add")
 	acceptBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(acceptBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+
+	// Info group with description
+	infoGroup := adw.NewPreferencesGroup()
+	infoGroup.SetDescription("Enter a name for this VPN profile")
+	prefsPage.Add(infoGroup)
+
+	// Name entry group
+	nameGroup := adw.NewPreferencesGroup()
+	nameRow := adw.NewEntryRow()
+	nameRow.SetTitle("Profile Name")
+	nameRow.SetText("My VPN")
+	nameGroup.Add(nameRow)
+	prefsPage.Add(nameGroup)
+
+	// Accept button action
 	acceptBtn.ConnectClicked(func() {
-		name := entry.Text()
+		name := nameRow.Text()
 		if name == "" {
 			name = "New VPN"
 		}
 
-		window.Close()
+		dialog.Close()
 
 		// Create profile
 		profile := &vpn.Profile{
@@ -485,12 +488,15 @@ func (mw *MainWindow) showAddProfileDialog(configPath string) {
 			mw.SetStatus(fmt.Sprintf("Profile '%s' added", name))
 		}
 	})
-	buttonBox.Append(acceptBtn)
 
-	mainBox.Append(buttonBox)
+	// Enter on name field accepts
+	nameRow.ConnectEntryActivated(func() {
+		acceptBtn.Activate()
+	})
 
-	window.SetChild(mainBox)
-	window.SetVisible(true)
+	toolbarView.SetContent(prefsPage)
+	dialog.SetChild(toolbarView)
+	dialog.Present(mw.window)
 }
 
 func (mw *MainWindow) onPreferences() {
@@ -499,48 +505,27 @@ func (mw *MainWindow) onPreferences() {
 }
 
 func (mw *MainWindow) onAbout() {
-	about := gtk.NewAboutDialog()
-	about.SetTransientFor(&mw.window.Window)
-	about.SetModal(true)
+	about := adw.NewAboutDialog()
 
 	// Application info
-	about.SetProgramName("VPN Manager")
-	about.SetLogoIconName("vpn-manager")
+	about.SetApplicationName("VPN Manager")
+	about.SetApplicationIcon("vpn-manager")
 	about.SetVersion(mw.app.version)
 	about.SetComments("Modern and elegant OpenVPN client for Linux.\nManage your VPN connections with ease.")
 
 	// Links
 	about.SetWebsite("https://github.com/yllada/vpn-manager")
-	about.SetWebsiteLabel("GitHub Repository")
+	about.SetIssueURL("https://github.com/yllada/vpn-manager/issues")
 
 	// Copyright and License
 	about.SetCopyright("© 2026 Yadian Llada Lopez")
-	about.SetLicense(`MIT License
-
-Copyright (c) 2026 Yadian Llada Lopez
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`)
+	about.SetLicenseType(gtk.LicenseMITX11)
 
 	// Credits
-	about.SetAuthors([]string{"Yadian Llada Lopez <yadian@y3lcorp.com>"})
+	about.SetDeveloperName("Yadian Llada Lopez")
+	about.SetDevelopers([]string{"Yadian Llada Lopez <yadian@y3lcorp.com>"})
 
-	about.SetVisible(true)
+	about.Present(&mw.window.Window)
 }
 
 // showError displays an error dialog using AdwAlertDialog.
