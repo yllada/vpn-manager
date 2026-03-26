@@ -54,6 +54,9 @@ const (
 	TrustActionPrompt TrustAction = "prompt"
 	// TrustActionNone takes no action.
 	TrustActionNone TrustAction = "none"
+	// TrustActionWarnEvilTwin warns about potential evil twin attack.
+	// This occurs when a known SSID is seen with an unknown BSSID.
+	TrustActionWarnEvilTwin TrustAction = "warn-evil-twin"
 )
 
 // String returns the string representation of the trust action.
