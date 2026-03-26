@@ -77,10 +77,6 @@ func (wp *WireGuardPanel) createLayout() {
 	cfg := DefaultPanelConfig("WireGuard")
 	wp.box = CreatePanelBox(cfg)
 
-	// Header - using shared helper
-	headerBox := CreatePanelHeader(cfg)
-	wp.box.Append(headerBox)
-
 	// Status box - using shared helper
 	statusBar := CreateStatusBar(cfg)
 	wp.statusBox = statusBar.Box
@@ -88,19 +84,18 @@ func (wp *WireGuardPanel) createLayout() {
 	wp.statusLabel = statusBar.Label
 	wp.box.Append(wp.statusBox)
 
-	// Profiles list
-	profilesLabel := gtk.NewLabel("Profiles")
-	profilesLabel.AddCSSClass("heading")
-	profilesLabel.SetXAlign(0)
-	profilesLabel.SetMarginTop(16)
-	wp.box.Append(profilesLabel)
+	// Profiles section using AdwPreferencesGroup
+	profilesGroup := adw.NewPreferencesGroup()
+	profilesGroup.SetTitle("Profiles")
+	profilesGroup.SetMarginTop(12)
 
 	// List box for profiles
 	wp.listBox = gtk.NewListBox()
 	wp.listBox.SetSelectionMode(gtk.SelectionNone)
 	wp.listBox.AddCSSClass("boxed-list")
 
-	wp.box.Append(wp.listBox)
+	profilesGroup.Add(wp.listBox)
+	wp.box.Append(profilesGroup)
 
 	// Import button at bottom
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)

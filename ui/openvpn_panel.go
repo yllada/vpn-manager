@@ -52,26 +52,21 @@ func (op *OpenVPNPanel) createLayout() {
 	cfg := DefaultPanelConfig("OpenVPN")
 	op.box = CreatePanelBox(cfg)
 
-	// Header - using shared helper
-	headerBox := CreatePanelHeader(cfg)
-	op.box.Append(headerBox)
-
 	// Status box - using shared helper
 	statusBar := CreateStatusBar(cfg)
 	op.statusIcon = statusBar.Icon
 	op.statusLabel = statusBar.Label
 	op.box.Append(statusBar.Box)
 
-	// Profiles section label
-	profilesLabel := gtk.NewLabel("PROFILES")
-	profilesLabel.AddCSSClass("heading")
-	profilesLabel.SetXAlign(0)
-	profilesLabel.SetMarginTop(16)
-	op.box.Append(profilesLabel)
+	// Profiles section using AdwPreferencesGroup
+	profilesGroup := adw.NewPreferencesGroup()
+	profilesGroup.SetTitle("Profiles")
+	profilesGroup.SetMarginTop(12)
 
-	// Create profile list
+	// Create profile list and add its ListBox to the group
 	op.profileList = NewProfileList(op.mainWindow)
-	op.box.Append(op.profileList.GetWidget())
+	profilesGroup.Add(op.profileList.GetWidget())
+	op.box.Append(profilesGroup)
 
 	// Import button at bottom
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)

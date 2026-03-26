@@ -44,6 +44,8 @@ func CreatePanelBox(cfg PanelConfig) *gtk.Box {
 }
 
 // CreatePanelHeader creates the header section with logo and title.
+// Deprecated: Panel headers are redundant when using AdwViewSwitcher navigation.
+// The ViewSwitcher already shows the panel name, so this function is no longer needed.
 // Returns a gtk.Box containing the icon and title label.
 func CreatePanelHeader(cfg PanelConfig) *gtk.Box {
 	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 12)

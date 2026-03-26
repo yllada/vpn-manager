@@ -78,10 +78,6 @@ func (tp *TailscalePanel) createLayout() {
 	cfg := DefaultPanelConfig("Tailscale")
 	tp.box = CreatePanelBox(cfg)
 
-	// Header - using shared helper
-	headerBox := CreatePanelHeader(cfg)
-	tp.box.Append(headerBox)
-
 	// Main profile card - shows connection status
 	profileCard := tp.createProfileCard()
 	tp.box.Append(profileCard)
