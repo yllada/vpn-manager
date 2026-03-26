@@ -1,22 +1,23 @@
 // Package ui provides the graphical user interface for VPN Manager.
 // This file contains the TrustRulesDialog component for managing network trust rules.
 // Users can add, edit, and remove rules that determine VPN behavior per network.
+// Uses AdwDialog and AdwPreferencesGroup for modern GNOME HIG-compliant UI.
 package ui
 
 import (
 	"fmt"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
 // TrustRulesDialog represents the dialog for managing network trust rules.
 type TrustRulesDialog struct {
-	window       *gtk.Window
+	dialog       *adw.Dialog
 	mainWindow   *MainWindow
-	rulesList    *gtk.ListBox
+	rulesGroup   *adw.PreferencesGroup
 	rules        []trust.TrustRule
 	trustManager *trust.TrustManager
 }
@@ -38,183 +39,139 @@ func NewTrustRulesDialog(mainWindow *MainWindow) *TrustRulesDialog {
 	return trd
 }
 
-// build constructs the dialog UI.
+// build constructs the dialog UI using AdwDialog.
 func (trd *TrustRulesDialog) build() {
-	trd.window = gtk.NewWindow()
-	trd.window.SetTitle("Network Trust Rules")
-	trd.window.SetTransientFor(&trd.mainWindow.window.Window)
-	trd.window.SetModal(true)
-	trd.window.SetDefaultSize(550, 500)
-	trd.window.SetResizable(true)
+	trd.dialog = adw.NewDialog()
+	trd.dialog.SetTitle("Network Trust Rules")
+	trd.dialog.SetContentWidth(500)
+	trd.dialog.SetContentHeight(550)
 
-	rootBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create main content with AdwToolbarView
+	toolbarView := adw.NewToolbarView()
 
-	// Scrollable content
+	// Add header bar
+	headerBar := adw.NewHeaderBar()
+	toolbarView.AddTopBar(headerBar)
+
+	// Create scrollable content
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetVExpand(true)
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 16)
-	contentBox.SetMarginTop(24)
-	contentBox.SetMarginBottom(16)
-	contentBox.SetMarginStart(24)
-	contentBox.SetMarginEnd(24)
+	// Create content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+	prefsPage.SetTitle("Rules")
 
 	// ═══════════════════════════════════════════════════════════════════
-	// HEADER CARD
+	// RULES GROUP
 	// ═══════════════════════════════════════════════════════════════════
-	headerCard := gtk.NewBox(gtk.OrientationHorizontal, 16)
-	headerCard.AddCSSClass("card")
-	headerCard.AddCSSClass("preferences-card")
-	headerCard.SetMarginBottom(4)
+	trd.rulesGroup = adw.NewPreferencesGroup()
+	trd.rulesGroup.SetTitle("Network Rules")
+	trd.rulesGroup.SetDescription("Define how VPN behaves on specific networks")
 
-	headerInner := gtk.NewBox(gtk.OrientationHorizontal, 14)
-	headerInner.SetMarginTop(16)
-	headerInner.SetMarginBottom(16)
-	headerInner.SetMarginStart(16)
-	headerInner.SetMarginEnd(16)
-
-	headerIcon := gtk.NewImage()
-	headerIcon.SetFromIconName("network-wireless-symbolic")
-	headerIcon.SetPixelSize(40)
-	headerIcon.AddCSSClass("accent")
-	headerInner.Append(headerIcon)
-
-	headerTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	headerTextBox.SetVAlign(gtk.AlignCenter)
-
-	titleLabel := gtk.NewLabel("Network Trust Rules")
-	titleLabel.AddCSSClass("title-2")
-	titleLabel.SetXAlign(0)
-	headerTextBox.Append(titleLabel)
-
-	descLabel := gtk.NewLabel("Define how VPN behaves on specific networks")
-	descLabel.SetXAlign(0)
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	headerTextBox.Append(descLabel)
-
-	headerInner.Append(headerTextBox)
-	headerCard.Append(headerInner)
-	contentBox.Append(headerCard)
-
-	// ═══════════════════════════════════════════════════════════════════
-	// ADD RULE BUTTON
-	// ═══════════════════════════════════════════════════════════════════
-	addBtnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	addBtnBox.SetHAlign(gtk.AlignEnd)
-
-	addBtn := gtk.NewButtonWithLabel("Add Rule")
+	// Add "Add Rule" button as header suffix
+	addBtn := gtk.NewButton()
 	addBtn.SetIconName("list-add-symbolic")
-	addBtn.AddCSSClass("suggested-action")
+	addBtn.AddCSSClass("flat")
+	addBtn.SetTooltipText("Add Rule")
+	addBtn.SetVAlign(gtk.AlignCenter)
 	addBtn.ConnectClicked(func() {
 		trd.showRuleForm(nil)
 	})
-	addBtnBox.Append(addBtn)
+	trd.rulesGroup.SetHeaderSuffix(addBtn)
 
-	contentBox.Append(addBtnBox)
-
-	// ═══════════════════════════════════════════════════════════════════
-	// RULES LIST
-	// ═══════════════════════════════════════════════════════════════════
-	rulesFrame := gtk.NewFrame("")
-
-	trd.rulesList = gtk.NewListBox()
-	trd.rulesList.AddCSSClass("boxed-list")
-	trd.rulesList.SetSelectionMode(gtk.SelectionNone)
-	rulesFrame.SetChild(trd.rulesList)
-
-	contentBox.Append(rulesFrame)
+	prefsPage.Add(trd.rulesGroup)
 
 	// Load existing rules
 	trd.refreshRulesList()
 
-	scrolled.SetChild(contentBox)
-	rootBox.Append(scrolled)
+	scrolled.SetChild(prefsPage)
+	toolbarView.SetContent(scrolled)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// ACTION BUTTONS
-	// ═══════════════════════════════════════════════════════════════════
-	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBar.SetHAlign(gtk.AlignEnd)
-	buttonBar.SetMarginTop(16)
-	buttonBar.SetMarginBottom(20)
-	buttonBar.SetMarginStart(24)
-	buttonBar.SetMarginEnd(24)
-	buttonBar.AddCSSClass("dialog-action-area")
-
-	closeBtn := gtk.NewButtonWithLabel("Close")
-	closeBtn.AddCSSClass("dialog-button")
-	closeBtn.ConnectClicked(func() {
-		trd.window.Close()
-	})
-	buttonBar.Append(closeBtn)
-
-	rootBox.Append(buttonBar)
-
-	trd.window.SetChild(rootBox)
+	trd.dialog.SetChild(toolbarView)
 }
 
 // refreshRulesList updates the rules list UI.
 func (trd *TrustRulesDialog) refreshRulesList() {
-	// Clear existing rows
-	for trd.rulesList.FirstChild() != nil {
-		trd.rulesList.Remove(trd.rulesList.FirstChild())
-	}
+	// Remove all existing children from the group
+	// We need to iterate through children and remove them
+	// Since PreferencesGroup doesn't have a clear method, we recreate it
+	// Actually, we need to use a different approach - let's use Remove
 
 	// Reload rules from manager
 	if trd.trustManager != nil {
 		trd.rules = trd.trustManager.GetRules()
 	}
 
-	if len(trd.rules) == 0 {
-		// Show empty state
-		emptyBox := gtk.NewBox(gtk.OrientationVertical, 8)
-		emptyBox.SetMarginTop(32)
-		emptyBox.SetMarginBottom(32)
-		emptyBox.SetHAlign(gtk.AlignCenter)
+	// We need to track rows to remove them
+	// PreferencesGroup.Remove takes a widget, so we'll rebuild the group
+	// Create a temporary parent to get the group's parent
+	parent := trd.rulesGroup.Parent()
 
+	// Create new group
+	newGroup := adw.NewPreferencesGroup()
+	newGroup.SetTitle("Network Rules")
+	newGroup.SetDescription("Define how VPN behaves on specific networks")
+
+	// Add "Add Rule" button as header suffix
+	addBtn := gtk.NewButton()
+	addBtn.SetIconName("list-add-symbolic")
+	addBtn.AddCSSClass("flat")
+	addBtn.SetTooltipText("Add Rule")
+	addBtn.SetVAlign(gtk.AlignCenter)
+	addBtn.ConnectClicked(func() {
+		trd.showRuleForm(nil)
+	})
+	newGroup.SetHeaderSuffix(addBtn)
+
+	if len(trd.rules) == 0 {
+		// Show empty state as an action row
+		emptyRow := adw.NewActionRow()
+		emptyRow.SetTitle("No trust rules configured")
+		emptyRow.SetSubtitle("Add rules to automatically manage VPN based on network")
+
+		// Add placeholder icon
 		emptyIcon := gtk.NewImage()
 		emptyIcon.SetFromIconName("network-wireless-symbolic")
-		emptyIcon.SetPixelSize(48)
+		emptyIcon.SetPixelSize(32)
 		emptyIcon.AddCSSClass("dim-label")
-		emptyBox.Append(emptyIcon)
+		emptyRow.AddPrefix(emptyIcon)
 
-		emptyLabel := gtk.NewLabel("No trust rules configured")
-		emptyLabel.AddCSSClass("dim-label")
-		emptyBox.Append(emptyLabel)
-
-		emptyHint := gtk.NewLabel("Add rules to automatically manage VPN based on network")
-		emptyHint.AddCSSClass("dim-label")
-		emptyHint.AddCSSClass("caption")
-		emptyBox.Append(emptyHint)
-
-		row := gtk.NewListBoxRow()
-		row.SetChild(emptyBox)
-		row.SetSelectable(false)
-		trd.rulesList.Append(row)
-		return
+		newGroup.Add(emptyRow)
+	} else {
+		for _, rule := range trd.rules {
+			ruleCopy := rule // Capture for closure
+			row := trd.createRuleRow(&ruleCopy)
+			newGroup.Add(row)
+		}
 	}
 
-	for _, rule := range trd.rules {
-		ruleCopy := rule // Capture for closure
-		row := trd.createRuleRow(&ruleCopy)
-		trd.rulesList.Append(row)
+	// Replace old group with new one
+	if parent != nil {
+		if page, ok := parent.(*adw.PreferencesPage); ok {
+			page.Remove(trd.rulesGroup)
+			page.Add(newGroup)
+		}
 	}
+	trd.rulesGroup = newGroup
 }
 
-// createRuleRow creates a row widget for a trust rule.
-func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *gtk.ListBoxRow {
-	row := gtk.NewListBoxRow()
-	row.SetSelectable(false)
+// createRuleRow creates an AdwActionRow for a trust rule.
+func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *adw.ActionRow {
+	row := adw.NewActionRow()
+	row.SetTitle(rule.SSID)
 
-	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	// Build subtitle with trust level and optional VPN profile
+	subtitle := trd.getTrustLevelLabel(rule.TrustLevel)
+	if rule.VPNProfile != "" {
+		profile, err := trd.mainWindow.app.vpnManager.ProfileManager().Get(rule.VPNProfile)
+		if err == nil {
+			subtitle += fmt.Sprintf(" · VPN: %s", profile.Name)
+		}
+	}
+	row.SetSubtitle(subtitle)
 
-	// Trust level icon
+	// Trust level icon as prefix
 	icon := gtk.NewImage()
 	switch rule.TrustLevel {
 	case trust.TrustLevelTrusted:
@@ -228,58 +185,32 @@ func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *gtk.ListBoxRo
 		icon.AddCSSClass("dim-label")
 	}
 	icon.SetPixelSize(24)
-	box.Append(icon)
+	row.AddPrefix(icon)
 
-	// Rule info
-	infoBox := gtk.NewBox(gtk.OrientationVertical, 2)
-	infoBox.SetHExpand(true)
-
-	// SSID label
-	ssidLabel := gtk.NewLabel(rule.SSID)
-	ssidLabel.SetXAlign(0)
-	ssidLabel.AddCSSClass("heading")
-	infoBox.Append(ssidLabel)
-
-	// Trust level and VPN profile
-	detailText := trd.getTrustLevelLabel(rule.TrustLevel)
-	if rule.VPNProfile != "" {
-		profile, err := trd.mainWindow.app.vpnManager.ProfileManager().Get(rule.VPNProfile)
-		if err == nil {
-			detailText += fmt.Sprintf(" - VPN: %s", profile.Name)
-		}
-	}
-	detailLabel := gtk.NewLabel(detailText)
-	detailLabel.SetXAlign(0)
-	detailLabel.AddCSSClass("dim-label")
-	detailLabel.AddCSSClass("caption")
-	infoBox.Append(detailLabel)
-
-	box.Append(infoBox)
-
-	// Edit button
+	// Edit button as suffix
 	editBtn := gtk.NewButton()
 	editBtn.SetIconName("document-edit-symbolic")
 	editBtn.AddCSSClass("flat")
-	editBtn.AddCSSClass("circular")
+	editBtn.SetVAlign(gtk.AlignCenter)
 	editBtn.SetTooltipText("Edit Rule")
+	ruleCopy := rule // Capture for closure
 	editBtn.ConnectClicked(func() {
-		trd.showRuleForm(rule)
+		trd.showRuleForm(ruleCopy)
 	})
-	box.Append(editBtn)
+	row.AddSuffix(editBtn)
 
-	// Delete button
+	// Delete button as suffix
 	deleteBtn := gtk.NewButton()
 	deleteBtn.SetIconName("edit-delete-symbolic")
 	deleteBtn.AddCSSClass("flat")
-	deleteBtn.AddCSSClass("circular")
+	deleteBtn.SetVAlign(gtk.AlignCenter)
 	deleteBtn.SetTooltipText("Delete Rule")
 	ruleID := rule.ID
 	deleteBtn.ConnectClicked(func() {
 		trd.showDeleteConfirmation(ruleID)
 	})
-	box.Append(deleteBtn)
+	row.AddSuffix(deleteBtn)
 
-	row.SetChild(box)
 	return row
 }
 
@@ -297,76 +228,76 @@ func (trd *TrustRulesDialog) getTrustLevelLabel(level trust.TrustLevel) string {
 	}
 }
 
-// showRuleForm shows the form for adding or editing a rule.
+// showRuleForm shows the form for adding or editing a rule using AdwDialog.
 func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	isEdit := existingRule != nil
 
-	dialog := gtk.NewWindow()
+	formDialog := adw.NewDialog()
 	if isEdit {
-		dialog.SetTitle("Edit Network Rule")
+		formDialog.SetTitle("Edit Network Rule")
 	} else {
-		dialog.SetTitle("Add Network Rule")
+		formDialog.SetTitle("Add Network Rule")
 	}
-	dialog.SetTransientFor(trd.window)
-	dialog.SetModal(true)
-	dialog.SetDefaultSize(400, 0)
-	dialog.SetResizable(false)
+	formDialog.SetContentWidth(400)
 
-	content := gtk.NewBox(gtk.OrientationVertical, 16)
-	content.SetMarginTop(24)
-	content.SetMarginBottom(24)
-	content.SetMarginStart(24)
-	content.SetMarginEnd(24)
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
 
-	// ═══════════════════════════════════════════════════════════════════
-	// SSID FIELD
-	// ═══════════════════════════════════════════════════════════════════
-	ssidLabel := gtk.NewLabel("Network Name (SSID)")
-	ssidLabel.SetXAlign(0)
-	ssidLabel.AddCSSClass("dim-label")
-	content.Append(ssidLabel)
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
 
-	ssidEntry := gtk.NewEntry()
-	ssidEntry.SetPlaceholderText("e.g., HomeWiFi, CoffeeShop")
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
+	cancelBtn.ConnectClicked(func() {
+		formDialog.Close()
+	})
+	headerBar.PackStart(cancelBtn)
+
+	// Save button in header
+	saveBtn := gtk.NewButton()
+	saveBtn.SetLabel("Save")
+	saveBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(saveBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Create form content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+
+	// Form group
+	formGroup := adw.NewPreferencesGroup()
+
+	// SSID Entry Row
+	ssidRow := adw.NewEntryRow()
+	ssidRow.SetTitle("Network Name (SSID)")
 	if isEdit {
-		ssidEntry.SetText(existingRule.SSID)
+		ssidRow.SetText(existingRule.SSID)
 	}
-	content.Append(ssidEntry)
+	formGroup.Add(ssidRow)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// TRUST LEVEL DROPDOWN
-	// ═══════════════════════════════════════════════════════════════════
-	trustLabel := gtk.NewLabel("Trust Level")
-	trustLabel.SetXAlign(0)
-	trustLabel.SetMarginTop(8)
-	trustLabel.AddCSSClass("dim-label")
-	content.Append(trustLabel)
-
+	// Trust Level Combo Row
 	trustLevelIDs := []string{"trusted", "untrusted", "unknown"}
 	trustLevelLabels := []string{"Trusted (VPN disconnects)", "Untrusted (VPN connects)", "Ask Me"}
 	trustLevelModel := gtk.NewStringList(trustLevelLabels)
-	trustLevelDD := gtk.NewDropDown(trustLevelModel, nil)
-	trustLevelDD.SetSelected(1) // Default to untrusted
+
+	trustRow := adw.NewComboRow()
+	trustRow.SetTitle("Trust Level")
+	trustRow.SetSubtitle("How to handle VPN on this network")
+	trustRow.SetModel(trustLevelModel)
+	trustRow.SetSelected(1) // Default to untrusted
 	if isEdit {
 		for i, id := range trustLevelIDs {
 			if id == string(existingRule.TrustLevel) {
-				trustLevelDD.SetSelected(uint(i))
+				trustRow.SetSelected(uint(i))
 				break
 			}
 		}
 	}
-	content.Append(trustLevelDD)
+	formGroup.Add(trustRow)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// VPN PROFILE DROPDOWN (optional)
-	// ═══════════════════════════════════════════════════════════════════
-	vpnLabel := gtk.NewLabel("VPN Profile (optional)")
-	vpnLabel.SetXAlign(0)
-	vpnLabel.SetMarginTop(8)
-	vpnLabel.AddCSSClass("dim-label")
-	content.Append(vpnLabel)
-
-	// Get available profiles
+	// VPN Profile Combo Row
 	profiles := trd.mainWindow.app.vpnManager.ProfileManager().List()
 	profileIDs := []string{""}
 	profileLabels := []string{"Use Default"}
@@ -376,74 +307,50 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	}
 
 	profileModel := gtk.NewStringList(profileLabels)
-	profileDD := gtk.NewDropDown(profileModel, nil)
-	profileDD.SetSelected(0) // Default to "Use Default"
+	profileRow := adw.NewComboRow()
+	profileRow.SetTitle("VPN Profile")
+	profileRow.SetSubtitle("Override the default VPN profile for this network")
+	profileRow.SetModel(profileModel)
+	profileRow.SetSelected(0) // Default to "Use Default"
 	if isEdit && existingRule.VPNProfile != "" {
 		for i, id := range profileIDs {
 			if id == existingRule.VPNProfile {
-				profileDD.SetSelected(uint(i))
+				profileRow.SetSelected(uint(i))
 				break
 			}
 		}
 	}
-	content.Append(profileDD)
+	formGroup.Add(profileRow)
 
-	vpnHintLabel := gtk.NewLabel("Override the default VPN profile for this network")
-	vpnHintLabel.SetXAlign(0)
-	vpnHintLabel.AddCSSClass("dim-label")
-	vpnHintLabel.AddCSSClass("caption")
-	vpnHintLabel.SetWrap(true)
-	vpnHintLabel.SetWrapMode(pango.WrapWordChar)
-	content.Append(vpnHintLabel)
-
-	// ═══════════════════════════════════════════════════════════════════
-	// DESCRIPTION FIELD (optional)
-	// ═══════════════════════════════════════════════════════════════════
-	descLabel := gtk.NewLabel("Description (optional)")
-	descLabel.SetXAlign(0)
-	descLabel.SetMarginTop(8)
-	descLabel.AddCSSClass("dim-label")
-	content.Append(descLabel)
-
-	descEntry := gtk.NewEntry()
-	descEntry.SetPlaceholderText("e.g., Work office network")
+	// Description Entry Row
+	descRow := adw.NewEntryRow()
+	descRow.SetTitle("Description (optional)")
 	if isEdit && existingRule.Description != "" {
-		descEntry.SetText(existingRule.Description)
+		descRow.SetText(existingRule.Description)
 	}
-	content.Append(descEntry)
+	formGroup.Add(descRow)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// BUTTONS
-	// ═══════════════════════════════════════════════════════════════════
-	btnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	btnBox.SetHAlign(gtk.AlignEnd)
-	btnBox.SetMarginTop(16)
+	prefsPage.Add(formGroup)
+	toolbarView.SetContent(prefsPage)
 
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		dialog.Close()
-	})
-	btnBox.Append(cancelBtn)
-
-	saveBtn := gtk.NewButtonWithLabel("Save")
-	saveBtn.AddCSSClass("suggested-action")
+	// Connect save button
 	saveBtn.ConnectClicked(func() {
-		ssid := ssidEntry.Text()
+		ssid := ssidRow.Text()
 		if ssid == "" {
-			trd.showError(dialog, "SSID is required")
+			trd.mainWindow.ShowToast("Network name (SSID) is required", 3)
 			return
 		}
 
 		// Build rule
 		rule := trust.TrustRule{
 			SSID:        ssid,
-			TrustLevel:  trust.TrustLevel(trustLevelIDs[trustLevelDD.Selected()]),
-			Description: descEntry.Text(),
+			TrustLevel:  trust.TrustLevel(trustLevelIDs[trustRow.Selected()]),
+			Description: descRow.Text(),
 			Created:     time.Now(),
 		}
 
 		// Set VPN profile if selected
-		profileIdx := profileDD.Selected()
+		profileIdx := profileRow.Selected()
 		if int(profileIdx) < len(profileIDs) && profileIDs[profileIdx] != "" {
 			rule.VPNProfile = profileIDs[profileIdx]
 		}
@@ -460,21 +367,17 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 		}
 
 		if err != nil {
-			trd.showError(dialog, "Failed to save rule: "+err.Error())
+			trd.mainWindow.ShowToast("Failed to save rule: "+err.Error(), 5)
 			return
 		}
 
-		dialog.Close()
+		formDialog.Close()
 		trd.refreshRulesList()
-		trd.mainWindow.SetStatus("Trust rule saved")
+		trd.mainWindow.ShowToast("Trust rule saved", 2)
 	})
-	btnBox.Append(saveBtn)
 
-	content.Append(btnBox)
-
-	dialog.SetChild(content)
-	dialog.SetVisible(true)
-	ssidEntry.GrabFocus()
+	formDialog.SetChild(toolbarView)
+	formDialog.Present(&trd.mainWindow.window.Widget)
 }
 
 // showDeleteConfirmation shows a confirmation dialog before deleting a rule.
@@ -484,107 +387,33 @@ func (trd *TrustRulesDialog) showDeleteConfirmation(ruleID string) {
 		return
 	}
 
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Delete Rule")
-	dialog.SetTransientFor(trd.window)
-	dialog.SetModal(true)
-	dialog.SetDefaultSize(350, 0)
-	dialog.SetResizable(false)
+	// Use AdwAlertDialog for confirmation
+	alertDialog := adw.NewAlertDialog(
+		fmt.Sprintf("Delete rule for \"%s\"?", rule.SSID),
+		"This action cannot be undone. The VPN will no longer automatically manage connections for this network.",
+	)
 
-	content := gtk.NewBox(gtk.OrientationVertical, 16)
-	content.SetMarginTop(24)
-	content.SetMarginBottom(24)
-	content.SetMarginStart(24)
-	content.SetMarginEnd(24)
+	alertDialog.AddResponse("cancel", "Cancel")
+	alertDialog.AddResponse("delete", "Delete")
+	alertDialog.SetResponseAppearance("delete", adw.ResponseDestructive)
+	alertDialog.SetDefaultResponse("cancel")
+	alertDialog.SetCloseResponse("cancel")
 
-	// Warning icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-warning-symbolic")
-	icon.SetPixelSize(48)
-	icon.SetHAlign(gtk.AlignCenter)
-	content.Append(icon)
-
-	// Message
-	msgLabel := gtk.NewLabel(fmt.Sprintf("Delete rule for \"%s\"?", rule.SSID))
-	msgLabel.AddCSSClass("title-3")
-	msgLabel.SetHAlign(gtk.AlignCenter)
-	content.Append(msgLabel)
-
-	hintLabel := gtk.NewLabel("This action cannot be undone.")
-	hintLabel.AddCSSClass("dim-label")
-	hintLabel.SetHAlign(gtk.AlignCenter)
-	content.Append(hintLabel)
-
-	// Buttons
-	btnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	btnBox.SetHAlign(gtk.AlignCenter)
-	btnBox.SetMarginTop(16)
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		dialog.Close()
-	})
-	btnBox.Append(cancelBtn)
-
-	deleteBtn := gtk.NewButtonWithLabel("Delete")
-	deleteBtn.AddCSSClass("destructive-action")
-	deleteBtn.ConnectClicked(func() {
-		if err := trd.trustManager.RemoveRule(ruleID); err != nil {
-			trd.showError(dialog, "Failed to delete rule: "+err.Error())
-			return
+	alertDialog.ConnectResponse(func(response string) {
+		if response == "delete" {
+			if err := trd.trustManager.RemoveRule(ruleID); err != nil {
+				trd.mainWindow.ShowToast("Failed to delete rule: "+err.Error(), 5)
+				return
+			}
+			trd.refreshRulesList()
+			trd.mainWindow.ShowToast("Trust rule deleted", 2)
 		}
-		dialog.Close()
-		trd.refreshRulesList()
-		trd.mainWindow.SetStatus("Trust rule deleted")
 	})
-	btnBox.Append(deleteBtn)
 
-	content.Append(btnBox)
-
-	dialog.SetChild(content)
-	dialog.SetVisible(true)
-}
-
-// showError shows an error message in a simple dialog.
-func (trd *TrustRulesDialog) showError(parent *gtk.Window, message string) {
-	errorDialog := gtk.NewWindow()
-	errorDialog.SetTitle("Error")
-	errorDialog.SetTransientFor(parent)
-	errorDialog.SetModal(true)
-	errorDialog.SetDefaultSize(300, 0)
-	errorDialog.SetResizable(false)
-
-	content := gtk.NewBox(gtk.OrientationVertical, 12)
-	content.SetMarginTop(24)
-	content.SetMarginBottom(24)
-	content.SetMarginStart(24)
-	content.SetMarginEnd(24)
-
-	icon := gtk.NewImage()
-	icon.SetFromIconName("dialog-error-symbolic")
-	icon.SetPixelSize(48)
-	icon.SetHAlign(gtk.AlignCenter)
-	content.Append(icon)
-
-	msgLabel := gtk.NewLabel(message)
-	msgLabel.SetWrap(true)
-	msgLabel.SetWrapMode(pango.WrapWordChar)
-	msgLabel.SetHAlign(gtk.AlignCenter)
-	content.Append(msgLabel)
-
-	okBtn := gtk.NewButtonWithLabel("OK")
-	okBtn.SetHAlign(gtk.AlignCenter)
-	okBtn.SetMarginTop(8)
-	okBtn.ConnectClicked(func() {
-		errorDialog.Close()
-	})
-	content.Append(okBtn)
-
-	errorDialog.SetChild(content)
-	errorDialog.SetVisible(true)
+	alertDialog.Present(&trd.mainWindow.window.Widget)
 }
 
 // Show displays the trust rules dialog.
 func (trd *TrustRulesDialog) Show() {
-	trd.window.SetVisible(true)
+	trd.dialog.Present(&trd.mainWindow.window.Widget)
 }

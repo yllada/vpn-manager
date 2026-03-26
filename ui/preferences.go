@@ -1,34 +1,38 @@
 // Package ui provides the graphical user interface for VPN Manager.
 // This file contains the PreferencesDialog component for application settings.
-// Designed following GTK4/libadwaita HIG for a professional, modern look.
+// Uses AdwPreferencesDialog for modern GNOME HIG-compliant preferences.
 package ui
 
 import (
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
-// PreferencesDialog represents the preferences dialog.
+// PreferencesDialog represents the preferences dialog using AdwPreferencesDialog.
 type PreferencesDialog struct {
-	window                *gtk.Window
-	mainWindow            *MainWindow
-	config                *app.Config
-	notifySwitch          *gtk.Switch
-	reconnectSwitch       *gtk.Switch
-	themeDropDown         *gtk.DropDown
-	themeIDs              []string
-	tailscaleSwitch       *gtk.Switch
-	tailscaleRoutesSwitch *gtk.Switch
-	tailscaleDNSSwitch    *gtk.Switch
+	dialog     *adw.PreferencesDialog
+	mainWindow *MainWindow
+	config     *app.Config
+
+	// General settings
+	reconnectRow *adw.SwitchRow
+	notifyRow    *adw.SwitchRow
+	themeRow     *adw.ComboRow
+	themeIDs     []string
+
+	// Tailscale settings
+	tailscaleEnabledRow *adw.SwitchRow
+	tailscaleRoutesRow  *adw.SwitchRow
+	tailscaleDNSRow     *adw.SwitchRow
 
 	// Network Trust settings
-	trustEnabledSwitch     *gtk.Switch
-	trustDefaultActionDD   *gtk.DropDown
-	trustDefaultActionIDs  []string
-	trustBlockOnFailSwitch *gtk.Switch
-	trustEthernetSwitch    *gtk.Switch
+	trustEnabledRow       *adw.SwitchRow
+	trustDefaultActionRow *adw.ComboRow
+	trustBlockOnFailRow   *adw.SwitchRow
+	trustEthernetRow      *adw.SwitchRow
+	trustDefaultActionIDs []string
 }
 
 // NewPreferencesDialog creates a new preferences dialog.
@@ -42,352 +46,226 @@ func NewPreferencesDialog(mainWindow *MainWindow) *PreferencesDialog {
 	return pd
 }
 
-// build constructs the dialog UI with a modern, professional design.
+// build constructs the dialog UI using AdwPreferencesDialog.
 func (pd *PreferencesDialog) build() {
-	pd.window = gtk.NewWindow()
-	pd.window.SetTitle("Settings")
-	pd.window.SetTransientFor(&pd.mainWindow.window.Window)
-	pd.window.SetModal(true)
-	pd.window.SetDefaultSize(500, 580)
-	pd.window.SetResizable(false)
-
-	// Root container
-	rootBox := gtk.NewBox(gtk.OrientationVertical, 0)
-
-	// Scrollable content for smaller screens
-	scrolled := gtk.NewScrolledWindow()
-	scrolled.SetVExpand(true)
-	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
-
-	// Main content container
-	mainBox := gtk.NewBox(gtk.OrientationVertical, 20)
-	mainBox.SetMarginTop(24)
-	mainBox.SetMarginBottom(16)
-	mainBox.SetMarginStart(24)
-	mainBox.SetMarginEnd(24)
+	pd.dialog = adw.NewPreferencesDialog()
+	pd.dialog.SetSearchEnabled(true)
 
 	// ═══════════════════════════════════════════════════════════════════
-	// CONNECTION SECTION
+	// GENERAL PAGE
 	// ═══════════════════════════════════════════════════════════════════
-	connectionSection := pd.createSection("Connection", "network-vpn-symbolic")
-	connectionCard := pd.createCard()
+	generalPage := pd.buildGeneralPage()
+	pd.dialog.Add(generalPage)
+
+	// ═══════════════════════════════════════════════════════════════════
+	// NETWORK TRUST PAGE
+	// ═══════════════════════════════════════════════════════════════════
+	trustPage := pd.buildNetworkTrustPage()
+	pd.dialog.Add(trustPage)
+
+	// ═══════════════════════════════════════════════════════════════════
+	// VPN PROVIDERS PAGE
+	// ═══════════════════════════════════════════════════════════════════
+	providersPage := pd.buildProvidersPage()
+	pd.dialog.Add(providersPage)
+
+	// Connect close signal to save preferences
+	pd.dialog.ConnectClosed(func() {
+		pd.savePreferences()
+	})
+}
+
+// buildGeneralPage creates the General preferences page.
+func (pd *PreferencesDialog) buildGeneralPage() *adw.PreferencesPage {
+	page := adw.NewPreferencesPage()
+	page.SetTitle("General")
+	page.SetIconName("preferences-system-symbolic")
+	page.SetName("general")
+
+	// ─────────────────────────────────────────────────────────────────────
+	// CONNECTION GROUP
+	// ─────────────────────────────────────────────────────────────────────
+	connectionGroup := adw.NewPreferencesGroup()
+	connectionGroup.SetTitle("Connection")
+	connectionGroup.SetDescription("VPN connection behavior")
 
 	// Auto-reconnect row
-	pd.reconnectSwitch = gtk.NewSwitch()
-	pd.reconnectSwitch.SetActive(pd.config.AutoReconnect)
-	pd.reconnectSwitch.SetVAlign(gtk.AlignCenter)
-	reconnectRow := pd.createSettingRow(
-		"Auto-reconnect",
-		"Automatically reconnect if connection is lost",
-		pd.reconnectSwitch,
-	)
-	connectionCard.Append(reconnectRow)
+	pd.reconnectRow = adw.NewSwitchRow()
+	pd.reconnectRow.SetTitle("Auto-reconnect")
+	pd.reconnectRow.SetSubtitle("Automatically reconnect if connection is lost")
+	pd.reconnectRow.SetActive(pd.config.AutoReconnect)
+	connectionGroup.Add(pd.reconnectRow)
 
-	connectionSection.Append(connectionCard)
-	mainBox.Append(connectionSection)
+	page.Add(connectionGroup)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// NOTIFICATIONS SECTION
-	// ═══════════════════════════════════════════════════════════════════
-	notifySection := pd.createSection("Notifications", "preferences-system-notifications-symbolic")
-	notifyCard := pd.createCard()
+	// ─────────────────────────────────────────────────────────────────────
+	// NOTIFICATIONS GROUP
+	// ─────────────────────────────────────────────────────────────────────
+	notifyGroup := adw.NewPreferencesGroup()
+	notifyGroup.SetTitle("Notifications")
+	notifyGroup.SetDescription("Desktop notification preferences")
 
 	// Notifications row
-	pd.notifySwitch = gtk.NewSwitch()
-	pd.notifySwitch.SetActive(pd.config.ShowNotifications)
-	pd.notifySwitch.SetVAlign(gtk.AlignCenter)
-	notifyRow := pd.createSettingRow(
-		"Connection Alerts",
-		"Show notifications when VPN connects or disconnects",
-		pd.notifySwitch,
-	)
-	notifyCard.Append(notifyRow)
+	pd.notifyRow = adw.NewSwitchRow()
+	pd.notifyRow.SetTitle("Connection Alerts")
+	pd.notifyRow.SetSubtitle("Show notifications when VPN connects or disconnects")
+	pd.notifyRow.SetActive(pd.config.ShowNotifications)
+	notifyGroup.Add(pd.notifyRow)
 
-	notifySection.Append(notifyCard)
-	mainBox.Append(notifySection)
+	page.Add(notifyGroup)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// APPEARANCE SECTION
-	// ═══════════════════════════════════════════════════════════════════
-	appearSection := pd.createSection("Appearance", "preferences-desktop-theme-symbolic")
-	appearCard := pd.createCard()
+	// ─────────────────────────────────────────────────────────────────────
+	// APPEARANCE GROUP
+	// ─────────────────────────────────────────────────────────────────────
+	appearGroup := adw.NewPreferencesGroup()
+	appearGroup.SetTitle("Appearance")
+	appearGroup.SetDescription("Visual customization options")
 
-	// Theme row with dropdown
+	// Theme row with combo
 	pd.themeIDs = []string{"auto", "light", "dark"}
 	themeLabels := []string{"System Default", "Light", "Dark"}
 	themeModel := gtk.NewStringList(themeLabels)
-	pd.themeDropDown = gtk.NewDropDown(themeModel, nil)
-	pd.themeDropDown.SetSelected(pd.findThemeIndex(pd.config.Theme))
-	pd.themeDropDown.SetVAlign(gtk.AlignCenter)
-	pd.themeDropDown.AddCSSClass("flat")
 
-	themeRow := pd.createSettingRow(
-		"Theme",
-		"Choose the visual appearance of the application",
-		pd.themeDropDown,
-	)
-	appearCard.Append(themeRow)
+	pd.themeRow = adw.NewComboRow()
+	pd.themeRow.SetTitle("Theme")
+	pd.themeRow.SetSubtitle("Choose the visual appearance of the application")
+	pd.themeRow.SetModel(themeModel)
+	pd.themeRow.SetSelected(pd.findThemeIndex(pd.config.Theme))
+	appearGroup.Add(pd.themeRow)
 
-	appearSection.Append(appearCard)
-	mainBox.Append(appearSection)
+	page.Add(appearGroup)
 
-	// ═══════════════════════════════════════════════════════════════════
-	// TAILSCALE SECTION
-	// ═══════════════════════════════════════════════════════════════════
-	tailscaleSection := pd.createSection("Tailscale", "network-vpn-symbolic")
-	tailscaleCard := pd.createCard()
+	return page
+}
 
-	// Enable Tailscale row
-	pd.tailscaleSwitch = gtk.NewSwitch()
-	pd.tailscaleSwitch.SetActive(pd.config.Tailscale.Enabled)
-	pd.tailscaleSwitch.SetVAlign(gtk.AlignCenter)
-	tailscaleRow := pd.createSettingRow(
-		"Enable Tailscale",
-		"Show Tailscale controls in the main window",
-		pd.tailscaleSwitch,
-	)
-	tailscaleCard.Append(tailscaleRow)
-	tailscaleCard.Append(pd.createSeparator())
-
-	// Accept Routes row
-	pd.tailscaleRoutesSwitch = gtk.NewSwitch()
-	pd.tailscaleRoutesSwitch.SetActive(pd.config.Tailscale.AcceptRoutes)
-	pd.tailscaleRoutesSwitch.SetVAlign(gtk.AlignCenter)
-	tailscaleRoutesRow := pd.createSettingRow(
-		"Accept Routes",
-		"Accept subnet routes advertised by other nodes",
-		pd.tailscaleRoutesSwitch,
-	)
-	tailscaleCard.Append(tailscaleRoutesRow)
-	tailscaleCard.Append(pd.createSeparator())
-
-	// Accept DNS row
-	pd.tailscaleDNSSwitch = gtk.NewSwitch()
-	pd.tailscaleDNSSwitch.SetActive(pd.config.Tailscale.AcceptDNS)
-	pd.tailscaleDNSSwitch.SetVAlign(gtk.AlignCenter)
-	tailscaleDNSRow := pd.createSettingRow(
-		"Accept DNS",
-		"Use DNS settings from your Tailscale network",
-		pd.tailscaleDNSSwitch,
-	)
-	tailscaleCard.Append(tailscaleDNSRow)
-
-	tailscaleSection.Append(tailscaleCard)
-	mainBox.Append(tailscaleSection)
-
-	// ═══════════════════════════════════════════════════════════════════
-	// NETWORK TRUST SECTION
-	// ═══════════════════════════════════════════════════════════════════
-	trustSection := pd.createSection("Network Trust", "network-wireless-symbolic")
-	trustCard := pd.createCard()
+// buildNetworkTrustPage creates the Network Trust preferences page.
+func (pd *PreferencesDialog) buildNetworkTrustPage() *adw.PreferencesPage {
+	page := adw.NewPreferencesPage()
+	page.SetTitle("Network Trust")
+	page.SetIconName("network-wireless-symbolic")
+	page.SetName("trust")
 
 	// Get trust config from VPN manager
 	trustCfg := pd.mainWindow.app.vpnManager.TrustConfig()
 
-	// Enable Network Trust row
-	pd.trustEnabledSwitch = gtk.NewSwitch()
-	if trustCfg != nil {
-		pd.trustEnabledSwitch.SetActive(trustCfg.Enabled)
-	}
-	pd.trustEnabledSwitch.SetVAlign(gtk.AlignCenter)
-	trustEnabledRow := pd.createSettingRow(
-		"Enable Network Trust",
-		"Automatically manage VPN based on network trust levels",
-		pd.trustEnabledSwitch,
-	)
-	trustCard.Append(trustEnabledRow)
-	trustCard.Append(pd.createSeparator())
+	// ─────────────────────────────────────────────────────────────────────
+	// TRUST SETTINGS GROUP
+	// ─────────────────────────────────────────────────────────────────────
+	trustGroup := adw.NewPreferencesGroup()
+	trustGroup.SetTitle("Trust Settings")
+	trustGroup.SetDescription("Configure automatic VPN behavior based on network trust")
 
-	// Default action dropdown row
+	// Enable Network Trust row
+	pd.trustEnabledRow = adw.NewSwitchRow()
+	pd.trustEnabledRow.SetTitle("Enable Network Trust")
+	pd.trustEnabledRow.SetSubtitle("Automatically manage VPN based on network trust levels")
+	if trustCfg != nil {
+		pd.trustEnabledRow.SetActive(trustCfg.Enabled)
+	}
+	trustGroup.Add(pd.trustEnabledRow)
+
+	// Default action row
 	pd.trustDefaultActionIDs = []string{"prompt", "connect", "none"}
 	trustActionLabels := []string{"Ask Me", "Auto-Connect VPN", "Do Nothing"}
 	trustActionModel := gtk.NewStringList(trustActionLabels)
-	pd.trustDefaultActionDD = gtk.NewDropDown(trustActionModel, nil)
-	if trustCfg != nil {
-		pd.trustDefaultActionDD.SetSelected(pd.findTrustActionIndex(string(trustCfg.DefaultAction)))
-	}
-	pd.trustDefaultActionDD.SetVAlign(gtk.AlignCenter)
-	pd.trustDefaultActionDD.AddCSSClass("flat")
 
-	trustActionRow := pd.createSettingRow(
-		"Unknown Networks",
-		"Action when connecting to a network without a trust rule",
-		pd.trustDefaultActionDD,
-	)
-	trustCard.Append(trustActionRow)
-	trustCard.Append(pd.createSeparator())
+	pd.trustDefaultActionRow = adw.NewComboRow()
+	pd.trustDefaultActionRow.SetTitle("Unknown Networks")
+	pd.trustDefaultActionRow.SetSubtitle("Action when connecting to a network without a trust rule")
+	pd.trustDefaultActionRow.SetModel(trustActionModel)
+	if trustCfg != nil {
+		pd.trustDefaultActionRow.SetSelected(pd.findTrustActionIndex(string(trustCfg.DefaultAction)))
+	}
+	trustGroup.Add(pd.trustDefaultActionRow)
 
 	// Block on failure row
-	pd.trustBlockOnFailSwitch = gtk.NewSwitch()
+	pd.trustBlockOnFailRow = adw.NewSwitchRow()
+	pd.trustBlockOnFailRow.SetTitle("Block on VPN Failure")
+	pd.trustBlockOnFailRow.SetSubtitle("Activate kill switch if VPN fails on untrusted network")
 	if trustCfg != nil {
-		pd.trustBlockOnFailSwitch.SetActive(trustCfg.BlockOnUntrustedFailure)
+		pd.trustBlockOnFailRow.SetActive(trustCfg.BlockOnUntrustedFailure)
 	}
-	pd.trustBlockOnFailSwitch.SetVAlign(gtk.AlignCenter)
-	trustBlockRow := pd.createSettingRow(
-		"Block on VPN Failure",
-		"Activate kill switch if VPN fails on untrusted network",
-		pd.trustBlockOnFailSwitch,
-	)
-	trustCard.Append(trustBlockRow)
-	trustCard.Append(pd.createSeparator())
+	trustGroup.Add(pd.trustBlockOnFailRow)
 
 	// Trust ethernet by default row
-	pd.trustEthernetSwitch = gtk.NewSwitch()
+	pd.trustEthernetRow = adw.NewSwitchRow()
+	pd.trustEthernetRow.SetTitle("Trust Wired Networks")
+	pd.trustEthernetRow.SetSubtitle("Automatically trust ethernet connections")
 	if trustCfg != nil {
-		pd.trustEthernetSwitch.SetActive(trustCfg.TrustEthernetByDefault)
+		pd.trustEthernetRow.SetActive(trustCfg.TrustEthernetByDefault)
 	}
-	pd.trustEthernetSwitch.SetVAlign(gtk.AlignCenter)
-	trustEthernetRow := pd.createSettingRow(
-		"Trust Wired Networks",
-		"Automatically trust ethernet connections",
-		pd.trustEthernetSwitch,
-	)
-	trustCard.Append(trustEthernetRow)
-	trustCard.Append(pd.createSeparator())
+	trustGroup.Add(pd.trustEthernetRow)
 
-	// Manage Rules button row
-	manageRulesRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	manageRulesRow.SetMarginTop(14)
-	manageRulesRow.SetMarginBottom(14)
-	manageRulesRow.SetMarginStart(16)
-	manageRulesRow.SetMarginEnd(16)
+	page.Add(trustGroup)
 
-	manageRulesTextBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	manageRulesTextBox.SetHExpand(true)
+	// ─────────────────────────────────────────────────────────────────────
+	// TRUST RULES GROUP
+	// ─────────────────────────────────────────────────────────────────────
+	rulesGroup := adw.NewPreferencesGroup()
+	rulesGroup.SetTitle("Network Rules")
+	rulesGroup.SetDescription("Configure trust levels for specific networks")
 
-	manageRulesTitleLabel := gtk.NewLabel("Network Rules")
-	manageRulesTitleLabel.SetXAlign(0)
-	manageRulesTitleLabel.AddCSSClass("settings-title")
-	manageRulesTextBox.Append(manageRulesTitleLabel)
+	// Manage Rules action row
+	manageRulesRow := adw.NewActionRow()
+	manageRulesRow.SetTitle("Manage Rules")
+	manageRulesRow.SetSubtitle("Add, edit, or remove network trust rules")
+	manageRulesRow.SetActivatable(true)
 
-	manageRulesDescLabel := gtk.NewLabel("Configure trust levels for specific networks")
-	manageRulesDescLabel.SetXAlign(0)
-	manageRulesDescLabel.AddCSSClass("dim-label")
-	manageRulesDescLabel.AddCSSClass("caption")
-	manageRulesDescLabel.SetWrap(true)
-	manageRulesDescLabel.SetWrapMode(pango.WrapWordChar)
-	manageRulesTextBox.Append(manageRulesDescLabel)
+	// Add chevron icon to indicate navigation
+	chevron := gtk.NewImage()
+	chevron.SetFromIconName("go-next-symbolic")
+	chevron.AddCSSClass("dim-label")
+	manageRulesRow.AddSuffix(chevron)
 
-	manageRulesRow.Append(manageRulesTextBox)
-
-	manageRulesBtn := gtk.NewButtonWithLabel("Manage Rules")
-	manageRulesBtn.SetVAlign(gtk.AlignCenter)
-	manageRulesBtn.AddCSSClass("suggested-action")
-	manageRulesBtn.ConnectClicked(func() {
+	manageRulesRow.ConnectActivated(func() {
 		dialog := NewTrustRulesDialog(pd.mainWindow)
 		dialog.Show()
 	})
-	manageRulesRow.Append(manageRulesBtn)
+	rulesGroup.Add(manageRulesRow)
 
-	trustCard.Append(manageRulesRow)
+	page.Add(rulesGroup)
 
-	trustSection.Append(trustCard)
-	mainBox.Append(trustSection)
-
-	scrolled.SetChild(mainBox)
-	rootBox.Append(scrolled)
-
-	// ═══════════════════════════════════════════════════════════════════
-	// ACTION BUTTONS
-	// ═══════════════════════════════════════════════════════════════════
-	buttonBar := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	buttonBar.SetHAlign(gtk.AlignEnd)
-	buttonBar.SetMarginTop(16)
-	buttonBar.SetMarginBottom(20)
-	buttonBar.SetMarginStart(24)
-	buttonBar.SetMarginEnd(24)
-	buttonBar.AddCSSClass("dialog-action-area")
-
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	cancelBtn.AddCSSClass("dialog-button")
-	cancelBtn.ConnectClicked(func() {
-		pd.window.Close()
-	})
-	buttonBar.Append(cancelBtn)
-
-	saveBtn := gtk.NewButtonWithLabel("Save")
-	saveBtn.AddCSSClass("suggested-action")
-	saveBtn.AddCSSClass("dialog-button")
-	saveBtn.ConnectClicked(func() {
-		pd.savePreferences()
-		pd.window.Close()
-	})
-	buttonBar.Append(saveBtn)
-
-	rootBox.Append(buttonBar)
-
-	pd.window.SetChild(rootBox)
+	return page
 }
 
-// createSection creates a section with icon and title.
-func (pd *PreferencesDialog) createSection(title string, iconName string) *gtk.Box {
-	section := gtk.NewBox(gtk.OrientationVertical, 8)
+// buildProvidersPage creates the VPN Providers preferences page.
+func (pd *PreferencesDialog) buildProvidersPage() *adw.PreferencesPage {
+	page := adw.NewPreferencesPage()
+	page.SetTitle("VPN Providers")
+	page.SetIconName("network-vpn-symbolic")
+	page.SetName("providers")
 
-	// Header with icon
-	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	// ─────────────────────────────────────────────────────────────────────
+	// TAILSCALE GROUP
+	// ─────────────────────────────────────────────────────────────────────
+	tailscaleGroup := adw.NewPreferencesGroup()
+	tailscaleGroup.SetTitle("Tailscale")
+	tailscaleGroup.SetDescription("Tailscale mesh VPN settings")
 
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(18)
-	icon.AddCSSClass("dim-label")
-	headerBox.Append(icon)
+	// Enable Tailscale row
+	pd.tailscaleEnabledRow = adw.NewSwitchRow()
+	pd.tailscaleEnabledRow.SetTitle("Enable Tailscale")
+	pd.tailscaleEnabledRow.SetSubtitle("Show Tailscale controls in the main window")
+	pd.tailscaleEnabledRow.SetActive(pd.config.Tailscale.Enabled)
+	tailscaleGroup.Add(pd.tailscaleEnabledRow)
 
-	label := gtk.NewLabel(title)
-	label.SetXAlign(0)
-	label.AddCSSClass("heading")
-	label.AddCSSClass("dim-label")
-	headerBox.Append(label)
+	// Accept Routes row
+	pd.tailscaleRoutesRow = adw.NewSwitchRow()
+	pd.tailscaleRoutesRow.SetTitle("Accept Routes")
+	pd.tailscaleRoutesRow.SetSubtitle("Accept subnet routes advertised by other nodes")
+	pd.tailscaleRoutesRow.SetActive(pd.config.Tailscale.AcceptRoutes)
+	tailscaleGroup.Add(pd.tailscaleRoutesRow)
 
-	section.Append(headerBox)
+	// Accept DNS row
+	pd.tailscaleDNSRow = adw.NewSwitchRow()
+	pd.tailscaleDNSRow.SetTitle("Accept DNS")
+	pd.tailscaleDNSRow.SetSubtitle("Use DNS settings from your Tailscale network")
+	pd.tailscaleDNSRow.SetActive(pd.config.Tailscale.AcceptDNS)
+	tailscaleGroup.Add(pd.tailscaleDNSRow)
 
-	return section
-}
+	page.Add(tailscaleGroup)
 
-// createCard creates a styled card container for settings.
-func (pd *PreferencesDialog) createCard() *gtk.Box {
-	card := gtk.NewBox(gtk.OrientationVertical, 0)
-	card.AddCSSClass("card")
-	card.AddCSSClass("preferences-card")
-	return card
-}
-
-// createSettingRow creates a row with title, description, and widget.
-func (pd *PreferencesDialog) createSettingRow(title string, description string, widget gtk.Widgetter) *gtk.Box {
-	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	row.SetMarginTop(14)
-	row.SetMarginBottom(14)
-	row.SetMarginStart(16)
-	row.SetMarginEnd(16)
-
-	// Text container (title + description)
-	textBox := gtk.NewBox(gtk.OrientationVertical, 4)
-	textBox.SetHExpand(true)
-
-	titleLabel := gtk.NewLabel(title)
-	titleLabel.SetXAlign(0)
-	titleLabel.AddCSSClass("settings-title")
-	textBox.Append(titleLabel)
-
-	descLabel := gtk.NewLabel(description)
-	descLabel.SetXAlign(0)
-	descLabel.AddCSSClass("dim-label")
-	descLabel.AddCSSClass("caption")
-	descLabel.SetWrap(true)
-	descLabel.SetWrapMode(pango.WrapWordChar)
-	textBox.Append(descLabel)
-
-	row.Append(textBox)
-	row.Append(widget)
-
-	return row
-}
-
-// createSeparator creates a styled separator for cards.
-func (pd *PreferencesDialog) createSeparator() *gtk.Separator {
-	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
-	sep.SetMarginStart(16)
-	sep.SetMarginEnd(16)
-	return sep
+	return page
 }
 
 // findThemeIndex returns the index of a theme ID, or 0 if not found.
@@ -412,15 +290,17 @@ func (pd *PreferencesDialog) findTrustActionIndex(actionID string) uint {
 
 // savePreferences saves the current preferences to the config file.
 func (pd *PreferencesDialog) savePreferences() {
-	pd.config.ShowNotifications = pd.notifySwitch.Active()
-	pd.config.AutoReconnect = pd.reconnectSwitch.Active()
+	// General settings
+	pd.config.ShowNotifications = pd.notifyRow.Active()
+	pd.config.AutoReconnect = pd.reconnectRow.Active()
 
 	// Tailscale settings
-	pd.config.Tailscale.Enabled = pd.tailscaleSwitch.Active()
-	pd.config.Tailscale.AcceptRoutes = pd.tailscaleRoutesSwitch.Active()
-	pd.config.Tailscale.AcceptDNS = pd.tailscaleDNSSwitch.Active()
+	pd.config.Tailscale.Enabled = pd.tailscaleEnabledRow.Active()
+	pd.config.Tailscale.AcceptRoutes = pd.tailscaleRoutesRow.Active()
+	pd.config.Tailscale.AcceptDNS = pd.tailscaleDNSRow.Active()
 
-	themeIdx := pd.themeDropDown.Selected()
+	// Theme
+	themeIdx := pd.themeRow.Selected()
 	if int(themeIdx) < len(pd.themeIDs) {
 		newTheme := pd.themeIDs[themeIdx]
 		pd.config.Theme = newTheme
@@ -429,7 +309,7 @@ func (pd *PreferencesDialog) savePreferences() {
 	}
 
 	if err := pd.config.Save(); err != nil {
-		pd.mainWindow.showError("Error", "Could not save preferences: "+err.Error())
+		pd.mainWindow.ShowToast("Could not save preferences: "+err.Error(), 5)
 		return
 	}
 
@@ -437,32 +317,32 @@ func (pd *PreferencesDialog) savePreferences() {
 	trustCfg := pd.mainWindow.app.vpnManager.TrustConfig()
 	if trustCfg != nil {
 		// Save enabled state and toggle NetworkMonitor if changed
-		newEnabled := pd.trustEnabledSwitch.Active()
+		newEnabled := pd.trustEnabledRow.Active()
 		if trustCfg.Enabled != newEnabled {
 			if err := pd.mainWindow.app.vpnManager.SetTrustEnabled(newEnabled); err != nil {
-				pd.mainWindow.showError("Error", "Could not save trust settings: "+err.Error())
+				pd.mainWindow.ShowToast("Could not save trust settings: "+err.Error(), 5)
 				return
 			}
 		}
 
 		// Save other trust settings
-		trustActionIdx := pd.trustDefaultActionDD.Selected()
+		trustActionIdx := pd.trustDefaultActionRow.Selected()
 		if int(trustActionIdx) < len(pd.trustDefaultActionIDs) {
 			trustCfg.DefaultAction = trust.DefaultAction(pd.trustDefaultActionIDs[trustActionIdx])
 		}
-		trustCfg.BlockOnUntrustedFailure = pd.trustBlockOnFailSwitch.Active()
-		trustCfg.TrustEthernetByDefault = pd.trustEthernetSwitch.Active()
+		trustCfg.BlockOnUntrustedFailure = pd.trustBlockOnFailRow.Active()
+		trustCfg.TrustEthernetByDefault = pd.trustEthernetRow.Active()
 
 		if err := trustCfg.Save(); err != nil {
-			pd.mainWindow.showError("Error", "Could not save trust settings: "+err.Error())
+			pd.mainWindow.ShowToast("Could not save trust settings: "+err.Error(), 5)
 			return
 		}
 	}
 
-	pd.mainWindow.SetStatus("Settings saved")
+	pd.mainWindow.ShowToast("Settings saved", 2)
 }
 
 // Show displays the preferences dialog.
 func (pd *PreferencesDialog) Show() {
-	pd.window.SetVisible(true)
+	pd.dialog.Present(&pd.mainWindow.window.Widget)
 }
