@@ -317,3 +317,138 @@ func (ks *KillSwitch) Status() string {
 
 	return fmt.Sprintf("Inactive (mode: %s)", ks.mode)
 }
+
+// EnableBlockAll enables the kill switch to block all non-local traffic.
+// This is used when VPN connection fails on an untrusted network and
+// BlockOnUntrustedFailure is enabled. It blocks all outbound traffic
+// except local networks and DNS.
+func (ks *KillSwitch) EnableBlockAll() error {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	if !ks.IsAvailable() {
+		return fmt.Errorf("no firewall backend available")
+	}
+
+	// Use loopback as the "allowed" interface (effectively blocking all real traffic)
+	ks.vpnIface = "lo"
+
+	var err error
+	switch ks.backend {
+	case "iptables":
+		err = ks.enableBlockAllIptables()
+	case "nftables":
+		err = ks.enableBlockAllNftables()
+	default:
+		err = fmt.Errorf("unknown backend: %s", ks.backend)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	ks.enabled = true
+	log.Printf("KillSwitch: Block-all mode enabled (backend: %s)", ks.backend)
+	return nil
+}
+
+// enableBlockAllIptables creates iptables rules to block all outbound traffic.
+func (ks *KillSwitch) enableBlockAllIptables() error {
+	// Create custom chain
+	if err := ks.runCmd("iptables", "-N", ks.chainName); err != nil {
+		// Chain might already exist, try flushing
+		_ = ks.runCmd("iptables", "-F", ks.chainName)
+	}
+
+	// Allow established connections (needed for existing connections to close gracefully)
+	if err := ks.runCmd("iptables", "-A", ks.chainName, "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("iptables: failed to add established rule: %w", err)
+	}
+
+	// Allow loopback
+	if err := ks.runCmd("iptables", "-A", ks.chainName, "-o", "lo", "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("iptables: failed to add loopback rule: %w", err)
+	}
+
+	// Allow local networks (RFC 1918)
+	for _, ip := range ks.allowedIPs {
+		if ip == "" {
+			continue
+		}
+		if err := ks.runCmd("iptables", "-A", ks.chainName, "-d", ip, "-j", "ACCEPT"); err != nil {
+			log.Printf("KillSwitch: Warning: failed to add allowed IP %s: %v", ip, err)
+		}
+	}
+
+	// Allow DNS (essential for showing error messages, etc.)
+	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT")
+	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT")
+
+	// Block everything else
+	if err := ks.runCmd("iptables", "-A", ks.chainName, "-j", "DROP"); err != nil {
+		return fmt.Errorf("iptables: failed to add drop rule: %w", err)
+	}
+
+	// Insert chain into OUTPUT
+	if err := ks.runCmd("iptables", "-I", "OUTPUT", "1", "-j", ks.chainName); err != nil {
+		return fmt.Errorf("iptables: failed to insert chain: %w", err)
+	}
+
+	return nil
+}
+
+// enableBlockAllNftables creates nftables rules to block all outbound traffic.
+func (ks *KillSwitch) enableBlockAllNftables() error {
+	// Create table (ignore error - table might already exist)
+	_ = ks.runCmd("nft", "add", "table", "inet", NftablesTableName)
+
+	// Delete existing chain if present
+	_ = ks.runCmd("nft", "delete", "chain", "inet", NftablesTableName, "output")
+
+	// Create output chain with drop policy
+	chainCmd := fmt.Sprintf("add chain inet %s output { type filter hook output priority 0; policy drop; }", NftablesTableName)
+	if err := ks.runCmd("nft", chainCmd); err != nil {
+		return fmt.Errorf("nftables: failed to create output chain: %w", err)
+	}
+
+	// Allow established connections
+	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+		"ct", "state", "established,related", "accept"); err != nil {
+		return fmt.Errorf("nftables: failed to add established rule: %w", err)
+	}
+
+	// Allow loopback
+	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+		"oifname", "lo", "accept"); err != nil {
+		return fmt.Errorf("nftables: failed to add loopback rule: %w", err)
+	}
+
+	// Allow specific IPs (local networks)
+	for _, ip := range ks.allowedIPs {
+		if ip == "" {
+			continue
+		}
+		_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+			"ip", "daddr", ip, "accept")
+	}
+
+	// Allow DNS
+	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+		"udp", "dport", DNSPortStr, "accept")
+	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+		"tcp", "dport", DNSPortStr, "accept")
+
+	return nil
+}
+
+// ForceDisable disables the kill switch regardless of mode.
+// This is used when the user explicitly wants to disable the kill switch
+// after it was activated due to untrusted network failure.
+func (ks *KillSwitch) ForceDisable() error {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	// Reset mode to off before disabling
+	ks.mode = KillSwitchOff
+	return ks.disable()
+}

@@ -67,6 +67,11 @@ const (
 
 	// Network events
 	EventNetworkChanged EventType = "network.changed"
+
+	// Trust events
+	EventTrustPrompt      EventType = "trust.prompt"       // Unknown network, user action needed
+	EventEvilTwinWarning  EventType = "trust.eviltwin"     // Potential evil twin detected
+	EventTrustActionTaken EventType = "trust.action.taken" // Action executed based on trust evaluation
 )
 
 // Event represents an event in the system.
@@ -166,6 +171,47 @@ type NetworkChangedData struct {
 	Interface string
 	// Previous is the previous network info (nil on startup).
 	Previous *NetworkChangedData
+}
+
+// TrustPromptData contains data for trust prompt events.
+// Emitted when an unknown network is detected and user action is required.
+type TrustPromptData struct {
+	// SSID is the network name.
+	SSID string
+	// BSSID is the access point MAC address.
+	BSSID string
+	// Type is the connection type.
+	Type string
+	// DefaultProfileID is the suggested VPN profile to use.
+	DefaultProfileID string
+}
+
+// EvilTwinWarningData contains data for evil twin warning events.
+// Emitted when a known SSID is seen with an unknown BSSID.
+type EvilTwinWarningData struct {
+	// SSID is the network name.
+	SSID string
+	// NewBSSID is the previously unknown BSSID detected.
+	NewBSSID string
+	// KnownBSSIDs are the previously known BSSIDs for this SSID.
+	KnownBSSIDs []string
+	// MatchedRuleID is the ID of the trust rule that matched (if any).
+	MatchedRuleID string
+}
+
+// TrustActionTakenData contains data for trust action events.
+// Emitted when an automatic trust action is executed.
+type TrustActionTakenData struct {
+	// Action is the action that was taken (e.g., "connect-vpn", "disconnect-vpn").
+	Action string
+	// SSID is the network that triggered the action.
+	SSID string
+	// ProfileID is the VPN profile used (if any).
+	ProfileID string
+	// Success indicates if the action completed successfully.
+	Success bool
+	// Error contains error details if Success is false.
+	Error string
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
