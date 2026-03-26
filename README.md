@@ -16,10 +16,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/screen/cap.png" alt="VPN Manager Screenshot" width="600">
+  <img src="assets/screen/image.png" alt="VPN Manager Screenshot" width="600">
 </p>
 
-<!-- TODO: Screenshots need updating for v1.8.0 libadwaita UI redesign -->
 
 ---
 
