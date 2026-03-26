@@ -4,18 +4,19 @@
 package ui
 
 import (
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
 // PanelConfig holds configuration for creating panel components.
 type PanelConfig struct {
-	Title           string // Panel title (e.g., "OpenVPN", "WireGuard", "Tailscale")
-	IconName        string // Icon name for header (default: "network-vpn-symbolic")
-	StatusIconName  string // Initial status icon (default: "network-offline-symbolic")
-	StatusText      string // Initial status text (default: "Disconnected")
-	StatusGap       int    // Gap between status icon and label (default: 8)
-	Margin          int    // Margin for the main box (default: 12)
-	Spacing         int    // Spacing between children (default: 12)
+	Title          string // Panel title (e.g., "OpenVPN", "WireGuard", "Tailscale")
+	IconName       string // Icon name for header (default: "network-vpn-symbolic")
+	StatusIconName string // Initial status icon (default: "network-offline-symbolic")
+	StatusText     string // Initial status text (default: "Disconnected")
+	StatusGap      int    // Gap between status icon and label (default: 8)
+	Margin         int    // Margin for the main box (default: 12)
+	Spacing        int    // Spacing between children (default: 12)
 }
 
 // DefaultPanelConfig returns a PanelConfig with sensible defaults.
@@ -125,22 +126,12 @@ func CreateActionButton(iconName, tooltip string) *gtk.Button {
 	return btn
 }
 
-// CreateEmptyState creates a placeholder for when no profiles exist.
-func CreateEmptyState(message, iconName string) *gtk.Box {
-	emptyBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	emptyBox.SetHAlign(gtk.AlignCenter)
-	emptyBox.SetVAlign(gtk.AlignCenter)
-	emptyBox.SetVExpand(true)
-
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(64)
-	icon.AddCSSClass("dim-label")
-	emptyBox.Append(icon)
-
-	label := gtk.NewLabel(message)
-	label.AddCSSClass("dim-label")
-	emptyBox.Append(label)
-
-	return emptyBox
+// CreateEmptyState creates an AdwStatusPage placeholder for when no profiles exist.
+// Returns an AdwStatusPage with icon, title (message), and optional description.
+func CreateEmptyState(message, iconName string) *adw.StatusPage {
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName(iconName)
+	statusPage.SetTitle(message)
+	statusPage.SetVExpand(true)
+	return statusPage
 }

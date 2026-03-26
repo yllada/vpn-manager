@@ -143,31 +143,28 @@ func (wp *WireGuardPanel) loadProfiles() {
 	}
 }
 
-// showEmptyState displays the empty state placeholder.
+// showEmptyState displays the empty state placeholder using AdwStatusPage.
 func (wp *WireGuardPanel) showEmptyState() {
-	emptyRow := gtk.NewListBoxRow()
-	emptyBox := gtk.NewBox(gtk.OrientationVertical, 8)
-	emptyBox.SetMarginTop(24)
-	emptyBox.SetMarginBottom(24)
-	emptyBox.SetHAlign(gtk.AlignCenter)
+	// Create AdwStatusPage for modern, consistent empty state
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("network-vpn-symbolic")
+	statusPage.SetTitle("No WireGuard Profiles")
+	statusPage.SetDescription("Import your WireGuard configuration files to get started")
 
-	emptyIcon := gtk.NewImage()
-	emptyIcon.SetFromIconName("folder-symbolic")
-	emptyIcon.SetPixelSize(48)
-	emptyIcon.AddCSSClass("dim-label")
-	emptyBox.Append(emptyIcon)
-
-	emptyLabel := gtk.NewLabel("No WireGuard profiles")
-	emptyLabel.AddCSSClass("dim-label")
-	emptyBox.Append(emptyLabel)
-
+	// Add an import button as the child
 	importBtn := gtk.NewButton()
 	importBtn.SetLabel("Import .conf file")
 	importBtn.AddCSSClass("suggested-action")
+	importBtn.AddCSSClass("pill")
+	importBtn.SetHAlign(gtk.AlignCenter)
 	importBtn.ConnectClicked(wp.onImportProfile)
-	emptyBox.Append(importBtn)
+	statusPage.SetChild(importBtn)
 
-	emptyRow.SetChild(emptyBox)
+	emptyRow := gtk.NewListBoxRow()
+	emptyRow.SetChild(statusPage)
+	emptyRow.SetSelectable(false)
+	emptyRow.SetActivatable(false)
+
 	wp.listBox.Append(emptyRow)
 }
 

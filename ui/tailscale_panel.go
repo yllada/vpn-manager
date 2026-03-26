@@ -552,22 +552,17 @@ func (tp *TailscalePanel) updatePeers() {
 	}
 }
 
-// showEmptyPeersState shows a placeholder when no peers are connected.
+// showEmptyPeersState shows a placeholder when no peers are connected using AdwStatusPage.
 func (tp *TailscalePanel) showEmptyPeersState() {
-	// Create an ActionRow to show empty state
-	emptyRow := adw.NewActionRow()
-	emptyRow.SetTitle("No devices found")
-	emptyRow.SetSubtitle("Connect other devices to your tailnet")
-
-	icon := gtk.NewImage()
-	icon.SetFromIconName("network-workgroup-symbolic")
-	icon.SetPixelSize(32)
-	icon.AddCSSClass("dim-label")
-	emptyRow.AddPrefix(icon)
+	// Create AdwStatusPage for modern, consistent empty state
+	statusPage := adw.NewStatusPage()
+	statusPage.SetIconName("network-workgroup-symbolic")
+	statusPage.SetTitle("No Devices Found")
+	statusPage.SetDescription("Connect other devices to your tailnet to see them here")
 
 	// Store in peerRows with special key
 	tp.peerRows["__empty__"] = nil
-	tp.peersGroup.Add(emptyRow)
+	tp.peersGroup.Add(statusPage)
 }
 
 // createPeerRow creates an AdwExpanderRow for a peer.
