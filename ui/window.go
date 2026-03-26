@@ -17,17 +17,18 @@ import (
 
 // MainWindow represents the main application window.
 type MainWindow struct {
-	app            *Application
-	window         *adw.ApplicationWindow
-	toastOverlay   *adw.ToastOverlay
-	headerBar      *gtk.HeaderBar
-	openvpnPanel   *OpenVPNPanel
-	tailscalePanel *TailscalePanel
-	wireguardPanel *WireGuardPanel
-	stack          *gtk.Stack
-	stackSwitcher  *gtk.StackSwitcher
-	statusBar      *gtk.Box
-	statusLabel    *gtk.Label
+	app             *Application
+	window          *adw.ApplicationWindow
+	toastOverlay    *adw.ToastOverlay
+	headerBar       *adw.HeaderBar
+	openvpnPanel    *OpenVPNPanel
+	tailscalePanel  *TailscalePanel
+	wireguardPanel  *WireGuardPanel
+	viewStack       *adw.ViewStack
+	viewSwitcher    *adw.ViewSwitcher
+	viewSwitcherBar *adw.ViewSwitcherBar
+	statusBar       *gtk.Box
+	statusLabel     *gtk.Label
 }
 
 // NewMainWindow creates a new main window.
@@ -55,8 +56,8 @@ func NewMainWindow(app *Application) *MainWindow {
 
 // createLayout creates the window layout.
 func (mw *MainWindow) createLayout() {
-	// Create GTK4 header bar
-	mw.headerBar = gtk.NewHeaderBar()
+	// Create AdwHeaderBar for proper libadwaita integration
+	mw.headerBar = adw.NewHeaderBar()
 
 	// Menu button
 	menuButton := gtk.NewMenuButton()
@@ -68,20 +69,16 @@ func (mw *MainWindow) createLayout() {
 	menu := mw.createMenu()
 	menuButton.SetMenuModel(menu)
 
-	// Create main container for content (stack + status bar)
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Create AdwViewStack for tab content
+	mw.viewStack = adw.NewViewStack()
 
-	// Create stack for multiple providers
-	mw.stack = gtk.NewStack()
-	mw.stack.SetTransitionType(gtk.StackTransitionTypeSlideLeftRight)
-	mw.stack.SetTransitionDuration(200)
-
-	// OpenVPN page
+	// OpenVPN page with icon
 	mw.openvpnPanel = NewOpenVPNPanel(mw)
 	scrolledOpenVPN := gtk.NewScrolledWindow()
 	scrolledOpenVPN.SetVExpand(true)
 	scrolledOpenVPN.SetChild(mw.openvpnPanel.GetWidget())
-	mw.stack.AddTitled(scrolledOpenVPN, "openvpn", "OpenVPN")
+	openvpnPage := mw.viewStack.AddTitledWithIcon(scrolledOpenVPN, "openvpn", "OpenVPN", "network-vpn-symbolic")
+	openvpnPage.SetUseUnderline(true)
 
 	// Tailscale page (only if available)
 	mw.createTailscalePage()
@@ -89,12 +86,20 @@ func (mw *MainWindow) createLayout() {
 	// WireGuard page (only if available)
 	mw.createWireGuardPage()
 
-	// Stack switcher in header bar (centered)
-	mw.stackSwitcher = gtk.NewStackSwitcher()
-	mw.stackSwitcher.SetStack(mw.stack)
-	mw.headerBar.SetTitleWidget(mw.stackSwitcher)
+	// Create ViewSwitcher for header bar (wide screens)
+	mw.viewSwitcher = adw.NewViewSwitcher()
+	mw.viewSwitcher.SetStack(mw.viewStack)
+	mw.viewSwitcher.SetPolicy(adw.ViewSwitcherPolicyWide)
+	mw.headerBar.SetTitleWidget(mw.viewSwitcher)
 
-	contentBox.Append(mw.stack)
+	// Create ViewSwitcherBar for bottom (narrow screens)
+	mw.viewSwitcherBar = adw.NewViewSwitcherBar()
+	mw.viewSwitcherBar.SetStack(mw.viewStack)
+	mw.viewSwitcherBar.SetReveal(false) // Hidden by default, revealed on narrow screens
+
+	// Create main container for content (viewstack + status bar)
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	contentBox.Append(mw.viewStack)
 
 	// Status bar
 	mw.createStatusBar()
@@ -105,6 +110,7 @@ func (mw *MainWindow) createLayout() {
 	toolbarView := adw.NewToolbarView()
 	toolbarView.AddTopBar(mw.headerBar)
 	toolbarView.SetContent(contentBox)
+	toolbarView.AddBottomBar(mw.viewSwitcherBar)
 
 	// Wrap in ToastOverlay for in-app notifications
 	mw.toastOverlay = adw.NewToastOverlay()
@@ -112,6 +118,9 @@ func (mw *MainWindow) createLayout() {
 
 	// Set window content using the toast overlay
 	mw.window.SetContent(mw.toastOverlay)
+
+	// Setup responsive breakpoint for ViewSwitcher visibility
+	mw.setupResponsiveLayout()
 
 	// Load profiles
 	mw.openvpnPanel.LoadProfiles()
@@ -151,7 +160,8 @@ func (mw *MainWindow) createTailscalePage() {
 	scrolledTailscale.SetVExpand(true)
 	scrolledTailscale.SetChild(mw.tailscalePanel.GetWidget())
 
-	mw.stack.AddTitled(scrolledTailscale, "tailscale", "Tailscale")
+	tailscalePage := mw.viewStack.AddTitledWithIcon(scrolledTailscale, "tailscale", "Tailscale", "network-server-symbolic")
+	tailscalePage.SetUseUnderline(true)
 
 	// Start periodic updates
 	mw.tailscalePanel.StartUpdates()
@@ -177,7 +187,8 @@ func (mw *MainWindow) createWireGuardPage() {
 	scrolledWireGuard.SetVExpand(true)
 	scrolledWireGuard.SetChild(mw.wireguardPanel.GetWidget())
 
-	mw.stack.AddTitled(scrolledWireGuard, "wireguard", "WireGuard")
+	wireguardPage := mw.viewStack.AddTitledWithIcon(scrolledWireGuard, "wireguard", "WireGuard", "network-wired-symbolic")
+	wireguardPage.SetUseUnderline(true)
 
 	// Start periodic updates
 	mw.wireguardPanel.StartUpdates()
@@ -287,6 +298,30 @@ func (mw *MainWindow) createStatusBar() {
 	statusIcon.SetFromIconName("network-vpn-symbolic")
 	statusIcon.SetPixelSize(16)
 	mw.statusBar.Append(statusIcon)
+}
+
+// setupResponsiveLayout configures breakpoints for responsive ViewSwitcher behavior.
+// On narrow screens (<550px), hide the ViewSwitcher from header and show ViewSwitcherBar at bottom.
+// On wide screens (>=550px), show ViewSwitcher in header and hide ViewSwitcherBar.
+func (mw *MainWindow) setupResponsiveLayout() {
+	// Create breakpoint condition for narrow screens
+	condition := adw.BreakpointConditionParse("max-width: 550sp")
+	breakpoint := adw.NewBreakpoint(condition)
+
+	// When breakpoint applies (narrow): hide header switcher, show bottom bar
+	breakpoint.ConnectApply(func() {
+		mw.viewSwitcher.SetVisible(false)
+		mw.viewSwitcherBar.SetReveal(true)
+	})
+
+	// When breakpoint unapplies (wide): show header switcher, hide bottom bar
+	breakpoint.ConnectUnapply(func() {
+		mw.viewSwitcher.SetVisible(true)
+		mw.viewSwitcherBar.SetReveal(false)
+	})
+
+	// Add breakpoint to window
+	mw.window.AddBreakpoint(breakpoint)
 }
 
 // Show displays the window.
