@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/yllada/vpn-manager/app"
 )
 
 // Client wraps the tailscale CLI.
@@ -37,14 +39,7 @@ func findTailscaleBinary() (string, error) {
 	}
 
 	// Check common locations
-	commonPaths := []string{
-		"/usr/bin/tailscale",
-		"/usr/local/bin/tailscale",
-		"/snap/bin/tailscale",
-		"/usr/sbin/tailscale",
-	}
-
-	for _, p := range commonPaths {
+	for _, p := range app.TailscaleBinaryPaths {
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}

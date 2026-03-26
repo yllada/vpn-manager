@@ -56,16 +56,12 @@ type HealthConfig struct {
 // DefaultHealthConfig returns sensible defaults for health checking.
 func DefaultHealthConfig() HealthConfig {
 	return HealthConfig{
-		CheckInterval:        30 * time.Second,
-		FailureThreshold:     3,
+		CheckInterval:        DefaultHealthCheckInterval,
+		FailureThreshold:     DefaultHealthFailureThreshold,
 		AutoReconnect:        true,
-		ReconnectDelay:       5 * time.Second,
-		MaxReconnectAttempts: 5,
-		TestHosts: []string{
-			"8.8.8.8:53",        // Google DNS
-			"1.1.1.1:53",        // Cloudflare DNS
-			"208.67.222.222:53", // OpenDNS
-		},
+		ReconnectDelay:       DefaultReconnectDelay,
+		MaxReconnectAttempts: DefaultMaxReconnectAttempts,
+		TestHosts:            DefaultTestHosts,
 	}
 }
 
@@ -241,7 +237,7 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 		health.ConsecutiveFails++
 		health.Latency = 0
 		app.LogWarn("Health check failed for %s (attempt %d/%d): %v",
-			conn.Profile.Name, health.ConsecutiveFails, hc.config.FailureThreshold, err)
+			conn.Profile.Name, health.ConsecutiveFails, DefaultHealthFailureThreshold, err)
 
 		if health.ConsecutiveFails >= hc.config.FailureThreshold {
 			health.State = HealthUnhealthy
@@ -282,7 +278,7 @@ func (hc *HealthChecker) testConnectivity() (time.Duration, error) {
 	// Try each test host until one succeeds
 	for _, host := range hc.config.TestHosts {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", host, 5*time.Second)
+		conn, err := net.DialTimeout("tcp", host, DefaultHealthCheckTimeout)
 		if err == nil {
 			_ = conn.Close()
 			return time.Since(start), nil
@@ -383,7 +379,7 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 	}
 
 	// Small delay after disconnect
-	time.Sleep(1 * time.Second)
+	time.Sleep(PostDisconnectDelay)
 
 	// Attempt to reconnect with retrieved credentials
 	if err := hc.manager.Connect(profile.ID, profile.Username, password); err != nil {

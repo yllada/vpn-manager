@@ -40,14 +40,9 @@ type KillSwitch struct {
 // NewKillSwitch creates a new KillSwitch instance.
 func NewKillSwitch() *KillSwitch {
 	ks := &KillSwitch{
-		mode:      KillSwitchOff,
-		chainName: "VPN_KILLSWITCH",
-		allowedIPs: []string{
-			"127.0.0.0/8",    // Loopback
-			"192.168.0.0/16", // Private network (LAN)
-			"10.0.0.0/8",     // Private network
-			"172.16.0.0/12",  // Private network
-		},
+		mode:       KillSwitchOff,
+		chainName:  KillSwitchChainName,
+		allowedIPs: PrivateNetworkRanges,
 	}
 	ks.detectBackend()
 	return ks
@@ -206,8 +201,8 @@ func (ks *KillSwitch) enableIptables(vpnIface string, allowedIPs []string) error
 	}
 
 	// Allow DNS (important for VPN server resolution)
-	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", "53", "-j", "ACCEPT")
-	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", "53", "-j", "ACCEPT")
+	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT")
+	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT")
 
 	// Block everything else
 	if err := ks.runCmd("iptables", "-A", ks.chainName, "-j", "DROP"); err != nil {
@@ -237,29 +232,29 @@ func (ks *KillSwitch) disableIptables() error {
 // enableNftables creates nftables rules for the kill switch.
 func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error {
 	// Create table and chain (ignore error - table might already exist)
-	_ = ks.runCmd("nft", "add", "table", "inet", "vpn_killswitch")
+	_ = ks.runCmd("nft", "add", "table", "inet", NftablesTableName)
 
 	// Create output chain with drop policy
-	chainCmd := "add chain inet vpn_killswitch output { type filter hook output priority 0; policy drop; }"
+	chainCmd := fmt.Sprintf("add chain inet %s output { type filter hook output priority 0; policy drop; }", NftablesTableName)
 	if err := ks.runCmd("nft", chainCmd); err != nil {
 		// Try to flush if exists
-		_ = ks.runCmd("nft", "flush", "chain", "inet", "vpn_killswitch", "output")
+		_ = ks.runCmd("nft", "flush", "chain", "inet", NftablesTableName, "output")
 	}
 
 	// Allow established connections
-	if err := ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
 		"ct", "state", "established,related", "accept"); err != nil {
 		return fmt.Errorf("nftables: failed to add established rule: %w", err)
 	}
 
 	// Allow loopback
-	if err := ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
 		"oifname", "lo", "accept"); err != nil {
 		return fmt.Errorf("nftables: failed to add loopback rule: %w", err)
 	}
 
 	// Allow VPN interface
-	if err := ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
 		"oifname", vpnIface, "accept"); err != nil {
 		return fmt.Errorf("nftables: failed to add VPN interface rule: %w", err)
 	}
@@ -269,15 +264,15 @@ func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error
 		if ip == "" {
 			continue
 		}
-		_ = ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
+		_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
 			"ip", "daddr", ip, "accept")
 	}
 
 	// Allow DNS
-	_ = ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
-		"udp", "dport", "53", "accept")
-	_ = ks.runCmd("nft", "add", "rule", "inet", "vpn_killswitch", "output",
-		"tcp", "dport", "53", "accept")
+	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+		"udp", "dport", DNSPortStr, "accept")
+	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
+		"tcp", "dport", DNSPortStr, "accept")
 
 	return nil
 }
@@ -285,7 +280,7 @@ func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error
 // disableNftables removes nftables rules for the kill switch.
 func (ks *KillSwitch) disableNftables() error {
 	// Delete the entire table
-	return ks.runCmd("nft", "delete", "table", "inet", "vpn_killswitch")
+	return ks.runCmd("nft", "delete", "table", "inet", NftablesTableName)
 }
 
 // AddAllowedIP adds an IP to the kill switch whitelist.

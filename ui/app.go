@@ -143,6 +143,7 @@ func (a *Application) ApplyTheme(theme string) {
 	default: // "auto" - follow system theme, don't override
 		// Reset to system default by not forcing any preference
 		// GTK will use the system's color scheme
+		settings.ResetProperty("gtk-application-prefer-dark-theme")
 	}
 }
 

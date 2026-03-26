@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yllada/vpn-manager/app"
 )
 
 // DNSProtectionMode defines how DNS protection is handled.
@@ -75,7 +77,7 @@ type DNSProtection struct {
 func NewDNSProtection() *DNSProtection {
 	dp := &DNSProtection{
 		config:     DefaultDNSConfig(),
-		backupPath: "/tmp/vpn-manager-resolv.conf.backup",
+		backupPath: app.ResolvConfBackupPath,
 	}
 	dp.detectBackend()
 	return dp
@@ -128,7 +130,7 @@ func (dp *DNSProtection) Enable(vpnInterface string, vpnDNS []string) error {
 
 	if len(vpnDNS) == 0 {
 		// Use sensible defaults if VPN doesn't provide DNS
-		vpnDNS = []string{"10.0.0.1"} // VPN gateway typically provides DNS
+		vpnDNS = []string{DefaultVPNGatewayDNS} // VPN gateway typically provides DNS
 	}
 
 	dp.vpnDNS = vpnDNS
@@ -260,7 +262,7 @@ func (dp *DNSProtection) disableNetworkManager() error {
 // ═══════════════════════════════════════════════════════════════════════════
 
 func (dp *DNSProtection) enableResolvConf(dnsServers []string) error {
-	resolvPath := "/etc/resolv.conf"
+	resolvPath := app.ResolvConfPath
 
 	// Backup current resolv.conf
 	if err := dp.backupResolvConf(resolvPath); err != nil {
@@ -276,7 +278,7 @@ func (dp *DNSProtection) enableResolvConf(dnsServers []string) error {
 	}
 
 	// Write with elevated privileges
-	tmpFile := "/tmp/vpn-manager-resolv.conf"
+	tmpFile := app.TempResolvConfPath
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write temp resolv.conf: %w", err)
 	}
@@ -297,7 +299,7 @@ func (dp *DNSProtection) disableResolvConf() error {
 	}
 
 	// Restore backup
-	cmd := exec.Command("pkexec", "cp", dp.backupPath, "/etc/resolv.conf")
+	cmd := exec.Command("pkexec", "cp", dp.backupPath, app.ResolvConfPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to restore resolv.conf: %w: %s", err, output)
 	}
@@ -339,8 +341,8 @@ func (dp *DNSProtection) blockAlternativeDNS() error {
 	// Block DNS-over-TLS (port 853) using iptables
 	if dp.config.BlockDNSOverTLS {
 		cmds := [][]string{
-			{"iptables", "-A", "OUTPUT", "-p", "tcp", "--dport", "853", "-j", "DROP"},
-			{"iptables", "-A", "OUTPUT", "-p", "udp", "--dport", "853", "-j", "DROP"},
+			{"iptables", "-A", "OUTPUT", "-p", "tcp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
+			{"iptables", "-A", "OUTPUT", "-p", "udp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
 		}
 		for _, args := range cmds {
 			cmd := exec.Command("pkexec", args...)
@@ -360,8 +362,8 @@ func (dp *DNSProtection) blockAlternativeDNS() error {
 func (dp *DNSProtection) unblockAlternativeDNS() error {
 	// Remove our iptables rules
 	cmds := [][]string{
-		{"iptables", "-D", "OUTPUT", "-p", "tcp", "--dport", "853", "-j", "DROP"},
-		{"iptables", "-D", "OUTPUT", "-p", "udp", "--dport", "853", "-j", "DROP"},
+		{"iptables", "-D", "OUTPUT", "-p", "tcp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
+		{"iptables", "-D", "OUTPUT", "-p", "udp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
 	}
 	for _, args := range cmds {
 		cmd := exec.Command("pkexec", args...)
@@ -422,8 +424,15 @@ func (dp *DNSProtection) TestForLeaks() (*DNSLeakTestResult, error) {
 				break
 			}
 		}
-		// Allow localhost
-		if !found && current != "127.0.0.53" && current != "127.0.0.1" {
+		// Allow localhost addresses (systemd-resolved stub, standard localhost)
+		isLocalhost := false
+		for _, local := range LocalhostAddresses {
+			if current == local {
+				isLocalhost = true
+				break
+			}
+		}
+		if !found && !isLocalhost {
 			result.LeakDetected = true
 			result.Message = fmt.Sprintf("DNS server %s is not in VPN DNS list", current)
 			return result, nil
@@ -457,7 +466,7 @@ func (dp *DNSProtection) getCurrentDNS() ([]string, error) {
 		}
 
 	default:
-		content, err := os.ReadFile("/etc/resolv.conf")
+		content, err := os.ReadFile(app.ResolvConfPath)
 		if err != nil {
 			return nil, err
 		}

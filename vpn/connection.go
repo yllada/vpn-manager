@@ -145,7 +145,7 @@ func (m *Manager) Disconnect(profileID string) error {
 	}
 
 	// Wait a moment for cleanup
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(CleanupDelay)
 
 	// Disable kill switch if no other connections remain
 	if len(m.connections) <= 1 {
@@ -241,10 +241,10 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 	}
 
 	// Monitor connection status
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(StatusCheckInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(60 * time.Second)
+	timeout := time.After(NMConnectionTimeout)
 
 	for {
 		select {
@@ -381,7 +381,7 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	// (pkexec can add significant delay before OpenVPN actually starts)
 	if credFile != "" {
 		app.SafeGoWithName("vpn-cleanup-credentials", func() {
-			time.Sleep(30 * time.Second)
+			time.Sleep(CredentialCleanupDelay)
 			if err := os.Remove(credFile); err == nil {
 				app.LogDebug("vpn", "Credentials file removed for security")
 			}
