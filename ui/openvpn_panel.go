@@ -814,7 +814,9 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 				_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
 
 				// Disconnect failed connection first (done outside GTK thread)
-				_ = pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID)
+				if err := pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
+					app.LogError("openvpn_panel", "Disconnect after auth failure failed: %v", err)
+				}
 
 				// All GTK operations must be done on the main thread
 				glib.IdleAdd(func() {

@@ -188,6 +188,11 @@ func (t *TrayIndicator) onExit() {
 
 // SetConnected updates the tray to show connected state.
 func (t *TrayIndicator) SetConnected(profileName string) {
+	// Guard: Don't reset if already connected to the same profile
+	if t.connectedProfile == profileName && t.uptimeTicker != nil {
+		return
+	}
+
 	systray.SetIcon(iconConnected)
 	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected: %s", profileName))
 
@@ -292,14 +297,21 @@ func (t *TrayIndicator) stopUptimeCounter() {
 // disconnectCurrent disconnects the active VPN connection.
 func (t *TrayIndicator) disconnectCurrent() {
 	profiles := t.app.vpnManager.ProfileManager().List()
+	allDisconnected := true
+
 	for _, profile := range profiles {
 		if conn, exists := t.app.vpnManager.GetConnection(profile.ID); exists {
 			status := conn.GetStatus()
 			if status == vpn.StatusConnected || status == vpn.StatusConnecting {
 				profileID := profile.ID
-				_ = t.app.vpnManager.Disconnect(profileID)
+				if err := t.app.vpnManager.Disconnect(profileID); err != nil {
+					app.LogError("tray", "Disconnect failed for %s: %v", profile.Name, err)
+					allDisconnected = false
+					// Don't update UI to disconnected - the VPN is still running!
+					continue
+				}
 
-				// Update main window UI
+				// Update main window UI only on successful disconnect
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.openvpnPanel != nil {
 						t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusDisconnected)
@@ -310,13 +322,16 @@ func (t *TrayIndicator) disconnectCurrent() {
 		}
 	}
 
-	t.SetDisconnected()
+	// Only update tray to disconnected if ALL disconnects succeeded
+	if allDisconnected {
+		t.SetDisconnected()
 
-	glib.IdleAdd(func() {
-		if t.app.window != nil {
-			t.app.window.SetStatus("Disconnected")
-		}
-	})
+		glib.IdleAdd(func() {
+			if t.app.window != nil {
+				t.app.window.SetStatus("Disconnected")
+			}
+		})
+	}
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -536,7 +551,9 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 			if needsOTP {
 				failedProfile.RequiresOTP = true
 				_ = t.app.vpnManager.ProfileManager().Save()
-				_ = t.app.vpnManager.Disconnect(failedProfile.ID)
+				if err := t.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
+					app.LogError("tray", "Disconnect after auth failure failed: %v", err)
+				}
 				t.SetDisconnected()
 
 				glib.IdleAdd(func() {

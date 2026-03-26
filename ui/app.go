@@ -72,6 +72,12 @@ func (a *Application) onActivate() {
 	// Load custom CSS styles
 	LoadStyles()
 
+	// Check for orphaned VPN on startup (before showing window)
+	if detected, info := a.vpnManager.DetectOrphanedVPN(); detected {
+		app.LogWarn("app", "Orphaned VPN detected on startup: interface=%s, ip=%s", info.Interface, info.IPAddress)
+		// TODO: Show dialog asking user what to do (kill it or adopt it)
+	}
+
 	// Create main window
 	a.window = NewMainWindow(a)
 	a.window.Show()
