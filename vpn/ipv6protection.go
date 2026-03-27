@@ -386,6 +386,8 @@ func (ip6 *IPv6Protection) blockIPv6Nftables() error {
 }
 
 // unblockIPv6Nftables removes nftables IPv6 blocking rules.
+//
+//nolint:unused // Kept for symmetry with blockIPv6Nftables and future nftables support
 func (ip6 *IPv6Protection) unblockIPv6Nftables() error {
 	// Delete the entire table - cleanest approach
 	return ip6.runNftCmd("delete", "table", "inet", nftablesIPv6TableName)

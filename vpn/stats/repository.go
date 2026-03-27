@@ -268,7 +268,7 @@ func (r *Repository) GetSessionRecords(sessionID string) ([]TrafficRecord, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query session records: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []TrafficRecord
 	for rows.Next() {
@@ -356,7 +356,7 @@ func (r *Repository) GetRecentSessions(limit int) ([]SessionSummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query recent sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var summaries []SessionSummary
 	for rows.Next() {
@@ -408,7 +408,7 @@ func (r *Repository) GetDailySummaries(days int) ([]DailySummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query daily summaries: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var summaries []DailySummary
 	for rows.Next() {
@@ -455,7 +455,7 @@ func (r *Repository) GetDailySummariesForProfile(profileID string, days int) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to query daily summaries for profile: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var summaries []DailySummary
 	for rows.Next() {

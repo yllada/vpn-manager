@@ -948,7 +948,7 @@ func writeSystemdServiceFile(path, content string) error {
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	// Move to final location with pkexec
 	cmd := exec.Command("pkexec", "mv", tmpPath, path)

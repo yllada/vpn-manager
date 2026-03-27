@@ -151,15 +151,15 @@ func NewBandwidthGraph() *BandwidthGraph {
 	}
 
 	// Set minimum size
-	bg.DrawingArea.SetSizeRequest(200, 80)
-	bg.DrawingArea.SetVExpand(false)
-	bg.DrawingArea.SetHExpand(true)
+	bg.SetSizeRequest(200, 80)
+	bg.SetVExpand(false)
+	bg.SetHExpand(true)
 
 	// Add CSS class for styling
-	bg.DrawingArea.AddCSSClass("bandwidth-graph")
+	bg.AddCSSClass("bandwidth-graph")
 
 	// Set up draw function
-	bg.DrawingArea.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
+	bg.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 		bg.draw(cr, width, height)
 	})
 
@@ -192,7 +192,7 @@ func (bg *BandwidthGraph) AddSample(download, upload float64) {
 	}
 
 	// Queue redraw
-	bg.DrawingArea.QueueDraw()
+	bg.QueueDraw()
 }
 
 // SetMaxValue sets a fixed maximum value (disables auto-scaling).
@@ -202,7 +202,7 @@ func (bg *BandwidthGraph) SetMaxValue(max float64) {
 
 	bg.maxValue = max
 	bg.autoScale = false
-	bg.DrawingArea.QueueDraw()
+	bg.QueueDraw()
 }
 
 // SetAutoScale enables or disables auto-scaling.
@@ -220,12 +220,12 @@ func (bg *BandwidthGraph) Clear() {
 	bg.downloadData.Clear()
 	bg.uploadData.Clear()
 	bg.maxValue = 1024
-	bg.DrawingArea.QueueDraw()
+	bg.QueueDraw()
 }
 
 // UpdateColors updates the graph colors based on the current theme.
 // Call this when the theme changes.
-func (bg *BandwidthGraph) UpdateColors(styleContext *gtk.StyleContext) {
+func (bg *BandwidthGraph) UpdateColors(styleContext *gtk.StyleContext) { //nolint:staticcheck // gtk.StyleContext needed for color extraction, no replacement in GTK4 yet
 	bg.mu.Lock()
 	defer bg.mu.Unlock()
 

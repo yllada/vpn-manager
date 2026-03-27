@@ -58,15 +58,15 @@ func NewWeeklyChart() *WeeklyChart {
 	wc.initializeData()
 
 	// Set minimum size
-	wc.DrawingArea.SetSizeRequest(280, 100)
-	wc.DrawingArea.SetVExpand(false)
-	wc.DrawingArea.SetHExpand(true)
+	wc.SetSizeRequest(280, 100)
+	wc.SetVExpand(false)
+	wc.SetHExpand(true)
 
 	// Add CSS class for styling
-	wc.DrawingArea.AddCSSClass("weekly-chart")
+	wc.AddCSSClass("weekly-chart")
 
 	// Set up draw function
-	wc.DrawingArea.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
+	wc.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 		wc.draw(cr, width, height)
 	})
 
@@ -115,7 +115,7 @@ func (wc *WeeklyChart) SetData(data []DayData) {
 	// Ensure labels are set
 	wc.ensureLabels()
 
-	wc.DrawingArea.QueueDraw()
+	wc.QueueDraw()
 }
 
 // ensureLabels fills in missing day labels based on current date.
@@ -138,7 +138,7 @@ func (wc *WeeklyChart) Clear() {
 	defer wc.mu.Unlock()
 
 	wc.initializeData()
-	wc.DrawingArea.QueueDraw()
+	wc.QueueDraw()
 }
 
 // draw renders the bar chart.
