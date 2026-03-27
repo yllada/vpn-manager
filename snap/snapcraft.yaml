@@ -132,6 +132,8 @@ parts:
     plugin: go
     source: .
     source-type: local
+    build-snaps:
+      - go/latest/stable
     build-environment:
       - CGO_ENABLED: "1"
       - GOFLAGS: "-mod=readonly"
