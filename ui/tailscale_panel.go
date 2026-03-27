@@ -570,12 +570,6 @@ func (tp *TailscalePanel) updateEmptyPeersState(isEmpty bool) {
 	tp.emptyPeersPage.SetVisible(isEmpty)
 }
 
-// showEmptyPeersState shows a placeholder when no peers are connected using AdwStatusPage.
-// Deprecated: Use updateEmptyPeersState(true) instead.
-func (tp *TailscalePanel) showEmptyPeersState() {
-	tp.updateEmptyPeersState(true)
-}
-
 // createPeerRow creates an AdwExpanderRow for a peer.
 // Collapsed: Shows hostname, online status, gateway controls
 // Expanded: Shows IP addresses, OS, DNSName, and detailed info
