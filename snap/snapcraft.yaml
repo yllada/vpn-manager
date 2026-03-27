@@ -48,11 +48,11 @@ apps:
   vpn-manager:
     command: usr/bin/vpn-manager
     desktop: usr/share/applications/vpn-manager.desktop
-    extensions: [gnome]
     common-id: com.vpnmanager.app
     environment:
-      # GTK4/libadwaita environment
+      # GTK4/libadwaita environment (manual setup for classic confinement)
       GTK_USE_PORTAL: "1"
+      GDK_BACKEND: "x11,wayland"
       # XDG paths for config and data
       XDG_CONFIG_HOME: $SNAP_USER_DATA/.config
       XDG_DATA_HOME: $SNAP_USER_DATA/.local/share
