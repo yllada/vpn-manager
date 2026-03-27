@@ -25,6 +25,10 @@ type OpenVPNPanel struct {
 	// Status area
 	statusIcon  *gtk.Image
 	statusLabel *gtk.Label
+
+	// Empty state management
+	profilesGroup *adw.PreferencesGroup
+	emptyState    *adw.StatusPage
 }
 
 // NewOpenVPNPanel creates a new OpenVPN panel.
@@ -59,14 +63,33 @@ func (op *OpenVPNPanel) createLayout() {
 	op.box.Append(statusBar.Box)
 
 	// Profiles section using AdwPreferencesGroup
-	profilesGroup := adw.NewPreferencesGroup()
-	profilesGroup.SetTitle("Profiles")
-	profilesGroup.SetMarginTop(12)
+	op.profilesGroup = adw.NewPreferencesGroup()
+	op.profilesGroup.SetTitle("Profiles")
+	op.profilesGroup.SetMarginTop(12)
 
 	// Create profile list and add its ListBox to the group
-	op.profileList = NewProfileList(op.mainWindow)
-	profilesGroup.Add(op.profileList.GetWidget())
-	op.box.Append(profilesGroup)
+	op.profileList = NewProfileList(op.mainWindow, op)
+	op.profilesGroup.Add(op.profileList.GetWidget())
+	op.box.Append(op.profilesGroup)
+
+	// Empty state as sibling (not inside ListBox)
+	op.emptyState = adw.NewStatusPage()
+	op.emptyState.SetIconName("network-vpn-symbolic")
+	op.emptyState.SetTitle("No VPN Profiles")
+	op.emptyState.SetDescription("Import your OpenVPN configuration files to get started")
+	op.emptyState.SetMarginTop(12)
+	op.emptyState.SetVisible(false)
+
+	// Add an import button as the child
+	emptyImportBtn := gtk.NewButton()
+	emptyImportBtn.SetLabel("Import Profile")
+	emptyImportBtn.AddCSSClass("suggested-action")
+	emptyImportBtn.AddCSSClass("pill")
+	emptyImportBtn.SetHAlign(gtk.AlignCenter)
+	emptyImportBtn.ConnectClicked(op.onImportProfile)
+	op.emptyState.SetChild(emptyImportBtn)
+
+	op.box.Append(op.emptyState)
 
 	// Import button at bottom
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
@@ -117,6 +140,7 @@ func (op *OpenVPNPanel) UpdateStatus(connected bool, profileName string) {
 // Manages the display and interactions with connection profiles.
 type ProfileList struct {
 	mainWindow    *MainWindow
+	panel         *OpenVPNPanel
 	listBox       *gtk.ListBox
 	rows          map[string]*ProfileRow
 	statsUpdating bool
@@ -144,9 +168,10 @@ type ProfileRow struct {
 
 // NewProfileList creates a new VPN profile list.
 // Initializes the ListBox container with appropriate styling.
-func NewProfileList(mainWindow *MainWindow) *ProfileList {
+func NewProfileList(mainWindow *MainWindow, panel *OpenVPNPanel) *ProfileList {
 	pl := &ProfileList{
 		mainWindow: mainWindow,
+		panel:      panel,
 		listBox:    gtk.NewListBox(),
 		rows:       make(map[string]*ProfileRow),
 	}
@@ -204,10 +229,13 @@ func (pl *ProfileList) LoadProfiles() {
 	profiles := pl.mainWindow.app.vpnManager.ProfileManager().List()
 
 	if len(profiles) == 0 {
-		// Show empty message
-		pl.showEmptyState()
+		// Show empty state
+		pl.panel.updateEmptyState(true)
 		return
 	}
+
+	// Show profiles list
+	pl.panel.updateEmptyState(false)
 
 	// Add each profile to the list
 	connectedProfile := ""
@@ -227,32 +255,15 @@ func (pl *ProfileList) LoadProfiles() {
 	}
 }
 
-// showEmptyState shows an empty state when no profiles are configured.
-// Uses AdwStatusPage for a modern, consistent look.
-func (pl *ProfileList) showEmptyState() {
-	// Create AdwStatusPage for the empty state
-	statusPage := adw.NewStatusPage()
-	statusPage.SetIconName("network-vpn-symbolic")
-	statusPage.SetTitle("No VPN Profiles")
-	statusPage.SetDescription("Import your OpenVPN configuration files to get started")
-
-	// Add an import button as the child
-	importBtn := gtk.NewButton()
-	importBtn.SetLabel("Import Profile")
-	importBtn.AddCSSClass("suggested-action")
-	importBtn.AddCSSClass("pill")
-	importBtn.SetHAlign(gtk.AlignCenter)
-	importBtn.ConnectClicked(func() {
-		pl.mainWindow.onAddProfile()
-	})
-	statusPage.SetChild(importBtn)
-
-	emptyRow := gtk.NewListBoxRow()
-	emptyRow.SetChild(statusPage)
-	emptyRow.SetSelectable(false)
-	emptyRow.SetActivatable(false)
-
-	pl.listBox.Append(emptyRow)
+// updateEmptyState toggles between empty state and profiles list.
+func (op *OpenVPNPanel) updateEmptyState(isEmpty bool) {
+	if isEmpty {
+		op.profilesGroup.SetVisible(false)
+		op.emptyState.SetVisible(true)
+	} else {
+		op.profilesGroup.SetVisible(true)
+		op.emptyState.SetVisible(false)
+	}
 }
 
 // addProfileRow adds a profile row to the list using AdwExpanderRow.

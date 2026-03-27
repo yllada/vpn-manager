@@ -28,6 +28,10 @@ type WireGuardPanel struct {
 	statusIcon  *gtk.Image
 	statusLabel *gtk.Label
 
+	// Empty state management
+	profilesGroup *adw.PreferencesGroup
+	emptyState    *adw.StatusPage
+
 	// Update management
 	stopUpdates     chan struct{}
 	stopUpdatesOnce sync.Once
@@ -85,17 +89,36 @@ func (wp *WireGuardPanel) createLayout() {
 	wp.box.Append(wp.statusBox)
 
 	// Profiles section using AdwPreferencesGroup
-	profilesGroup := adw.NewPreferencesGroup()
-	profilesGroup.SetTitle("Profiles")
-	profilesGroup.SetMarginTop(12)
+	wp.profilesGroup = adw.NewPreferencesGroup()
+	wp.profilesGroup.SetTitle("Profiles")
+	wp.profilesGroup.SetMarginTop(12)
 
 	// List box for profiles
 	wp.listBox = gtk.NewListBox()
 	wp.listBox.SetSelectionMode(gtk.SelectionNone)
 	wp.listBox.AddCSSClass("boxed-list")
 
-	profilesGroup.Add(wp.listBox)
-	wp.box.Append(profilesGroup)
+	wp.profilesGroup.Add(wp.listBox)
+	wp.box.Append(wp.profilesGroup)
+
+	// Empty state as sibling (not inside ListBox)
+	wp.emptyState = adw.NewStatusPage()
+	wp.emptyState.SetIconName("network-vpn-symbolic")
+	wp.emptyState.SetTitle("No WireGuard Profiles")
+	wp.emptyState.SetDescription("Import your WireGuard configuration files to get started")
+	wp.emptyState.SetMarginTop(12)
+	wp.emptyState.SetVisible(false)
+
+	// Add an import button as the child
+	emptyImportBtn := gtk.NewButton()
+	emptyImportBtn.SetLabel("Import .conf file")
+	emptyImportBtn.AddCSSClass("suggested-action")
+	emptyImportBtn.AddCSSClass("pill")
+	emptyImportBtn.SetHAlign(gtk.AlignCenter)
+	emptyImportBtn.ConnectClicked(wp.onImportProfile)
+	wp.emptyState.SetChild(emptyImportBtn)
+
+	wp.box.Append(wp.emptyState)
 
 	// Import button at bottom
 	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
@@ -130,37 +153,24 @@ func (wp *WireGuardPanel) loadProfiles() {
 
 	// Show empty state or profiles
 	if len(profiles) == 0 {
-		wp.showEmptyState()
+		wp.updateEmptyState(true)
 	} else {
+		wp.updateEmptyState(false)
 		for _, profile := range profiles {
 			wp.addProfileRow(profile)
 		}
 	}
 }
 
-// showEmptyState displays the empty state placeholder using AdwStatusPage.
-func (wp *WireGuardPanel) showEmptyState() {
-	// Create AdwStatusPage for modern, consistent empty state
-	statusPage := adw.NewStatusPage()
-	statusPage.SetIconName("network-vpn-symbolic")
-	statusPage.SetTitle("No WireGuard Profiles")
-	statusPage.SetDescription("Import your WireGuard configuration files to get started")
-
-	// Add an import button as the child
-	importBtn := gtk.NewButton()
-	importBtn.SetLabel("Import .conf file")
-	importBtn.AddCSSClass("suggested-action")
-	importBtn.AddCSSClass("pill")
-	importBtn.SetHAlign(gtk.AlignCenter)
-	importBtn.ConnectClicked(wp.onImportProfile)
-	statusPage.SetChild(importBtn)
-
-	emptyRow := gtk.NewListBoxRow()
-	emptyRow.SetChild(statusPage)
-	emptyRow.SetSelectable(false)
-	emptyRow.SetActivatable(false)
-
-	wp.listBox.Append(emptyRow)
+// updateEmptyState toggles between empty state and profiles list.
+func (wp *WireGuardPanel) updateEmptyState(isEmpty bool) {
+	if isEmpty {
+		wp.profilesGroup.SetVisible(false)
+		wp.emptyState.SetVisible(true)
+	} else {
+		wp.profilesGroup.SetVisible(true)
+		wp.emptyState.SetVisible(false)
+	}
 }
 
 // addProfileRow adds a row for a WireGuard profile using AdwExpanderRow.

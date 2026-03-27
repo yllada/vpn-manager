@@ -37,7 +37,8 @@ type TailscalePanel struct {
 	logoutBtn  *gtk.Button
 
 	// Peers list (AdwPreferencesGroup with AdwExpanderRows)
-	peersGroup *adw.PreferencesGroup
+	peersGroup     *adw.PreferencesGroup
+	emptyPeersPage *adw.StatusPage
 
 	// Update ticker
 	stopUpdates     chan struct{}
@@ -190,12 +191,24 @@ func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	scrolled.SetMaxContentHeight(350)
 	scrolled.SetVExpand(true)
 
+	// Content box inside scrolled window to hold both group and empty state
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
+
 	// AdwPreferencesGroup for peers
 	tp.peersGroup = adw.NewPreferencesGroup()
 	tp.peersGroup.SetTitle("Devices")
 	tp.peersGroup.SetDescription("Devices on your tailnet")
+	contentBox.Append(tp.peersGroup)
 
-	scrolled.SetChild(tp.peersGroup)
+	// Empty state page (sibling of peersGroup, not child)
+	tp.emptyPeersPage = adw.NewStatusPage()
+	tp.emptyPeersPage.SetIconName("network-workgroup-symbolic")
+	tp.emptyPeersPage.SetTitle("No Devices Found")
+	tp.emptyPeersPage.SetDescription("Connect other devices to your tailnet to see them here")
+	tp.emptyPeersPage.SetVisible(false)
+	contentBox.Append(tp.emptyPeersPage)
+
+	scrolled.SetChild(contentBox)
 	mainBox.Append(scrolled)
 
 	return mainBox
@@ -512,7 +525,7 @@ func (tp *TailscalePanel) updatePeers() {
 				tp.peersGroup.Remove(row)
 			}
 			tp.peerRows = make(map[string]*adw.ExpanderRow)
-			tp.showEmptyPeersState()
+			tp.updateEmptyPeersState(true)
 		}
 		return
 	}
@@ -546,19 +559,21 @@ func (tp *TailscalePanel) updatePeers() {
 		tp.peerRows[peerID] = row
 		tp.peersGroup.Add(row)
 	}
+
+	// Show peers group, hide empty state
+	tp.updateEmptyPeersState(false)
+}
+
+// updateEmptyPeersState toggles visibility between peersGroup and emptyPeersPage.
+func (tp *TailscalePanel) updateEmptyPeersState(isEmpty bool) {
+	tp.peersGroup.SetVisible(!isEmpty)
+	tp.emptyPeersPage.SetVisible(isEmpty)
 }
 
 // showEmptyPeersState shows a placeholder when no peers are connected using AdwStatusPage.
+// Deprecated: Use updateEmptyPeersState(true) instead.
 func (tp *TailscalePanel) showEmptyPeersState() {
-	// Create AdwStatusPage for modern, consistent empty state
-	statusPage := adw.NewStatusPage()
-	statusPage.SetIconName("network-workgroup-symbolic")
-	statusPage.SetTitle("No Devices Found")
-	statusPage.SetDescription("Connect other devices to your tailnet to see them here")
-
-	// Store in peerRows with special key
-	tp.peerRows["__empty__"] = nil
-	tp.peersGroup.Add(statusPage)
+	tp.updateEmptyPeersState(true)
 }
 
 // createPeerRow creates an AdwExpanderRow for a peer.
