@@ -226,6 +226,54 @@ func (m *Manager) DisconnectAll() error {
 	return errors.Combined()
 }
 
+// enablePostConnectionFeatures enables kill switch, split tunneling, and stats
+// after a successful VPN connection. Used by both direct OpenVPN and NetworkManager paths.
+func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
+	tunIface := m.detectTunInterface()
+	vpnServerIP := m.getVPNServerIP(conn.Profile)
+
+	// Kill Switch
+	if m.killSwitch != nil && m.killSwitch.GetMode() != KillSwitchOff {
+		if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
+			app.LogWarn("killswitch", "failed to enable: %v", err)
+		}
+	}
+
+	// Per-App Tunneling
+	if m.appTunnel != nil && conn.Profile.SplitTunnelAppsEnabled && len(conn.Profile.SplitTunnelApps) > 0 {
+		gateway := m.getDefaultGateway()
+		if conn.Profile.SplitTunnelAppMode != "" {
+			m.appTunnel.SetMode(AppTunnelMode(conn.Profile.SplitTunnelAppMode))
+		}
+		if conn.Profile.SplitTunnelDNS {
+			vpnDNS := []string{DefaultVPNGatewayDNS}
+			systemDNS := m.detectSystemDNS()
+			m.appTunnel.SetSplitDNS(true, vpnDNS, systemDNS)
+			app.LogDebug("apptunnel", "Split DNS enabled (vpnDNS: %v, systemDNS: %s)", vpnDNS, systemDNS)
+		}
+		if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
+			app.LogWarn("apptunnel", "failed to enable: %v", err)
+		} else {
+			app.LogDebug("apptunnel", "Enabled for %d apps (mode: %s, splitDNS: %v)",
+				len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode, conn.Profile.SplitTunnelDNS)
+		}
+	}
+
+	// Split Tunnel Routes (for NM or exclude mode)
+	// In "include" mode with direct OpenVPN, routes are configured via --route options
+	// For NetworkManager or "exclude" mode, we need to apply routes manually
+	if conn.Profile.SplitTunnelEnabled && len(conn.Profile.SplitTunnelRoutes) > 0 {
+		if conn.Profile.UseNetworkManager || conn.Profile.SplitTunnelMode == "exclude" {
+			app.SafeGoWithName("vpn-split-tunnel-routes", func() {
+				m.applySplitTunnelRoutes(conn)
+			})
+		}
+	}
+
+	// Stats Collection
+	m.StartStatsCollection(conn.Profile.ID, tunIface, vpnServerIP)
+}
+
 // runNMConnection executes VPN connection via NetworkManager.
 // This shows the VPN icon in the system panel.
 func (m *Manager) runNMConnection(conn *Connection, username, password string) {
@@ -291,6 +339,9 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 				conn.IPAddress = ip
 				conn.mu.Unlock()
 				app.LogDebug("vpn", "Connected via NetworkManager - IP: %s", ip)
+
+				// Enable post-connection features (kill switch, split tunnel, stats)
+				m.enablePostConnectionFeatures(conn)
 				return
 			}
 		}
@@ -497,55 +548,8 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			conn.Status = StatusConnected
 			conn.mu.Unlock()
 
-			// Enable kill switch if configured
-			if m.killSwitch.GetMode() != KillSwitchOff {
-				tunIface := m.detectTunInterface()
-				// Extract VPN server IP from profile config
-				vpnServerIP := m.getVPNServerIP(conn.Profile)
-				if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
-					app.LogWarn("killswitch", "failed to enable: %v", err)
-				}
-			}
-
-			// Enable per-app tunneling if configured
-			if conn.Profile.SplitTunnelAppsEnabled && len(conn.Profile.SplitTunnelApps) > 0 {
-				tunIface := m.detectTunInterface()
-				gateway := m.getDefaultGateway()
-				// Apply app tunnel mode before enabling
-				if conn.Profile.SplitTunnelAppMode != "" {
-					m.appTunnel.SetMode(AppTunnelMode(conn.Profile.SplitTunnelAppMode))
-				}
-
-				// Configure split DNS if enabled in profile
-				if conn.Profile.SplitTunnelDNS {
-					// Get VPN DNS servers (default to gateway DNS if not specified)
-					vpnDNS := []string{DefaultVPNGatewayDNS}
-					// Detect system DNS (typically systemd-resolved stub)
-					systemDNS := m.detectSystemDNS()
-					m.appTunnel.SetSplitDNS(true, vpnDNS, systemDNS)
-					app.LogDebug("apptunnel", "Split DNS enabled (vpnDNS: %v, systemDNS: %s)", vpnDNS, systemDNS)
-				}
-
-				if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
-					app.LogWarn("apptunnel", "failed to enable: %v", err)
-				} else {
-					app.LogDebug("apptunnel", "Enabled for %d apps (mode: %s, splitDNS: %v)",
-						len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode, conn.Profile.SplitTunnelDNS)
-				}
-			}
-
-			// Apply split tunneling routes only for "exclude" mode
-			// In "include" mode, routes were already configured with OpenVPN's --route
-			if conn.Profile.SplitTunnelEnabled && conn.Profile.SplitTunnelMode == "exclude" {
-				app.SafeGoWithName("vpn-split-tunnel-routes", func() {
-					m.applySplitTunnelRoutes(conn)
-				})
-			}
-
-			// Start traffic statistics collection
-			tunIface := m.detectTunInterface()
-			vpnServerIP := m.getVPNServerIP(conn.Profile)
-			m.StartStatsCollection(conn.Profile.ID, tunIface, vpnServerIP)
+			// Enable post-connection features (kill switch, split tunnel, stats)
+			m.enablePostConnectionFeatures(conn)
 		}
 
 		// Detect authentication errors
