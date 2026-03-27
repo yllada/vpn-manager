@@ -1,0 +1,276 @@
+name: vpn-manager
+base: core24
+adopt-info: vpn-manager
+summary: Enterprise-grade VPN manager for Linux
+description: |
+  Modern VPN client with WireGuard, OpenVPN, and Tailscale support.
+  Features enterprise-grade security (DNS/IPv6 leak protection, 
+  persistent kill switch) and unique traffic statistics visualization.
+  
+  **Key Features:**
+  - Multiple VPN protocols (WireGuard, OpenVPN, Tailscale)
+  - DNS and IPv6 leak protection
+  - Enterprise kill switch with crash recovery
+  - Real-time traffic statistics with history
+  - Network trust management
+  - Modern libadwaita UI with dark/light theme support
+  - System tray integration
+  - Split tunneling per application
+  
+  **Security:**
+  - Firewall-based kill switch (iptables/nftables)
+  - DNS leak protection with systemd-resolved
+  - IPv6 leak protection
+  - Secure credential storage via system keyring
+  
+  **Note:** Some features require manual interface connections.
+  After installation, run:
+    sudo snap connect vpn-manager:firewall-control
+    sudo snap connect vpn-manager:network-control
+    sudo snap connect vpn-manager:network-manager
+
+grade: stable
+confinement: strict
+
+architectures:
+  - build-on: [amd64]
+    build-for: [amd64]
+  - build-on: [arm64]
+    build-for: [arm64]
+
+assumes:
+  - snapd2.43  # For layouts support
+
+# Layout for proper file access
+layout:
+  /usr/share/icons:
+    bind: $SNAP/usr/share/icons
+  /usr/share/glib-2.0/schemas:
+    bind: $SNAP/usr/share/glib-2.0/schemas
+
+apps:
+  vpn-manager:
+    command: usr/bin/vpn-manager
+    desktop: usr/share/applications/vpn-manager.desktop
+    extensions: [gnome]
+    common-id: com.vpnmanager.app
+    environment:
+      # GTK4/libadwaita environment
+      GTK_USE_PORTAL: "1"
+      # XDG paths for config and data
+      XDG_CONFIG_HOME: $SNAP_USER_DATA/.config
+      XDG_DATA_HOME: $SNAP_USER_DATA/.local/share
+      XDG_CACHE_HOME: $SNAP_USER_COMMON/.cache
+      # For system tray (AppIndicator)
+      BAMF_DESKTOP_FILE_HINT: $SNAP/usr/share/applications/vpn-manager.desktop
+    plugs:
+      # Desktop integration
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - unity7
+      # Network access and control
+      - network
+      - network-bind
+      - network-control
+      - network-manager
+      - network-manager-observe
+      - network-observe
+      - network-status
+      # Firewall control (for kill switch - iptables/nftables)
+      - firewall-control
+      # DNS configuration
+      - system-files
+      # User data
+      - home
+      # Audio notifications (optional)
+      - audio-playback
+      # For secret service/keyring access
+      - password-manager-service
+      # D-Bus for various integrations
+      - dbus-daemon
+
+  # CLI-only entry point
+  vpn-manager-cli:
+    command: usr/bin/vpn-manager
+    plugs:
+      - network
+      - network-bind
+      - network-control
+      - network-manager
+      - firewall-control
+      - system-files
+      - home
+      - password-manager-service
+
+plugs:
+  # System files needed for DNS configuration
+  system-files:
+    interface: system-files
+    read:
+      - /etc/resolv.conf
+      - /run/systemd/resolve
+      - /etc/NetworkManager
+    write:
+      - /etc/resolv.conf
+  
+  # D-Bus access for NetworkManager and systemd-resolved
+  dbus-daemon:
+    interface: dbus
+    bus: system
+    name: org.freedesktop.NetworkManager
+  
+  # Read system network configuration
+  network-manager:
+    interface: network-manager
+
+parts:
+  vpn-manager:
+    plugin: go
+    source: .
+    source-type: local
+    build-snaps:
+      - go/1.24/stable
+    build-environment:
+      - CGO_ENABLED: "1"
+      - GOFLAGS: "-mod=readonly"
+    override-build: |
+      # Set version - use git tag if available, otherwise default
+      VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "1.9.0")
+      BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+      COMMIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "snap-build")
+      
+      # Set snap version dynamically
+      craftctl set version="${VERSION}"
+      
+      # Build with version info
+      go build -trimpath \
+        -ldflags="-s -w -X main.appVersion=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.commitSHA=${COMMIT_SHA}" \
+        -o "${SNAPCRAFT_PART_INSTALL}/usr/bin/vpn-manager" \
+        .
+      
+      # Install desktop file
+      mkdir -p "${SNAPCRAFT_PART_INSTALL}/usr/share/applications"
+      cp assets/vpn-manager.desktop "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/"
+      
+      # Patch desktop file for snap
+      sed -i 's|^Exec=.*|Exec=vpn-manager|' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/vpn-manager.desktop"
+      sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/scalable/apps/vpn-manager.svg|' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/vpn-manager.desktop"
+      
+      # Install icons
+      mkdir -p "${SNAPCRAFT_PART_INSTALL}/usr/share/icons/hicolor/scalable/apps"
+      cp assets/icons/vpn-manager.svg "${SNAPCRAFT_PART_INSTALL}/usr/share/icons/hicolor/scalable/apps/"
+      
+      # Copy hicolor icons if they exist
+      if [ -d "assets/icons/hicolor" ]; then
+        cp -r assets/icons/hicolor/* "${SNAPCRAFT_PART_INSTALL}/usr/share/icons/hicolor/" 2>/dev/null || true
+      fi
+      
+      # Install metainfo for software centers
+      mkdir -p "${SNAPCRAFT_PART_INSTALL}/usr/share/metainfo"
+      if [ -f "assets/com.vpnmanager.app.metainfo.xml" ]; then
+        cp assets/com.vpnmanager.app.metainfo.xml "${SNAPCRAFT_PART_INSTALL}/usr/share/metainfo/"
+      fi
+    build-packages:
+      # C compiler for CGO
+      - gcc
+      - pkg-config
+      # GTK4 development
+      - libgtk-4-dev
+      # libadwaita development
+      - libadwaita-1-dev
+      # GLib/GIO development
+      - libglib2.0-dev
+      # Cairo for drawing
+      - libcairo2-dev
+      # Pango for text
+      - libpango1.0-dev
+      # GDK-Pixbuf
+      - libgdk-pixbuf-2.0-dev
+      # Git for commit SHA
+      - git
+    stage-packages:
+      # GTK4 runtime
+      - libgtk-4-1
+      # libadwaita runtime
+      - libadwaita-1-0
+      # GLib runtime
+      - libglib2.0-0t64
+      # Cairo runtime
+      - libcairo2
+      - libcairo-gobject2
+      # Pango runtime
+      - libpango-1.0-0
+      - libpangocairo-1.0-0
+      # GDK-Pixbuf runtime
+      - libgdk-pixbuf-2.0-0
+      # For system tray (AppIndicator)
+      - libayatana-appindicator3-1
+      # VPN tools (OpenVPN)
+      - openvpn
+      # Network utilities
+      - iptables
+      - nftables
+      # DNS tools
+      - resolvconf
+      # dbus for keyring
+      - dbus
+      # GNOME keyring for secrets
+      - gnome-keyring
+      - libsecret-1-0
+    organize:
+      # Ensure binaries are in expected location
+      usr/bin/vpn-manager: usr/bin/vpn-manager
+    prime:
+      # Include everything we need
+      - usr/bin/vpn-manager
+      - usr/share/applications/vpn-manager.desktop
+      - usr/share/icons/hicolor/
+      - usr/share/metainfo/
+      # GTK4 and libadwaita libraries
+      - usr/lib/*/libgtk-4*
+      - usr/lib/*/libadwaita*
+      - usr/lib/*/libglib*
+      - usr/lib/*/libgio*
+      - usr/lib/*/libgobject*
+      - usr/lib/*/libgdk*
+      - usr/lib/*/libcairo*
+      - usr/lib/*/libpango*
+      - usr/lib/*/libharfbuzz*
+      - usr/lib/*/libfontconfig*
+      - usr/lib/*/libfreetype*
+      - usr/lib/*/libpixman*
+      - usr/lib/*/libpng*
+      - usr/lib/*/libjpeg*
+      - usr/lib/*/libgraphene*
+      - usr/lib/*/libepoxy*
+      # System tray
+      - usr/lib/*/libayatana*
+      - usr/lib/*/libdbusmenu*
+      # VPN and network tools
+      - usr/sbin/openvpn
+      - usr/sbin/iptables*
+      - usr/sbin/nft*
+      - sbin/iptables*
+      - sbin/nft*
+      # Keyring/secrets
+      - usr/lib/*/libsecret*
+      # Exclude unnecessary files
+      - -usr/share/doc
+      - -usr/share/man
+      - -usr/share/lintian
+
+  # Icon and GUI assets for snap/gui directory
+  gui-assets:
+    plugin: dump
+    source: snap/gui
+    source-type: local
+    organize:
+      '*': meta/gui/
+    override-pull: |
+      craftctl default
+      # Ensure the icon exists
+      if [ ! -f "vpn-manager.svg" ] && [ -f "${SNAPCRAFT_PROJECT_DIR}/assets/icons/vpn-manager.svg" ]; then
+        cp "${SNAPCRAFT_PROJECT_DIR}/assets/icons/vpn-manager.svg" vpn-manager.svg
+      fi

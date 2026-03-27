@@ -97,8 +97,8 @@ debian/*.debhelper*
 debian/*.substvars
 debian/files
 debian/
-snap/
-docs/
+snap/.snapcraft/
+docs/*.tmp
 
 # =============================================================================
 # Vendor (opcional - descomentar si prefieres no versionar dependencias)

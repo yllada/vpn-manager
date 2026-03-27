@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=VPN Manager
+GenericName=VPN Client
+Comment=Enterprise-grade VPN manager with WireGuard, OpenVPN, and Tailscale support
+Exec=vpn-manager
+Icon=${SNAP}/usr/share/icons/hicolor/scalable/apps/vpn-manager.svg
+Terminal=false
+Categories=Network;Security;System;
+Keywords=vpn;wireguard;openvpn;tailscale;network;security;killswitch;
+StartupNotify=true
+StartupWMClass=com.vpnmanager.app
+X-GNOME-UsesNotifications=true

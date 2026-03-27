@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.vpnmanager.app</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>VPN Manager</name>
+  <summary>Enterprise-grade VPN manager for Linux</summary>
+  
+  <description>
+    <p>
+      VPN Manager is a modern, enterprise-grade VPN client for Linux that provides
+      a seamless experience for managing VPN connections with advanced security features.
+    </p>
+    <p>Key Features:</p>
+    <ul>
+      <li>Multiple VPN protocols: WireGuard, OpenVPN, and Tailscale support</li>
+      <li>DNS and IPv6 leak protection</li>
+      <li>Enterprise kill switch with crash recovery</li>
+      <li>Real-time traffic statistics with historical charts</li>
+      <li>Network trust management for automatic VPN activation</li>
+      <li>Modern libadwaita UI with dark/light theme support</li>
+      <li>System tray integration</li>
+      <li>Split tunneling per application</li>
+      <li>Secure credential storage via system keyring</li>
+      <li>Command-line interface for scripting</li>
+    </ul>
+    <p>Security Features:</p>
+    <ul>
+      <li>Firewall-based kill switch using iptables/nftables</li>
+      <li>DNS leak protection with systemd-resolved integration</li>
+      <li>IPv6 leak protection to prevent traffic leaks</li>
+      <li>Persistent kill switch state across reboots</li>
+    </ul>
+  </description>
+  
+  <launchable type="desktop-id">vpn-manager.desktop</launchable>
+  
+  <url type="homepage">https://github.com/yllada/vpn-manager</url>
+  <url type="bugtracker">https://github.com/yllada/vpn-manager/issues</url>
+  
+  <developer_name>VPN Manager Team</developer_name>
+  
+  <provides>
+    <binary>vpn-manager</binary>
+  </provides>
+  
+  <categories>
+    <category>Network</category>
+    <category>Security</category>
+    <category>System</category>
+  </categories>
+  
+  <keywords>
+    <keyword>vpn</keyword>
+    <keyword>wireguard</keyword>
+    <keyword>openvpn</keyword>
+    <keyword>tailscale</keyword>
+    <keyword>network</keyword>
+    <keyword>security</keyword>
+    <keyword>killswitch</keyword>
+    <keyword>privacy</keyword>
+  </keywords>
+  
+  <screenshots>
+    <screenshot type="default">
+      <caption>VPN Manager main window</caption>
+      <image>https://raw.githubusercontent.com/yllada/vpn-manager/main/assets/screen/image.png</image>
+    </screenshot>
+  </screenshots>
+  
+  <content_rating type="oars-1.1" />
+  
+  <releases>
+    <release version="1.9.0" date="2026-03-26">
+      <description>
+        <p>New features and improvements:</p>
+        <ul>
+          <li>Added Snap Store packaging support</li>
+          <li>Improved kill switch reliability</li>
+          <li>Enhanced traffic statistics visualization</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+</component>

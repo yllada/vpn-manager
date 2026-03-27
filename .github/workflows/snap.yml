@@ -1,0 +1,108 @@
+name: Build Snap Package
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+    paths:
+      - 'snap/**'
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'assets/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'snap/**'
+      - '**.go'
+  workflow_dispatch:
+    inputs:
+      publish_edge:
+        description: 'Publish to edge channel'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      snap-file: ${{ steps.build.outputs.snap }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build snap
+        uses: snapcore/action-build@v1
+        id: build
+
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-manager-snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 7
+
+  # Test the snap in a clean environment
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download snap
+        uses: actions/download-artifact@v4
+        with:
+          name: vpn-manager-snap
+
+      - name: Install snap
+        run: |
+          sudo snap install --dangerous vpn-manager_*.snap
+          
+      - name: Test CLI
+        run: |
+          vpn-manager --version
+          vpn-manager --help
+
+      - name: Check snap info
+        run: |
+          snap info vpn-manager
+          snap connections vpn-manager
+
+  # Publish to edge channel on main branch pushes
+  publish-edge:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event.inputs.publish_edge == 'true'
+    steps:
+      - name: Download snap
+        uses: actions/download-artifact@v4
+        with:
+          name: vpn-manager-snap
+
+      - name: Publish to edge
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
+        with:
+          snap: vpn-manager_*.snap
+          release: edge
+
+  # Publish to stable on version tags
+  publish-stable:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download snap
+        uses: actions/download-artifact@v4
+        with:
+          name: vpn-manager-snap
+
+      - name: Publish to beta (for review)
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
+        with:
+          snap: vpn-manager_*.snap
+          release: beta
