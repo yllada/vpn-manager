@@ -57,7 +57,8 @@ jobs:
 
       - name: Install snap
         run: |
-          sudo snap install --dangerous vpn-manager_*.snap
+          # Classic confinement requires --classic flag
+          sudo snap install --classic --dangerous vpn-manager_*.snap
           
       - name: Test CLI
         run: |

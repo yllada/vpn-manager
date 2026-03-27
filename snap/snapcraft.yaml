@@ -47,7 +47,7 @@ layout:
 apps:
   vpn-manager:
     command: usr/bin/vpn-manager
-    desktop: usr/share/applications/vpn-manager.desktop
+    desktop: meta/gui/vpn-manager.desktop
     common-id: com.vpnmanager.app
     environment:
       # GTK4/libadwaita environment (manual setup for classic confinement)
@@ -58,7 +58,7 @@ apps:
       XDG_DATA_HOME: $SNAP_USER_DATA/.local/share
       XDG_CACHE_HOME: $SNAP_USER_COMMON/.cache
       # For system tray (AppIndicator)
-      BAMF_DESKTOP_FILE_HINT: $SNAP/usr/share/applications/vpn-manager.desktop
+      BAMF_DESKTOP_FILE_HINT: $SNAP/meta/gui/vpn-manager.desktop
 
   # CLI-only entry point
   vpn-manager-cli:
@@ -71,8 +71,11 @@ parts:
     source-type: local
     build-snaps:
       - go/latest/stable
+    build-attributes:
+      - enable-patchelf  # Required for classic confinement ELF binaries
     build-environment:
       - CGO_ENABLED: "1"
+      - CGO_LDFLAGS_ALLOW: ".*"  # Allow all linker flags for CGO
       - GOFLAGS: "-mod=readonly"
     override-build: |
       # Set version - use git tag if available, otherwise default
@@ -89,15 +92,7 @@ parts:
         -o "${SNAPCRAFT_PART_INSTALL}/usr/bin/vpn-manager" \
         .
       
-      # Install desktop file
-      mkdir -p "${SNAPCRAFT_PART_INSTALL}/usr/share/applications"
-      cp assets/vpn-manager.desktop "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/"
-      
-      # Patch desktop file for snap
-      sed -i 's|^Exec=.*|Exec=vpn-manager|' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/vpn-manager.desktop"
-      sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/scalable/apps/vpn-manager.svg|' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/vpn-manager.desktop"
-      
-      # Install icons
+      # Install icons to standard hicolor location
       mkdir -p "${SNAPCRAFT_PART_INSTALL}/usr/share/icons/hicolor/scalable/apps"
       cp assets/icons/vpn-manager.svg "${SNAPCRAFT_PART_INSTALL}/usr/share/icons/hicolor/scalable/apps/"
       
@@ -166,7 +161,6 @@ parts:
     prime:
       # Include everything we need
       - usr/bin/vpn-manager
-      - usr/share/applications/vpn-manager.desktop
       - usr/share/icons/hicolor/
       - usr/share/metainfo/
       # GTK4 and libadwaita libraries
@@ -201,17 +195,3 @@ parts:
       - -usr/share/doc
       - -usr/share/man
       - -usr/share/lintian
-
-  # Icon and GUI assets for snap/gui directory
-  gui-assets:
-    plugin: dump
-    source: snap/gui
-    source-type: local
-    organize:
-      '*': meta/gui/
-    override-pull: |
-      craftctl default
-      # Ensure the icon exists
-      if [ ! -f "vpn-manager.svg" ] && [ -f "${SNAPCRAFT_PROJECT_DIR}/assets/icons/vpn-manager.svg" ]; then
-        cp "${SNAPCRAFT_PROJECT_DIR}/assets/icons/vpn-manager.svg" vpn-manager.svg
-      fi
