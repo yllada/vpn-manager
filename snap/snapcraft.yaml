@@ -92,6 +92,9 @@ apps:
       - password-manager-service
       # D-Bus for various integrations
       - dbus-daemon
+    slots:
+      # Allow owning the app's DBus name
+      - dbus-vpnmanager
 
   # CLI-only entry point
   vpn-manager-cli:
@@ -105,6 +108,13 @@ apps:
       - system-files
       - home
       - password-manager-service
+
+slots:
+  # DBus slot to own the app's bus name (required for AppArmor policy)
+  dbus-vpnmanager:
+    interface: dbus
+    bus: session
+    name: com.vpnmanager.app
 
 plugs:
   # System files needed for DNS configuration
