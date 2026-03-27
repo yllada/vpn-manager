@@ -10,8 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - Multi-language support (i18n)
 - Configuration export/import
-- Historical connection statistics
 - Bulk profile import
+
+## [1.9.0] - 2026-03-26
+
+### Added
+- **DNS Leak Protection** — systemd-resolved strict mode with firewall fallback
+- **IPv6 Leak Protection** — Extended sysctl parameters and nftables inet rules
+- **Enterprise Kill Switch** — State persistence and crash recovery
+  - systemd service for boot-persistent protection
+  - LAN access toggle while kill switch is enabled
+  - Pause/resume mode for captive portal authentication
+- **Traffic Statistics** — SQLite-based history with 90-day retention
+  - Real-time connection quality indicators (latency, jitter, bandwidth)
+  - Live bandwidth graph with Cairo rendering
+  - Weekly traffic bar chart visualization
+  - Session history with detailed metrics
+- **CLI flags**: `--recover-killswitch`, `--disable-killswitch`
+
+### Technical
+- Pure Go SQLite via modernc.org/sqlite (no CGO required)
+- Thread-safe implementations throughout
+- Atomic file writes for state persistence
 
 ## [1.8.0] - 2026-03-26
 
@@ -161,7 +181,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/yllada/vpn-manager/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/yllada/vpn-manager/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/yllada/vpn-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/yllada/vpn-manager/compare/v1.5.0...v1.6.0

@@ -5,7 +5,8 @@
 <h1 align="center">VPN Manager</h1>
 
 <p align="center">
-  <strong>Simple VPN client for Linux with GUI — OpenVPN, WireGuard & Tailscale</strong>
+  <strong>Enterprise-grade security, community-first freedom</strong><br>
+  <em>Simple VPN client for Linux with GUI — OpenVPN, WireGuard & Tailscale</em>
 </p>
 
 <p align="center">
@@ -36,9 +37,30 @@ Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you c
 - **Secure credentials** — Stored in system keyring
 - **Split tunneling** — Choose what traffic goes through VPN
 - **Auto-reconnect** — Restores connection if lost
-- **Kill switch** — Blocks traffic if VPN disconnects
 - **System tray** — Quick access without opening the app
 - **Network Trust Rules** — Auto-manage VPN based on network trust (connect on untrusted, disconnect on trusted)
+
+### Security Features
+
+VPN Manager provides enterprise-grade security that matches ProtonVPN and NordVPN:
+
+- **DNS Leak Protection** — systemd-resolved strict mode with firewall fallback
+- **IPv6 Leak Protection** — Extended sysctl parameters and nftables inet rules
+- **Enterprise Kill Switch** — State persistence, crash recovery, and boot-persistent protection via systemd
+  - LAN access toggle while kill switch is enabled
+  - Pause/resume mode for captive portal authentication
+- **Evil Twin Detection** — Warns if a known network appears with a different access point
+- **Network-based Kill Switch** — Blocks traffic if VPN fails on untrusted networks
+
+### Traffic Statistics (Unique Feature)
+
+**No other Linux VPN client offers this.** VPN Manager includes comprehensive traffic visualization:
+
+- **Real-time quality indicators** — Latency, jitter, and bandwidth monitoring
+- **Live bandwidth graph** — Cairo-rendered real-time visualization
+- **Weekly traffic charts** — Bar chart visualization of usage patterns
+- **Session history** — Detailed metrics with 90-day SQLite-based retention
+- **Pure Go implementation** — No CGO required (modernc.org/sqlite)
 
 ## Network Trust Rules
 
@@ -49,10 +71,6 @@ Automatically manage your VPN connection based on network trust levels:
 | **Trusted** | VPN disconnects automatically (home, office) |
 | **Untrusted** | VPN connects automatically (public WiFi, hotels) |
 | **Unknown** | Prompts you to classify the network |
-
-### Security Features
-- **Evil twin detection** — Warns if a known network appears with a different access point (BSSID)
-- **Kill switch on failure** — Blocks traffic if VPN fails on untrusted networks
 
 ### Quick Actions
 - Right-click the tray icon → "Trust/Untrust This Network"
@@ -102,6 +120,8 @@ vpn-manager --list                    # List profiles
 vpn-manager --connect "My VPN"        # Connect
 vpn-manager --disconnect all          # Disconnect all
 vpn-manager --status                  # Show status
+vpn-manager --recover-killswitch      # Recover kill switch after crash
+vpn-manager --disable-killswitch      # Disable kill switch
 ```
 
 <details>
@@ -118,6 +138,8 @@ vpn-manager --status                  # Show status
 | `--status` | Show connection status |
 | `--run COMMAND` | Run command through VPN tunnel |
 | `--list-apps` | List apps for split tunneling |
+| `--recover-killswitch` | Recover kill switch state after crash |
+| `--disable-killswitch` | Force disable kill switch |
 </details>
 
 ## Configuration
@@ -126,6 +148,8 @@ vpn-manager --status                  # Show status
 - **Settings**: `~/.config/vpn-manager/config.yaml`
 - **Logs**: `~/.config/vpn-manager/logs/`
 - **Trust Rules**: `~/.config/vpn-manager/trust-rules.yaml`
+- **Statistics**: `~/.config/vpn-manager/stats.db` (SQLite, 90-day retention)
+- **Kill Switch State**: `~/.config/vpn-manager/killswitch-state.json`
 
 ## Contributing
 

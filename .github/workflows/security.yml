@@ -74,11 +74,14 @@ jobs:
   # NOTE: Requires GTK deps because govulncheck needs to parse Go files.
   # gotk4 packages have CGO build constraints - without GTK libs installed
   # and CGO_ENABLED=1, those files are excluded causing undefined symbol errors.
+  #
+  # Timeout: 20 min because modernc.org/sqlite (SQLite transpiled to Go) is a
+  # large package that takes significant time to analyze.
   # =============================================================================
   govulncheck:
     name: Vulnerability Check
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -99,11 +102,13 @@ jobs:
   # =============================================================================
   # NOTE: Requires GTK deps for the same reason as govulncheck - go-licenses
   # needs to resolve all packages including gotk4 which has CGO constraints.
+  #
+  # Timeout: 10 min to handle large dependencies like modernc.org/sqlite.
   # =============================================================================
   license-check:
     name: License Check
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
