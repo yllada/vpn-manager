@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.9.1] - 2026-03-27
+
+### Fixed
+- **UI**: Empty state panels now display correctly without double card borders (WireGuard, OpenVPN, Tailscale)
+- **Statistics**: NetworkManager connections now properly start traffic statistics collection
+- **NetworkManager**: Feature parity with direct OpenVPN connections
+  - Kill switch enablement
+  - Per-app tunneling configuration
+  - Split tunnel routes application
+
+### Changed
+- Refactored post-connection feature enablement into shared helper method
+
 ## [1.9.0] - 2026-03-26
 
 ### Added
@@ -181,7 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/yllada/vpn-manager/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/yllada/vpn-manager/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/yllada/vpn-manager/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/yllada/vpn-manager/compare/v1.6.0...v1.7.0
