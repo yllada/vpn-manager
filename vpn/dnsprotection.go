@@ -12,6 +12,7 @@ package vpn
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -71,13 +72,22 @@ type DNSProtection struct {
 
 	// resolvedBackend tracks which backend is being used
 	resolvedBackend string
+
+	// Strict mode fields
+	strictMode    bool     // Whether strict mode is enabled
+	firewallMode  bool     // Whether firewall DNS enforcement is enabled
+	paused        bool     // Whether protection is temporarily paused
+	vpnInterface  string   // VPN interface for strict mode
+	originalDNS   []string // Saved original DNS servers for restore
+	firewallChain string   // iptables chain name for DNS rules
 }
 
 // NewDNSProtection creates a DNS protection manager.
 func NewDNSProtection() *DNSProtection {
 	dp := &DNSProtection{
-		config:     DefaultDNSConfig(),
-		backupPath: app.ResolvConfBackupPath,
+		config:        DefaultDNSConfig(),
+		backupPath:    app.ResolvConfBackupPath,
+		firewallChain: DNSFirewallChainName,
 	}
 	dp.detectBackend()
 	return dp
@@ -482,4 +492,688 @@ func (dp *DNSProtection) getCurrentDNS() ([]string, error) {
 	}
 
 	return servers, nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DNS STRICT MODE
+// ═══════════════════════════════════════════════════════════════════════════
+
+// EnableStrictMode forces ALL DNS traffic through the VPN interface using
+// resolvectl domain ~. to set the VPN as the default DNS route.
+// This is the primary method for strict DNS protection on systemd-based systems.
+func (dp *DNSProtection) EnableStrictMode(vpnInterface string) error {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+
+	if dp.paused {
+		return fmt.Errorf("DNS protection is paused, resume before enabling strict mode")
+	}
+
+	// Save current DNS configuration for later restore
+	if err := dp.saveOriginalDNS(); err != nil {
+		log.Printf("DNSProtection: Warning: failed to save original DNS: %v", err)
+		// Continue anyway - restore might not work perfectly
+	}
+
+	dp.vpnInterface = vpnInterface
+
+	// Use systemd-resolved if available (primary method)
+	if dp.resolvedBackend == "systemd-resolved" {
+		// Set ~. routing domain - this routes ALL DNS queries through this interface
+		// The ~. is a special domain that means "route everything through me"
+		cmd := exec.Command("resolvectl", "domain", vpnInterface, "~.")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("resolvectl domain failed: %w: %s", err, output)
+		}
+
+		// Also set the interface as the default route for DNS
+		cmd = exec.Command("resolvectl", "default-route", vpnInterface, "true")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to set default-route: %s", output)
+			// Not fatal - domain ~. should be sufficient
+		}
+
+		// Flush DNS cache to ensure new settings take effect immediately
+		_ = exec.Command("resolvectl", "flush-caches").Run()
+
+		dp.strictMode = true
+		log.Printf("DNSProtection: Strict mode enabled via systemd-resolved (interface: %s, domain: ~.)", vpnInterface)
+
+		// Save state for crash recovery
+		_ = dp.SaveState()
+		return nil
+	}
+
+	// For non-systemd systems, fall through to firewall-based enforcement
+	return fmt.Errorf("strict mode requires systemd-resolved; use EnableFirewallDNS for fallback")
+}
+
+// DisableStrictMode removes the ~. routing domain from the VPN interface
+// and restores the original DNS configuration.
+func (dp *DNSProtection) DisableStrictMode() error {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+
+	if !dp.strictMode {
+		return nil
+	}
+
+	if dp.resolvedBackend == "systemd-resolved" && dp.vpnInterface != "" {
+		// Remove the ~. domain routing
+		// Setting an empty domain resets to default behavior
+		cmd := exec.Command("resolvectl", "domain", dp.vpnInterface, "")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to clear domain routing: %s", output)
+			// Not fatal - continue cleanup
+		}
+
+		// Reset default-route flag
+		cmd = exec.Command("resolvectl", "default-route", dp.vpnInterface, "false")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to reset default-route: %s", output)
+		}
+
+		// Flush cache
+		_ = exec.Command("resolvectl", "flush-caches").Run()
+	}
+
+	// Restore original DNS if we saved it
+	if len(dp.originalDNS) > 0 {
+		if err := dp.restoreOriginalDNS(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to restore original DNS: %v", err)
+		}
+	}
+
+	dp.strictMode = false
+	dp.vpnInterface = ""
+	log.Printf("DNSProtection: Strict mode disabled")
+
+	// Update state
+	_ = dp.SaveState()
+	return nil
+}
+
+// IsStrictModeEnabled returns whether strict mode is currently active.
+func (dp *DNSProtection) IsStrictModeEnabled() bool {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	return dp.strictMode
+}
+
+// saveOriginalDNS captures the current DNS configuration for later restoration.
+func (dp *DNSProtection) saveOriginalDNS() error {
+	servers, err := dp.getCurrentDNSUnlocked()
+	if err != nil {
+		return err
+	}
+	dp.originalDNS = servers
+	log.Printf("DNSProtection: Saved original DNS: %v", servers)
+	return nil
+}
+
+// restoreOriginalDNS attempts to restore the previously saved DNS configuration.
+func (dp *DNSProtection) restoreOriginalDNS() error {
+	if len(dp.originalDNS) == 0 {
+		return nil
+	}
+
+	// For systemd-resolved, the cache flush and domain reset should be sufficient
+	// The system will return to its default DNS resolution
+	if dp.resolvedBackend == "systemd-resolved" {
+		_ = exec.Command("resolvectl", "flush-caches").Run()
+		log.Printf("DNSProtection: Original DNS restored (systemd-resolved cache flushed)")
+		dp.originalDNS = nil
+		return nil
+	}
+
+	// For resolv.conf backend, restore from backup if available
+	if dp.resolvedBackend == "resolv.conf" {
+		if err := dp.disableResolvConf(); err != nil {
+			return err
+		}
+	}
+
+	dp.originalDNS = nil
+	return nil
+}
+
+// getCurrentDNSUnlocked gets current DNS servers without locking (internal use).
+func (dp *DNSProtection) getCurrentDNSUnlocked() ([]string, error) {
+	var servers []string
+
+	switch dp.resolvedBackend {
+	case "systemd-resolved":
+		cmd := exec.Command("resolvectl", "status")
+		output, err := cmd.Output()
+		if err != nil {
+			return nil, err
+		}
+
+		scanner := bufio.NewScanner(strings.NewReader(string(output)))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.Contains(line, "DNS Servers:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					servers = append(servers, strings.TrimSpace(parts[1]))
+				}
+			}
+		}
+
+	default:
+		content, err := os.ReadFile(app.ResolvConfPath)
+		if err != nil {
+			return nil, err
+		}
+
+		scanner := bufio.NewScanner(strings.NewReader(string(content)))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "nameserver ") {
+				server := strings.TrimPrefix(line, "nameserver ")
+				servers = append(servers, strings.TrimSpace(server))
+			}
+		}
+	}
+
+	return servers, nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DNS FIREWALL ENFORCEMENT (FALLBACK)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// EnableFirewallDNS blocks DNS (port 53) on all interfaces except the VPN interface.
+// This is a fallback method when systemd-resolved is not available.
+// Uses iptables to create rules that DROP DNS packets not going through the VPN.
+func (dp *DNSProtection) EnableFirewallDNS(vpnInterface string) error {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+
+	if dp.paused {
+		return fmt.Errorf("DNS protection is paused, resume before enabling firewall DNS")
+	}
+
+	// Check if iptables is available
+	if _, err := exec.LookPath("iptables"); err != nil {
+		return fmt.Errorf("iptables not available: %w", err)
+	}
+
+	dp.vpnInterface = vpnInterface
+
+	// Create our custom chain for DNS rules
+	if err := dp.runFirewallCmd("iptables", "-N", dp.firewallChain); err != nil {
+		// Chain might already exist, try flushing it
+		_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
+	}
+
+	// Allow DNS through VPN interface
+	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
+		"-o", vpnInterface, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("failed to add VPN DNS UDP rule: %w", err)
+	}
+
+	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
+		"-o", vpnInterface, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("failed to add VPN DNS TCP rule: %w", err)
+	}
+
+	// Allow DNS to localhost (systemd-resolved stub)
+	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
+		"-o", "lo", "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
+		log.Printf("DNSProtection: Warning: failed to add localhost DNS UDP rule: %v", err)
+	}
+
+	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
+		"-o", "lo", "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
+		log.Printf("DNSProtection: Warning: failed to add localhost DNS TCP rule: %v", err)
+	}
+
+	// Block all other DNS (the catch-all)
+	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
+		"-p", "udp", "--dport", DNSPortStr, "-j", "DROP"); err != nil {
+		return fmt.Errorf("failed to add DNS UDP drop rule: %w", err)
+	}
+
+	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
+		"-p", "tcp", "--dport", DNSPortStr, "-j", "DROP"); err != nil {
+		return fmt.Errorf("failed to add DNS TCP drop rule: %w", err)
+	}
+
+	// Insert our chain into OUTPUT at position 1 (before other rules)
+	if err := dp.runFirewallCmd("iptables", "-I", "OUTPUT", "1", "-j", dp.firewallChain); err != nil {
+		// Clean up on failure
+		_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
+		_ = dp.runFirewallCmd("iptables", "-X", dp.firewallChain)
+		return fmt.Errorf("failed to insert DNS chain into OUTPUT: %w", err)
+	}
+
+	dp.firewallMode = true
+	log.Printf("DNSProtection: Firewall DNS enforcement enabled (interface: %s)", vpnInterface)
+
+	// Save state for crash recovery
+	_ = dp.SaveState()
+	return nil
+}
+
+// DisableFirewallDNS removes the DNS firewall rules.
+func (dp *DNSProtection) DisableFirewallDNS() error {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+
+	if !dp.firewallMode {
+		return nil
+	}
+
+	// Remove our chain from OUTPUT
+	_ = dp.runFirewallCmd("iptables", "-D", "OUTPUT", "-j", dp.firewallChain)
+
+	// Flush and delete our chain
+	_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
+	_ = dp.runFirewallCmd("iptables", "-X", dp.firewallChain)
+
+	dp.firewallMode = false
+	log.Printf("DNSProtection: Firewall DNS enforcement disabled")
+
+	// Update state
+	_ = dp.SaveState()
+	return nil
+}
+
+// IsFirewallModeEnabled returns whether firewall DNS enforcement is active.
+func (dp *DNSProtection) IsFirewallModeEnabled() bool {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	return dp.firewallMode
+}
+
+// runFirewallCmd executes a firewall command with pkexec for elevated privileges.
+func (dp *DNSProtection) runFirewallCmd(name string, args ...string) error {
+	fullArgs := append([]string{name}, args...)
+	cmd := exec.Command("pkexec", fullArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s %s: %v - %s", name, strings.Join(args, " "), err, string(output))
+	}
+	return nil
+}
+
+// checkFirewallRulesExist verifies if our DNS firewall rules are in place.
+func (dp *DNSProtection) checkFirewallRulesExist() bool {
+	// Check if our chain exists in OUTPUT
+	cmd := exec.Command("iptables", "-L", "OUTPUT", "-n")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), dp.firewallChain)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DNS PAUSE MODE (CAPTIVE PORTAL SUPPORT)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// PauseDNSProtection temporarily disables all DNS protection while maintaining state.
+// This is useful for captive portal authentication where DNS must be unrestricted.
+// The protection can be re-enabled with ResumeDNSProtection.
+func (dp *DNSProtection) PauseDNSProtection() error {
+	dp.mu.Lock()
+
+	if dp.paused {
+		dp.mu.Unlock()
+		return nil // Already paused
+	}
+
+	// Save current state before pausing
+	wasStrictMode := dp.strictMode
+	wasFirewallMode := dp.firewallMode
+	savedInterface := dp.vpnInterface
+
+	dp.mu.Unlock()
+
+	// Disable strict mode if it was enabled
+	if wasStrictMode {
+		if err := dp.disableStrictModeInternal(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to disable strict mode during pause: %v", err)
+		}
+	}
+
+	// Disable firewall mode if it was enabled
+	if wasFirewallMode {
+		if err := dp.disableFirewallDNSInternal(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to disable firewall DNS during pause: %v", err)
+		}
+	}
+
+	dp.mu.Lock()
+	// Mark as paused and preserve the state we need to restore
+	dp.paused = true
+	dp.strictMode = wasStrictMode     // Remember for resume
+	dp.firewallMode = wasFirewallMode // Remember for resume
+	dp.vpnInterface = savedInterface  // Keep interface for resume
+	dp.mu.Unlock()
+
+	log.Printf("DNSProtection: Protection paused (strict: %v, firewall: %v)", wasStrictMode, wasFirewallMode)
+
+	// Update state file
+	_ = dp.SaveState()
+	return nil
+}
+
+// ResumeDNSProtection re-enables DNS protection based on the state before pause.
+func (dp *DNSProtection) ResumeDNSProtection() error {
+	dp.mu.Lock()
+
+	if !dp.paused {
+		dp.mu.Unlock()
+		return nil // Not paused
+	}
+
+	// Get the state we need to restore
+	restoreStrictMode := dp.strictMode
+	restoreFirewallMode := dp.firewallMode
+	vpnInterface := dp.vpnInterface
+
+	// Clear paused flag first so enable methods don't reject us
+	dp.paused = false
+	dp.strictMode = false
+	dp.firewallMode = false
+
+	dp.mu.Unlock()
+
+	var finalErr error
+
+	// Re-enable strict mode if it was active
+	if restoreStrictMode && vpnInterface != "" {
+		if err := dp.EnableStrictMode(vpnInterface); err != nil {
+			log.Printf("DNSProtection: Warning: failed to re-enable strict mode: %v", err)
+			finalErr = err
+		}
+	}
+
+	// Re-enable firewall mode if it was active
+	if restoreFirewallMode && vpnInterface != "" {
+		if err := dp.EnableFirewallDNS(vpnInterface); err != nil {
+			log.Printf("DNSProtection: Warning: failed to re-enable firewall DNS: %v", err)
+			if finalErr == nil {
+				finalErr = err
+			}
+		}
+	}
+
+	log.Printf("DNSProtection: Protection resumed (strict: %v, firewall: %v)", restoreStrictMode, restoreFirewallMode)
+
+	// Update state file
+	_ = dp.SaveState()
+	return finalErr
+}
+
+// IsPaused returns whether DNS protection is currently paused.
+func (dp *DNSProtection) IsPaused() bool {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	return dp.paused
+}
+
+// disableStrictModeInternal disables strict mode without locking (for pause).
+func (dp *DNSProtection) disableStrictModeInternal() error {
+	if dp.resolvedBackend == "systemd-resolved" && dp.vpnInterface != "" {
+		// Remove the ~. domain routing
+		cmd := exec.Command("resolvectl", "domain", dp.vpnInterface, "")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to clear domain routing: %s", output)
+		}
+
+		// Reset default-route flag
+		cmd = exec.Command("resolvectl", "default-route", dp.vpnInterface, "false")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("DNSProtection: Warning: failed to reset default-route: %s", output)
+		}
+
+		// Flush cache
+		_ = exec.Command("resolvectl", "flush-caches").Run()
+	}
+	return nil
+}
+
+// disableFirewallDNSInternal disables firewall DNS without locking (for pause).
+func (dp *DNSProtection) disableFirewallDNSInternal() error {
+	// Remove our chain from OUTPUT
+	_ = dp.runFirewallCmd("iptables", "-D", "OUTPUT", "-j", dp.firewallChain)
+
+	// Flush and delete our chain
+	_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
+	_ = dp.runFirewallCmd("iptables", "-X", dp.firewallChain)
+
+	return nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DNS STATE PERSISTENCE
+// ═══════════════════════════════════════════════════════════════════════════
+
+// DNSState represents the persisted state of DNS protection.
+// This is saved to disk to enable recovery after crashes or reboots.
+type DNSState struct {
+	// StrictMode indicates whether strict mode was enabled.
+	StrictMode bool `json:"strict_mode"`
+	// FirewallMode indicates whether firewall DNS enforcement was enabled.
+	FirewallMode bool `json:"firewall_mode"`
+	// Paused indicates whether protection was temporarily paused.
+	Paused bool `json:"paused"`
+	// VPNInterface is the VPN interface being protected.
+	VPNInterface string `json:"vpn_interface"`
+	// OriginalDNS contains the saved original DNS servers.
+	OriginalDNS []string `json:"original_dns,omitempty"`
+	// Timestamp is when the state was saved (Unix timestamp).
+	Timestamp int64 `json:"timestamp"`
+}
+
+// SaveState persists the current DNS protection state to disk.
+// Uses atomic write (temp file + rename) to prevent corruption.
+func (dp *DNSProtection) SaveState() error {
+	dp.mu.Lock()
+	state := DNSState{
+		StrictMode:   dp.strictMode,
+		FirewallMode: dp.firewallMode,
+		Paused:       dp.paused,
+		VPNInterface: dp.vpnInterface,
+		OriginalDNS:  dp.originalDNS,
+		Timestamp:    time.Now().Unix(),
+	}
+	dp.mu.Unlock()
+
+	// Only save if there's something to save
+	if !state.StrictMode && !state.FirewallMode && !state.Paused {
+		// Nothing active - remove state file if it exists
+		return dp.ClearState()
+	}
+
+	// Ensure state directory exists
+	if err := app.EnsureStateDir(); err != nil {
+		log.Printf("DNSProtection: Warning: failed to ensure state directory: %v", err)
+		return err
+	}
+
+	// Marshal state to JSON
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal DNS state: %w", err)
+	}
+
+	// Atomic write: write to temp file, then rename
+	statePath := app.DNSStatePath
+	tempPath := statePath + ".tmp"
+
+	// Write to temp file
+	if err := writeDNSStateFile(tempPath, data); err != nil {
+		return fmt.Errorf("failed to write temp state file: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempPath, statePath); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("failed to rename state file: %w", err)
+	}
+
+	log.Printf("DNSProtection: State saved to %s", statePath)
+	return nil
+}
+
+// writeDNSStateFile writes data to a file with proper permissions.
+func writeDNSStateFile(path string, data []byte) error {
+	// Ensure parent directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		// Try with pkexec if direct creation fails
+		cmd := exec.Command("pkexec", "mkdir", "-p", dir)
+		if _, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to create state directory: %w", err)
+		}
+	}
+
+	// Try direct write first (if we have permissions)
+	if err := os.WriteFile(path, data, 0600); err == nil {
+		return nil
+	}
+
+	// Fall back to pkexec for elevated write
+	tmpPath := "/tmp/vpn-manager-dns-state.tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	cmd := exec.Command("pkexec", "mv", tmpPath, path)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("pkexec mv failed: %w: %s", err, string(output))
+	}
+
+	// Set proper permissions
+	cmd = exec.Command("pkexec", "chmod", "600", path)
+	_ = cmd.Run() // Best effort
+
+	return nil
+}
+
+// LoadDNSState reads the persisted DNS protection state from disk.
+// Returns nil if no state file exists (not an error condition).
+func LoadDNSState() (*DNSState, error) {
+	statePath := app.DNSStatePath
+
+	// Check if state file exists
+	if !app.StateFileExists(statePath) {
+		return nil, nil
+	}
+
+	// Read state file
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DNS state: %w", err)
+	}
+
+	// Unmarshal JSON
+	var state DNSState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("failed to parse DNS state: %w", err)
+	}
+
+	return &state, nil
+}
+
+// RecoverState checks for orphaned state and recovers or cleans up.
+// This should be called during app initialization to handle crashes.
+func (dp *DNSProtection) RecoverState() error {
+	state, err := LoadDNSState()
+	if err != nil {
+		log.Printf("DNSProtection: Warning: failed to load state: %v", err)
+		_ = dp.ClearState()
+		return err
+	}
+
+	// No state file - nothing to recover
+	if state == nil {
+		return nil
+	}
+
+	log.Printf("DNSProtection: Found persisted state (strict=%v, firewall=%v, paused=%v, iface=%s)",
+		state.StrictMode, state.FirewallMode, state.Paused, state.VPNInterface)
+
+	// If nothing was active, just clean up the state file
+	if !state.StrictMode && !state.FirewallMode && !state.Paused {
+		return dp.ClearState()
+	}
+
+	// Check if firewall rules still exist (if they should)
+	rulesExist := false
+	if state.FirewallMode {
+		rulesExist = dp.checkFirewallRulesExist()
+	}
+
+	dp.mu.Lock()
+	if state.FirewallMode && rulesExist {
+		// Rules still exist - recover internal state
+		log.Printf("DNSProtection: Firewall rules still active, recovering internal state")
+		dp.firewallMode = true
+		dp.vpnInterface = state.VPNInterface
+		dp.originalDNS = state.OriginalDNS
+		dp.paused = state.Paused
+	} else if state.FirewallMode && !rulesExist {
+		// Rules don't exist anymore - clean up state
+		log.Printf("DNSProtection: No firewall rules found, cleaning up stale state")
+		dp.mu.Unlock()
+		return dp.ClearState()
+	}
+
+	// For strict mode, we can't easily verify if it's still active
+	// (resolvectl state is complex), so we'll trust the state file
+	if state.StrictMode {
+		dp.strictMode = true
+		dp.vpnInterface = state.VPNInterface
+		dp.originalDNS = state.OriginalDNS
+		dp.paused = state.Paused
+		log.Printf("DNSProtection: Recovered strict mode state")
+	}
+	dp.mu.Unlock()
+
+	return nil
+}
+
+// ClearState removes the DNS state file.
+func (dp *DNSProtection) ClearState() error {
+	statePath := app.DNSStatePath
+
+	if !app.StateFileExists(statePath) {
+		return nil
+	}
+
+	// Try direct removal first
+	if err := os.Remove(statePath); err == nil {
+		log.Printf("DNSProtection: State file cleared")
+		return nil
+	}
+
+	// Fall back to pkexec for elevated removal
+	cmd := exec.Command("pkexec", "rm", "-f", statePath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to remove state file: %w: %s", err, string(output))
+	}
+
+	log.Printf("DNSProtection: State file cleared")
+	return nil
+}
+
+// GetCurrentState returns the current DNS protection state (for UI/status).
+func (dp *DNSProtection) GetCurrentState() DNSState {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+
+	return DNSState{
+		StrictMode:   dp.strictMode,
+		FirewallMode: dp.firewallMode,
+		Paused:       dp.paused,
+		VPNInterface: dp.vpnInterface,
+		OriginalDNS:  dp.originalDNS,
+		Timestamp:    time.Now().Unix(),
+	}
 }

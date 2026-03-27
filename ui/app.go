@@ -188,6 +188,9 @@ func (a *Application) Cleanup() {
 		if a.window.wireguardPanel != nil {
 			a.window.wireguardPanel.StopUpdates()
 		}
+		if a.window.statsPanel != nil {
+			a.window.statsPanel.StopUpdates()
+		}
 	}
 	app.LogInfo("Application cleanup completed")
 }

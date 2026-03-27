@@ -60,6 +60,9 @@ type IPv6Protection struct {
 
 	// Active interfaces at enable time
 	interfaces []string
+
+	// nftablesEnabled indicates if nftables inet family rules are active
+	nftablesEnabled bool
 }
 
 // NewIPv6Protection creates an IPv6 protection manager.
@@ -170,9 +173,16 @@ func (ip6 *IPv6Protection) blockIPv6() error {
 		log.Printf("IPv6Protection: sysctl disable failed: %v, trying firewall", err)
 	}
 
-	// Method 2: Block IPv6 via ip6tables (defense in depth)
-	if err := ip6.blockIPv6Firewall(); err != nil {
-		log.Printf("IPv6Protection: Warning: firewall block failed: %v", err)
+	// Method 2: Try nftables inet family first (modern, handles IPv4+IPv6 unified)
+	if err := ip6.blockIPv6Nftables(); err == nil {
+		ip6.nftablesEnabled = true
+		log.Printf("IPv6Protection: Using nftables inet family for IPv6 blocking")
+	} else {
+		// Method 3: Fall back to ip6tables (defense in depth)
+		log.Printf("IPv6Protection: nftables unavailable (%v), using ip6tables", err)
+		if err := ip6.blockIPv6Firewall(); err != nil {
+			log.Printf("IPv6Protection: Warning: firewall block failed: %v", err)
+		}
 	}
 
 	log.Printf("IPv6Protection: IPv6 blocked for interfaces: %v", interfaces)
@@ -180,7 +190,9 @@ func (ip6 *IPv6Protection) blockIPv6() error {
 }
 
 // disableIPv6Sysctl disables IPv6 at the kernel level.
+// Sets disable_ipv6=1, autoconf=0, and accept_ra=0 for comprehensive IPv6 blocking.
 func (ip6 *IPv6Protection) disableIPv6Sysctl() error {
+	// Global sysctl settings for IPv6 blocking
 	sysctlSettings := []struct {
 		key   string
 		value string
@@ -188,17 +200,30 @@ func (ip6 *IPv6Protection) disableIPv6Sysctl() error {
 		// Disable IPv6 globally
 		{"net.ipv6.conf.all.disable_ipv6", "1"},
 		{"net.ipv6.conf.default.disable_ipv6", "1"},
+		// Disable IPv6 autoconfiguration (SLAAC) globally
+		{"net.ipv6.conf.all.autoconf", "0"},
+		{"net.ipv6.conf.default.autoconf", "0"},
+		// Disable Router Advertisement acceptance globally
+		{"net.ipv6.conf.all.accept_ra", "0"},
+		{"net.ipv6.conf.default.accept_ra", "0"},
 	}
 
-	// Add per-interface settings
+	// Add per-interface settings for all three parameters
 	for _, iface := range ip6.interfaces {
-		sysctlSettings = append(sysctlSettings, struct {
-			key   string
-			value string
-		}{
-			fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6", iface),
-			"1",
-		})
+		sysctlSettings = append(sysctlSettings,
+			struct {
+				key   string
+				value string
+			}{fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6", iface), "1"},
+			struct {
+				key   string
+				value string
+			}{fmt.Sprintf("net.ipv6.conf.%s.autoconf", iface), "0"},
+			struct {
+				key   string
+				value string
+			}{fmt.Sprintf("net.ipv6.conf.%s.accept_ra", iface), "0"},
+		)
 	}
 
 	for _, setting := range sysctlSettings {
@@ -309,6 +334,71 @@ func (ip6 *IPv6Protection) unblockIPv6Firewall() error {
 		_ = cmd.Run() // Ignore errors
 	}
 
+	return nil
+}
+
+// nftablesIPv6TableName is the nftables table name for IPv6 protection.
+const nftablesIPv6TableName = "vpn_ipv6_protect"
+
+// blockIPv6Nftables blocks IPv6 using nftables inet family.
+// This provides unified IPv4/IPv6 handling with modern nftables syntax.
+func (ip6 *IPv6Protection) blockIPv6Nftables() error {
+	// Check if nft is available
+	if _, err := exec.LookPath("nft"); err != nil {
+		return fmt.Errorf("nft not found: %w", err)
+	}
+
+	// Create inet family table (handles both IPv4 and IPv6)
+	if err := ip6.runNftCmd("add", "table", "inet", nftablesIPv6TableName); err != nil {
+		// Table might exist, continue
+		log.Printf("IPv6Protection: nftables table creation: %v (may already exist)", err)
+	}
+
+	// Create input chain with accept policy (we only drop IPv6)
+	inputChainCmd := fmt.Sprintf("add chain inet %s input { type filter hook input priority 0; }", nftablesIPv6TableName)
+	_ = ip6.runNftCmd(inputChainCmd)
+
+	// Create output chain
+	outputChainCmd := fmt.Sprintf("add chain inet %s output { type filter hook output priority 0; }", nftablesIPv6TableName)
+	_ = ip6.runNftCmd(outputChainCmd)
+
+	// Create forward chain
+	forwardChainCmd := fmt.Sprintf("add chain inet %s forward { type filter hook forward priority 0; }", nftablesIPv6TableName)
+	_ = ip6.runNftCmd(forwardChainCmd)
+
+	// Add rules to drop all IPv6 traffic except loopback
+	// Allow IPv6 loopback
+	_ = ip6.runNftCmd("add", "rule", "inet", nftablesIPv6TableName, "input", "iifname", "lo", "meta", "nfproto", "ipv6", "accept")
+	_ = ip6.runNftCmd("add", "rule", "inet", nftablesIPv6TableName, "output", "oifname", "lo", "meta", "nfproto", "ipv6", "accept")
+
+	// Drop all other IPv6 traffic
+	if err := ip6.runNftCmd("add", "rule", "inet", nftablesIPv6TableName, "input", "meta", "nfproto", "ipv6", "drop"); err != nil {
+		return fmt.Errorf("failed to add IPv6 input drop rule: %w", err)
+	}
+	if err := ip6.runNftCmd("add", "rule", "inet", nftablesIPv6TableName, "output", "meta", "nfproto", "ipv6", "drop"); err != nil {
+		return fmt.Errorf("failed to add IPv6 output drop rule: %w", err)
+	}
+	if err := ip6.runNftCmd("add", "rule", "inet", nftablesIPv6TableName, "forward", "meta", "nfproto", "ipv6", "drop"); err != nil {
+		return fmt.Errorf("failed to add IPv6 forward drop rule: %w", err)
+	}
+
+	return nil
+}
+
+// unblockIPv6Nftables removes nftables IPv6 blocking rules.
+func (ip6 *IPv6Protection) unblockIPv6Nftables() error {
+	// Delete the entire table - cleanest approach
+	return ip6.runNftCmd("delete", "table", "inet", nftablesIPv6TableName)
+}
+
+// runNftCmd executes an nft command with pkexec for privilege escalation.
+func (ip6 *IPv6Protection) runNftCmd(args ...string) error {
+	fullArgs := append([]string{"nft"}, args...)
+	cmd := exec.Command("pkexec", fullArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("nft %v: %w - %s", args, err, string(output))
+	}
 	return nil
 }
 

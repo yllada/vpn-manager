@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/vpn/stats"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
@@ -84,6 +85,9 @@ type Manager struct {
 	networkMonitor    *trust.NetworkMonitor
 	trustSubscription *app.Subscription
 
+	// Traffic statistics
+	statsManager *stats.StatsManager
+
 	mu sync.RWMutex
 }
 
@@ -119,6 +123,13 @@ func NewManager() (*Manager, error) {
 
 	// Initialize health checker with default config
 	m.healthChecker = NewHealthChecker(m, DefaultHealthConfig())
+
+	// Initialize traffic statistics (non-fatal if it fails)
+	if statsManager, err := stats.NewStatsManager(""); err != nil {
+		app.LogWarn("vpn", "Failed to initialize stats manager: %v (traffic statistics will be unavailable)", err)
+	} else {
+		m.statsManager = statsManager
+	}
 
 	// Register shutdown hooks
 	m.registerShutdownHooks()
@@ -168,6 +179,15 @@ func (m *Manager) registerShutdownHooks() {
 	// Stop health checker
 	sm.Register("health-checker-stop", app.PriorityNormal, func(ctx context.Context) error {
 		m.StopHealthChecker()
+		return nil
+	})
+
+	// Close stats manager
+	sm.Register("stats-close", app.PriorityLow, func(ctx context.Context) error {
+		if m.statsManager != nil {
+			app.LogInfo("Shutdown: Closing stats manager")
+			return m.statsManager.Close()
+		}
 		return nil
 	})
 }
@@ -263,6 +283,57 @@ func (m *Manager) KillSwitch() *KillSwitch {
 // AppTunnel returns the per-app tunnel manager.
 func (m *Manager) AppTunnel() *AppTunnel {
 	return m.appTunnel
+}
+
+// =============================================================================
+// TRAFFIC STATISTICS
+// =============================================================================
+
+// StatsManager returns the traffic statistics manager.
+// May return nil if stats initialization failed.
+func (m *Manager) StatsManager() *stats.StatsManager {
+	return m.statsManager
+}
+
+// StartStatsCollection begins traffic statistics collection for a connection.
+// Call this when a VPN connection is established.
+// Returns the session ID for tracking, or empty string if stats unavailable.
+func (m *Manager) StartStatsCollection(profileID, vpnIface, serverAddr string) string {
+	if m.statsManager == nil {
+		return ""
+	}
+
+	sessionID, err := m.statsManager.StartSession(profileID, vpnIface, serverAddr)
+	if err != nil {
+		app.LogWarn("stats", "Failed to start stats collection: %v", err)
+		return ""
+	}
+	return sessionID
+}
+
+// StopStatsCollection ends traffic statistics collection.
+// Call this when a VPN connection is terminated.
+// Returns the session summary, or nil if stats unavailable.
+func (m *Manager) StopStatsCollection() *stats.SessionSummary {
+	if m.statsManager == nil {
+		return nil
+	}
+
+	summary, err := m.statsManager.EndSession()
+	if err != nil {
+		app.LogWarn("stats", "Failed to end stats collection: %v", err)
+		return nil
+	}
+	return summary
+}
+
+// GetCurrentStats returns live statistics for the active session.
+// Returns nil if no session is active or stats unavailable.
+func (m *Manager) GetCurrentStats() *stats.SessionSummary {
+	if m.statsManager == nil {
+		return nil
+	}
+	return m.statsManager.GetCurrentStats()
 }
 
 // =============================================================================

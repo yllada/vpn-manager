@@ -113,6 +113,36 @@ button.login-button image {
 .success-label {
     color: @success_color;
 }
+
+/* Numeric labels - consistent monospace styling for stats */
+.numeric {
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Accent color text for download indicators */
+.accent {
+    color: @accent_color;
+}
+
+/* Level bar custom offsets for connection quality */
+levelbar.horizontal trough block.low {
+    background-color: @error_color;
+}
+
+levelbar.horizontal trough block.high {
+    background-color: @warning_color;
+}
+
+levelbar.horizontal trough block.full {
+    background-color: @success_color;
+}
+
+/* Graph frame styling - subtle border */
+.stats-graph frame {
+    border-radius: 8px;
+    border: 1px solid alpha(currentColor, 0.1);
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.

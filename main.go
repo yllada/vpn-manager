@@ -30,6 +30,7 @@ import (
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/cli"
 	"github.com/yllada/vpn-manager/ui"
+	"github.com/yllada/vpn-manager/vpn"
 )
 
 // Build-time variables injected via ldflags (-X main.appVersion=x.y.z)
@@ -53,6 +54,10 @@ var (
 	showStatus     = flag.Bool("status", false, "Show current connection status")
 	runApp         = flag.Bool("run", false, "Run a command through VPN (remaining args are the command)")
 	listApps       = flag.Bool("list-apps", false, "List installed applications for split tunneling")
+
+	// Kill switch systemd service flags (used by systemd service, not for direct user use)
+	recoverKillSwitch = flag.Bool("recover-killswitch", false, "Recover kill switch state (used by systemd service)")
+	disableKillSwitch = flag.Bool("disable-killswitch", false, "Disable kill switch (used by systemd service)")
 )
 
 func main() {
@@ -96,6 +101,16 @@ func main() {
 
 	// Handle shutdown signals (SIGINT, SIGTERM)
 	setupSignalHandler(cancel)
+
+	// Handle kill switch systemd service commands (these run as root, no GUI needed)
+	if *recoverKillSwitch {
+		handleRecoverKillSwitch()
+		return
+	}
+	if *disableKillSwitch {
+		handleDisableKillSwitch()
+		return
+	}
 
 	// Verify OpenVPN installation
 	if !checkOpenVPNInstalled() {
@@ -206,4 +221,83 @@ func checkOpenVPNInstalled() bool {
 	}
 
 	return false
+}
+
+// handleRecoverKillSwitch recovers the kill switch state from the state file.
+// This is called by the systemd service at boot time to restore kill switch rules.
+func handleRecoverKillSwitch() {
+	app.LogInfo("Recovering kill switch state (systemd service start)")
+
+	ks := vpn.NewKillSwitch()
+
+	// Load the persisted state
+	state, err := vpn.LoadState()
+	if err != nil {
+		app.LogError("Failed to load kill switch state: %v", err)
+		os.Exit(1)
+	}
+
+	if state == nil {
+		// No state file - nothing to recover
+		app.LogInfo("No kill switch state file found, skipping recovery")
+		os.Exit(0)
+	}
+
+	if !state.Enabled {
+		app.LogInfo("Kill switch was not enabled, skipping recovery")
+		os.Exit(0)
+	}
+
+	// Restore LAN settings from state
+	if state.AllowLAN {
+		ks.SetAllowLAN(true)
+		if len(state.LANRanges) > 0 {
+			ks.SetLANRanges(state.LANRanges)
+		}
+	}
+
+	// Set mode and enable
+	ks.SetMode(vpn.KillSwitchMode(state.Mode))
+
+	var enableErr error
+	if state.AllowLAN && len(state.LANRanges) > 0 {
+		enableErr = ks.EnableWithLAN(state.VPNIface, state.VPNServerIP, state.LANRanges)
+	} else {
+		enableErr = ks.Enable(state.VPNIface, state.VPNServerIP)
+	}
+
+	if enableErr != nil {
+		app.LogError("Failed to enable kill switch: %v", enableErr)
+		os.Exit(1)
+	}
+
+	app.LogInfo("Kill switch recovered successfully (iface=%s, allowLAN=%v)", state.VPNIface, state.AllowLAN)
+	os.Exit(0)
+}
+
+// handleDisableKillSwitch disables the kill switch and clears the state file.
+// This is called by the systemd service at shutdown/stop time.
+func handleDisableKillSwitch() {
+	app.LogInfo("Disabling kill switch (systemd service stop)")
+
+	ks := vpn.NewKillSwitch()
+
+	// Recover current state first so we know how to disable
+	if err := ks.RecoverState(); err != nil {
+		app.LogWarn("Failed to recover state: %v", err)
+	}
+
+	// Force disable the kill switch
+	if err := ks.ForceDisable(); err != nil {
+		app.LogError("Failed to disable kill switch: %v", err)
+		os.Exit(1)
+	}
+
+	// Clear the state file
+	if err := ks.ClearState(); err != nil {
+		app.LogWarn("Failed to clear state file: %v", err)
+	}
+
+	app.LogInfo("Kill switch disabled successfully")
+	os.Exit(0)
 }

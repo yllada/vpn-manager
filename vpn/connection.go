@@ -186,6 +186,14 @@ func (m *Manager) Disconnect(profileID string) error {
 	conn.Status = StatusDisconnected
 	conn.mu.Unlock()
 
+	// Stop traffic statistics collection
+	if summary := m.StopStatsCollection(); summary != nil {
+		app.LogInfo("vpn", "Session stats: ↓%d MB ↑%d MB duration=%v",
+			summary.TotalBytesIn/(1024*1024),
+			summary.TotalBytesOut/(1024*1024),
+			summary.Duration.Round(time.Second))
+	}
+
 	delete(m.connections, profileID)
 
 	app.LogDebug("vpn", "Disconnected from %s", profileID)
@@ -533,6 +541,11 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 					m.applySplitTunnelRoutes(conn)
 				})
 			}
+
+			// Start traffic statistics collection
+			tunIface := m.detectTunInterface()
+			vpnServerIP := m.getVPNServerIP(conn.Profile)
+			m.StartStatsCollection(conn.Profile.ID, tunIface, vpnServerIP)
 		}
 
 		// Detect authentication errors

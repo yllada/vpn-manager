@@ -25,6 +25,7 @@ type MainWindow struct {
 	openvpnPanel    *OpenVPNPanel
 	tailscalePanel  *TailscalePanel
 	wireguardPanel  *WireGuardPanel
+	statsPanel      *StatsPanel
 	viewStack       *adw.ViewStack
 	viewSwitcher    *adw.ViewSwitcher
 	viewSwitcherBar *adw.ViewSwitcherBar
@@ -102,6 +103,9 @@ func (mw *MainWindow) createLayout() {
 
 	// WireGuard page (only if available)
 	mw.createWireGuardPage()
+
+	// Statistics page (always shown - key differentiator feature)
+	mw.createStatsPage()
 
 	// Create ViewSwitcher for header bar (wide screens)
 	mw.viewSwitcher = adw.NewViewSwitcher()
@@ -209,6 +213,27 @@ func (mw *MainWindow) createWireGuardPage() {
 
 	// Start periodic updates
 	mw.wireguardPanel.StartUpdates()
+}
+
+// createStatsPage creates the Statistics page with traffic analytics.
+// This is a key differentiator feature - enterprise-grade statistics that
+// no other Linux VPN client provides.
+func (mw *MainWindow) createStatsPage() {
+	// Get stats manager from VPN manager
+	statsManager := mw.app.vpnManager.StatsManager()
+
+	// Create stats panel
+	mw.statsPanel = NewStatsPanel(mw, statsManager)
+
+	scrolledStats := gtk.NewScrolledWindow()
+	scrolledStats.SetVExpand(true)
+	scrolledStats.SetChild(mw.statsPanel.GetWidget())
+
+	statsPage := mw.viewStack.AddTitledWithIcon(scrolledStats, "stats", "Statistics", "utilities-system-monitor-symbolic")
+	statsPage.SetUseUnderline(true)
+
+	// Start periodic updates for live bandwidth
+	mw.statsPanel.StartUpdates()
 }
 
 // createMenu creates the application menu.
@@ -380,6 +405,11 @@ func (mw *MainWindow) RefreshAllPanels() {
 	// Refresh WireGuard panel
 	if mw.wireguardPanel != nil {
 		mw.wireguardPanel.RefreshStatus()
+	}
+
+	// Refresh Statistics panel
+	if mw.statsPanel != nil {
+		mw.statsPanel.Refresh()
 	}
 }
 
