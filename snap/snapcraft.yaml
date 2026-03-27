@@ -23,14 +23,8 @@ description: |
   - IPv6 leak protection
   - Secure credential storage via system keyring
   
-  **Note:** Some features require manual interface connections.
-  After installation, run:
-    sudo snap connect vpn-manager:firewall-control
-    sudo snap connect vpn-manager:network-control
-    sudo snap connect vpn-manager:network-manager
-
 grade: stable
-confinement: strict
+confinement: classic
 
 platforms:
   amd64:
@@ -65,77 +59,10 @@ apps:
       XDG_CACHE_HOME: $SNAP_USER_COMMON/.cache
       # For system tray (AppIndicator)
       BAMF_DESKTOP_FILE_HINT: $SNAP/usr/share/applications/vpn-manager.desktop
-    plugs:
-      # Desktop integration
-      - desktop
-      - desktop-legacy
-      - wayland
-      - x11
-      - unity7
-      # Network access and control
-      - network
-      - network-bind
-      - network-control
-      - network-manager
-      - network-manager-observe
-      - network-observe
-      - network-status
-      # Firewall control (for kill switch - iptables/nftables)
-      - firewall-control
-      # DNS configuration
-      - system-files
-      # User data
-      - home
-      # Audio notifications (optional)
-      - audio-playback
-      # For secret service/keyring access
-      - password-manager-service
-      # D-Bus for various integrations
-      - dbus-daemon
-    slots:
-      # Allow owning the app's DBus name
-      - dbus-vpnmanager
 
   # CLI-only entry point
   vpn-manager-cli:
     command: usr/bin/vpn-manager
-    plugs:
-      - network
-      - network-bind
-      - network-control
-      - network-manager
-      - firewall-control
-      - system-files
-      - home
-      - password-manager-service
-
-slots:
-  # DBus slot to own the app's bus name (required for AppArmor policy)
-  dbus-vpnmanager:
-    interface: dbus
-    bus: session
-    name: com.vpnmanager.app
-
-plugs:
-  # System files needed for DNS configuration
-  system-files:
-    interface: system-files
-    read:
-      - /etc/resolv.conf
-      - /run/systemd/resolve
-      - /etc/NetworkManager
-    write:
-      - /etc/resolv.conf
-  
-  # D-Bus access for NetworkManager and systemd-resolved
-  dbus-daemon:
-    interface: dbus
-    bus: system
-    name: org.freedesktop.NetworkManager
-  
-  # Read system network configuration
-  network-manager:
-    interface: network-manager
 
 parts:
   vpn-manager:
