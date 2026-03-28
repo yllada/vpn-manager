@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.10.0] - 2026-03-28
+
+### Added
+- **Guided Empty States**: All VPN tabs now always visible with helpful install guidance
+  - Shows distro-specific installation command (auto-detected)
+  - Copy-to-clipboard button for quick command copying
+  - Direct links to official documentation
+  - "Check Again" button to refresh availability after installation
+- **Distro Detection**: Automatic detection of Linux distribution family
+  - Supports Debian/Ubuntu, Fedora/RHEL, Arch, and openSUSE families
+  - Graceful fallback for unknown distributions
+- **Tailscale 3-State Handling**: Distinguishes between not installed, daemon stopped, and ready states
+
+### Changed
+- **App Startup**: OpenVPN is no longer required to launch the application
+  - App now starts with any combination of VPN tools (or none)
+  - Each panel shows appropriate install guidance when its tool is missing
+
+### Technical
+- New `internal/distro` package for Linux distribution detection
+- Reusable `NotInstalledView` component using libadwaita's StatusPage
+- `AvailabilityState` enum for fine-grained Tailscale status
+
 ## [1.9.2] - 2026-03-28
 
 ### Fixed
