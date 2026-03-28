@@ -47,9 +47,17 @@ type TailscalePanel struct {
 	// Peers cache to avoid unnecessary rebuilds (prevents scroll jump)
 	lastPeersSignature string
 	peerRows           map[string]*adw.ExpanderRow
+
+	// Empty state views for when Tailscale is not available
+	notInstalledView  *NotInstalledView // For StateNotInstalled
+	daemonStoppedView *NotInstalledView // For StateDaemonStopped (reuses same component)
+
+	// Normal UI container (to hide/show as a group)
+	normalUIContainer *gtk.Box
 }
 
 // NewTailscalePanel creates a new Tailscale panel.
+// Accepts nil provider if Tailscale binary is not found — panel will show NotInstalledView.
 func NewTailscalePanel(mainWindow *MainWindow, provider *tailscale.Provider) *TailscalePanel {
 	tp := &TailscalePanel{
 		mainWindow:  mainWindow,
@@ -59,6 +67,10 @@ func NewTailscalePanel(mainWindow *MainWindow, provider *tailscale.Provider) *Ta
 	}
 
 	tp.createLayout()
+
+	// Check availability and show appropriate view
+	tp.checkAvailability()
+
 	return tp
 }
 
@@ -69,8 +81,10 @@ func (tp *TailscalePanel) GetWidget() gtk.Widgetter {
 
 // RefreshStatus refreshes the Tailscale status from the provider.
 // Called when window is shown from systray to sync UI with actual VPN state.
+// First checks availability and switches view if needed, then updates status.
 func (tp *TailscalePanel) RefreshStatus() {
-	tp.updateStatus()
+	// Re-check availability in case user installed/started Tailscale
+	tp.checkAvailability()
 }
 
 // createLayout builds the Tailscale panel UI.
@@ -79,16 +93,28 @@ func (tp *TailscalePanel) createLayout() {
 	cfg := DefaultPanelConfig("Tailscale")
 	tp.box = CreatePanelBox(cfg)
 
+	// Container for normal UI (to hide/show as a group)
+	tp.normalUIContainer = gtk.NewBox(gtk.OrientationVertical, 0)
+
 	// Main profile card - shows connection status
 	profileCard := tp.createProfileCard()
-	tp.box.Append(profileCard)
+	tp.normalUIContainer.Append(profileCard)
 
 	// Peers section - directly embedded, no tabs
 	peersSection := tp.createPeersSection()
-	tp.box.Append(peersSection)
+	tp.normalUIContainer.Append(peersSection)
 
-	// Initial status update
-	tp.updateStatus()
+	tp.box.Append(tp.normalUIContainer)
+
+	// Create NotInstalledView for "not installed" state
+	tp.notInstalledView = NewNotInstalledView(NewTailscaleNotInstalledConfig(tp.checkAvailability))
+	tp.notInstalledView.SetVisible(false)
+	tp.box.Append(tp.notInstalledView.GetWidget())
+
+	// Create NotInstalledView for "daemon stopped" state
+	tp.daemonStoppedView = NewNotInstalledView(NewTailscaleDaemonStoppedConfig(tp.checkAvailability))
+	tp.daemonStoppedView.SetVisible(false)
+	tp.box.Append(tp.daemonStoppedView.GetWidget())
 }
 
 // createProfileCard creates the main profile card using AdwExpanderRow.
@@ -418,11 +444,76 @@ func (tp *TailscalePanel) showOperatorSetupDialog() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// AVAILABILITY STATE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// checkAvailability checks if Tailscale is available and shows the appropriate view.
+// This handles 3 states: NotInstalled, DaemonStopped, Ready.
+// Called on panel creation and when user clicks "Check Again".
+func (tp *TailscalePanel) checkAvailability() {
+	if tp.provider == nil {
+		// Binary not found during provider creation
+		tp.showNotInstalledState()
+		return
+	}
+
+	state := tp.provider.AvailabilityState()
+
+	switch state {
+	case tailscale.StateNotInstalled:
+		tp.showNotInstalledState()
+	case tailscale.StateDaemonStopped:
+		tp.showDaemonStoppedState()
+	case tailscale.StateReady:
+		tp.showReadyState()
+	}
+}
+
+// showNotInstalledState shows the NotInstalledView when Tailscale binary is not found.
+func (tp *TailscalePanel) showNotInstalledState() {
+	// Hide normal UI and daemon stopped view
+	tp.normalUIContainer.SetVisible(false)
+	tp.daemonStoppedView.SetVisible(false)
+
+	// Show not installed view
+	tp.notInstalledView.SetVisible(true)
+}
+
+// showDaemonStoppedState shows the DaemonStoppedView when Tailscale daemon is not running.
+func (tp *TailscalePanel) showDaemonStoppedState() {
+	// Hide normal UI and not installed view
+	tp.normalUIContainer.SetVisible(false)
+	tp.notInstalledView.SetVisible(false)
+
+	// Show daemon stopped view
+	tp.daemonStoppedView.SetVisible(true)
+}
+
+// showReadyState shows the normal Tailscale UI when everything is available.
+func (tp *TailscalePanel) showReadyState() {
+	// Hide both error state views
+	tp.notInstalledView.SetVisible(false)
+	tp.daemonStoppedView.SetVisible(false)
+
+	// Show normal UI
+	tp.normalUIContainer.SetVisible(true)
+
+	// Update status now that we're ready
+	tp.updateStatus()
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // STATUS UPDATES
 // ═══════════════════════════════════════════════════════════════════════════
 
 // updateStatus fetches and displays current Tailscale status.
+// Only called when provider is available (StateReady).
 func (tp *TailscalePanel) updateStatus() {
+	// Guard: don't update if provider is nil
+	if tp.provider == nil {
+		return
+	}
+
 	ctx := context.Background()
 
 	// Get version

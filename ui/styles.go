@@ -143,6 +143,28 @@ levelbar.horizontal trough block.full {
     border-radius: 8px;
     border: 1px solid alpha(currentColor, 0.1);
 }
+
+/* Monospace text for command display */
+.monospace row subtitle {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* Highlighted row for recommended distro command */
+.suggested-action-row {
+    background-color: alpha(@accent_bg_color, 0.15);
+    border-left: 3px solid @accent_color;
+}
+
+.suggested-action-row:hover {
+    background-color: alpha(@accent_bg_color, 0.25);
+}
+
+/* Caption styling for badges */
+.caption {
+    font-size: 0.8em;
+    font-weight: 600;
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.

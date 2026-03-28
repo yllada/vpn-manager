@@ -15,7 +15,8 @@
 //
 // Environment:
 //
-//	The application requires OpenVPN or OpenVPN3 to be installed on the system.
+//	The application supports OpenVPN, WireGuard, and Tailscale.
+//	VPN tools can be installed after the app starts - panels show installation guidance.
 package main
 
 import (
@@ -112,11 +113,9 @@ func main() {
 		return
 	}
 
-	// Verify OpenVPN installation
+	// Log OpenVPN availability (app continues regardless - panels show install guidance)
 	if !checkOpenVPNInstalled() {
-		app.LogError("OpenVPN is not installed on the system")
-		_, _ = fmt.Fprintln(os.Stderr, "Error: OpenVPN is not installed on the system.")
-		os.Exit(1)
+		app.LogInfo("OpenVPN is not installed - OpenVPN tab will show installation guidance")
 	}
 
 	// Check if any CLI mode flag is set

@@ -32,6 +32,12 @@ type WireGuardPanel struct {
 	profilesGroup *adw.PreferencesGroup
 	emptyState    *adw.StatusPage
 
+	// Not installed state (shown when WireGuard tools are missing)
+	notInstalledView *NotInstalledView
+
+	// Normal UI elements (hidden when WireGuard not installed)
+	buttonBox *gtk.Box
+
 	// Update management
 	stopUpdates     chan struct{}
 	stopUpdatesOnce sync.Once
@@ -88,6 +94,11 @@ func (wp *WireGuardPanel) createLayout() {
 	wp.statusLabel = statusBar.Label
 	wp.box.Append(wp.statusBox)
 
+	// Create NotInstalledView (hidden by default, shown if WireGuard not installed)
+	wp.notInstalledView = NewNotInstalledView(NewWireGuardNotInstalledConfig(wp.checkAvailability))
+	wp.notInstalledView.SetVisible(false)
+	wp.box.Append(wp.notInstalledView)
+
 	// Profiles section using AdwPreferencesGroup
 	wp.profilesGroup = adw.NewPreferencesGroup()
 	wp.profilesGroup.SetTitle("Profiles")
@@ -121,20 +132,20 @@ func (wp *WireGuardPanel) createLayout() {
 	wp.box.Append(wp.emptyState)
 
 	// Import button at bottom
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
+	wp.buttonBox = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	wp.buttonBox.SetMarginTop(12)
+	wp.buttonBox.SetHAlign(gtk.AlignEnd)
 
 	importBtnBottom := gtk.NewButton()
 	importBtnBottom.SetLabel("Import")
 	importBtnBottom.SetIconName("document-open-symbolic")
 	importBtnBottom.ConnectClicked(wp.onImportProfile)
-	buttonBox.Append(importBtnBottom)
+	wp.buttonBox.Append(importBtnBottom)
 
-	wp.box.Append(buttonBox)
+	wp.box.Append(wp.buttonBox)
 
-	// Load profiles
-	wp.loadProfiles()
+	// Check availability and show appropriate view
+	wp.checkAvailability()
 }
 
 // loadProfiles loads all WireGuard profiles.
@@ -171,6 +182,38 @@ func (wp *WireGuardPanel) updateEmptyState(isEmpty bool) {
 		wp.profilesGroup.SetVisible(true)
 		wp.emptyState.SetVisible(false)
 	}
+}
+
+// checkAvailability checks if WireGuard tools are installed and switches views accordingly.
+// If WireGuard is not installed, shows NotInstalledView with installation guidance.
+// If installed, shows normal UI and loads profiles.
+func (wp *WireGuardPanel) checkAvailability() {
+	if wp.provider != nil && wp.provider.IsAvailable() {
+		// WireGuard is installed - show normal UI
+		wp.showNormalUI()
+		wp.loadProfiles()
+	} else {
+		// WireGuard not installed - show NotInstalledView
+		wp.hideNormalUI()
+	}
+}
+
+// showNormalUI shows the normal WireGuard panel UI elements and hides NotInstalledView.
+func (wp *WireGuardPanel) showNormalUI() {
+	wp.notInstalledView.SetVisible(false)
+	wp.statusBox.SetVisible(true)
+	wp.profilesGroup.SetVisible(true)
+	wp.buttonBox.SetVisible(true)
+	// Empty state visibility is managed by updateEmptyState
+}
+
+// hideNormalUI hides all normal UI elements and shows NotInstalledView.
+func (wp *WireGuardPanel) hideNormalUI() {
+	wp.statusBox.SetVisible(false)
+	wp.profilesGroup.SetVisible(false)
+	wp.emptyState.SetVisible(false)
+	wp.buttonBox.SetVisible(false)
+	wp.notInstalledView.SetVisible(true)
 }
 
 // addProfileRow adds a row for a WireGuard profile using AdwExpanderRow.

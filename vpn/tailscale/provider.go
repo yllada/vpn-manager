@@ -12,6 +12,32 @@ import (
 	"github.com/yllada/vpn-manager/app"
 )
 
+// AvailabilityState represents Tailscale's installation/daemon state.
+type AvailabilityState int
+
+const (
+	// StateNotInstalled means the Tailscale binary was not found.
+	StateNotInstalled AvailabilityState = iota
+	// StateDaemonStopped means the binary exists but the daemon is not running.
+	StateDaemonStopped
+	// StateReady means Tailscale is fully operational.
+	StateReady
+)
+
+// String returns a human-readable description of the availability state.
+func (s AvailabilityState) String() string {
+	switch s {
+	case StateNotInstalled:
+		return "Not Installed"
+	case StateDaemonStopped:
+		return "Daemon Stopped"
+	case StateReady:
+		return "Ready"
+	default:
+		return "Unknown"
+	}
+}
+
 // Provider implements app.VPNProvider for Tailscale.
 type Provider struct {
 	client *Client
@@ -78,22 +104,34 @@ func (p *Provider) Name() string {
 
 // IsAvailable checks if Tailscale is installed and the daemon is running.
 func (p *Provider) IsAvailable() bool {
+	return p.AvailabilityState() == StateReady
+}
+
+// AvailabilityState returns detailed availability info.
+// Use this instead of IsAvailable() when you need to distinguish between
+// "not installed" and "daemon stopped" states.
+func (p *Provider) AvailabilityState() AvailabilityState {
+	// Check if client is nil (binary not found during NewProvider)
 	if p.client == nil {
-		return false
+		return StateNotInstalled
 	}
 
-	// Check if binary exists
+	// Check if binary works (version command)
 	_, err := p.client.Version()
 	if err != nil {
-		return false
+		return StateNotInstalled
 	}
 
-	// Check if daemon is running (status command works)
+	// Check if daemon is running (status command)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, err = p.client.Status(ctx)
-	return err == nil
+	if err != nil {
+		return StateDaemonStopped
+	}
+
+	return StateReady
 }
 
 // Version returns the installed Tailscale version.

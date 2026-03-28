@@ -147,34 +147,29 @@ func (mw *MainWindow) createLayout() {
 	mw.openvpnPanel.LoadProfiles()
 }
 
-// createTailscalePage creates the Tailscale page if available.
+// createTailscalePage creates the Tailscale page.
+// Always creates the tab - panel handles availability states internally via NotInstalledView.
 func (mw *MainWindow) createTailscalePage() {
-	// Try to create Tailscale provider
-	provider, err := tailscale.NewProvider()
-	if err != nil {
-		// Tailscale not available, skip
-		return
+	// Try to create Tailscale provider - may fail if binary not found
+	provider, _ := tailscale.NewProvider() // Ignore error - panel handles nil provider
+
+	// If provider was created successfully, set up operator permissions
+	if provider != nil {
+		// Register provider with manager
+		mw.app.vpnManager.RegisterProvider(provider)
+
+		// Ensure current user is configured as Tailscale operator
+		// This allows running tailscale commands without password prompts
+		// Only prompts for password once if not already configured
+		app.SafeGoWithName("tailscale-ensure-operator", func() {
+			if err := provider.EnsureOperator(); err != nil {
+				// Log but don't fail - user can still use pkexec fallback
+				app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
+			}
+		})
 	}
 
-	if !provider.IsAvailable() {
-		// Tailscale daemon not running
-		return
-	}
-
-	// Ensure current user is configured as Tailscale operator
-	// This allows running tailscale commands without password prompts
-	// Only prompts for password once if not already configured
-	app.SafeGoWithName("tailscale-ensure-operator", func() {
-		if err := provider.EnsureOperator(); err != nil {
-			// Log but don't fail - user can still use pkexec fallback
-			app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
-		}
-	})
-
-	// Register provider with manager
-	mw.app.vpnManager.RegisterProvider(provider)
-
-	// Create Tailscale panel
+	// Always create Tailscale panel - it handles nil provider by showing NotInstalledView
 	mw.tailscalePanel = NewTailscalePanel(mw, provider)
 
 	scrolledTailscale := gtk.NewScrolledWindow()
@@ -184,24 +179,27 @@ func (mw *MainWindow) createTailscalePage() {
 	tailscalePage := mw.viewStack.AddTitledWithIcon(scrolledTailscale, "tailscale", "Tailscale", "network-server-symbolic")
 	tailscalePage.SetUseUnderline(true)
 
-	// Start periodic updates
-	mw.tailscalePanel.StartUpdates()
+	// Start periodic updates only if provider is available
+	// The panel's updateStatus will gracefully handle nil provider
+	if provider != nil {
+		mw.tailscalePanel.StartUpdates()
+	}
 }
 
-// createWireGuardPage creates the WireGuard page if available.
+// createWireGuardPage creates the WireGuard page.
+// Always creates the tab - panel handles availability states internally (Phase 5).
 func (mw *MainWindow) createWireGuardPage() {
-	// Create WireGuard provider
+	// Create WireGuard provider (always succeeds - never returns nil)
 	provider := wireguard.NewProvider()
 
-	if !provider.IsAvailable() {
-		// WireGuard tools not installed
-		return
-	}
+	// Note: We no longer check IsAvailable() here.
+	// The panel will handle unavailable state internally (Phase 5 will add NotInstalledView).
+	// For now, if wg-quick is not installed, operations will fail gracefully.
 
 	// Register provider with manager
 	mw.app.vpnManager.RegisterProvider(provider)
 
-	// Create WireGuard panel
+	// Create WireGuard panel (pass provider - handles unavailable state internally)
 	mw.wireguardPanel = NewWireGuardPanel(mw, provider)
 
 	scrolledWireGuard := gtk.NewScrolledWindow()

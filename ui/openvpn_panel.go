@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -29,6 +30,13 @@ type OpenVPNPanel struct {
 	// Empty state management
 	profilesGroup *adw.PreferencesGroup
 	emptyState    *adw.StatusPage
+
+	// Not installed state (shown when OpenVPN binary is missing)
+	notInstalledView *NotInstalledView
+
+	// Normal UI elements (hidden when OpenVPN not installed)
+	statusBar *gtk.Box
+	buttonBox *gtk.Box
 }
 
 // NewOpenVPNPanel creates a new OpenVPN panel.
@@ -37,6 +45,10 @@ func NewOpenVPNPanel(mainWindow *MainWindow) *OpenVPNPanel {
 		mainWindow: mainWindow,
 	}
 	panel.createLayout()
+
+	// Check availability and show appropriate view
+	panel.checkAvailability()
+
 	return panel
 }
 
@@ -60,6 +72,7 @@ func (op *OpenVPNPanel) createLayout() {
 	statusBar := CreateStatusBar(cfg)
 	op.statusIcon = statusBar.Icon
 	op.statusLabel = statusBar.Label
+	op.statusBar = statusBar.Box
 	op.box.Append(statusBar.Box)
 
 	// Profiles section using AdwPreferencesGroup
@@ -92,17 +105,22 @@ func (op *OpenVPNPanel) createLayout() {
 	op.box.Append(op.emptyState)
 
 	// Import button at bottom
-	buttonBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	buttonBox.SetMarginTop(12)
-	buttonBox.SetHAlign(gtk.AlignEnd)
+	op.buttonBox = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	op.buttonBox.SetMarginTop(12)
+	op.buttonBox.SetHAlign(gtk.AlignEnd)
 
 	importBtn := gtk.NewButton()
 	importBtn.SetLabel("Import")
 	importBtn.SetIconName("document-open-symbolic")
 	importBtn.ConnectClicked(op.onImportProfile)
-	buttonBox.Append(importBtn)
+	op.buttonBox.Append(importBtn)
 
-	op.box.Append(buttonBox)
+	op.box.Append(op.buttonBox)
+
+	// Not installed view (shown when OpenVPN is not installed)
+	op.notInstalledView = NewNotInstalledView(NewOpenVPNNotInstalledConfig(op.checkAvailability))
+	op.notInstalledView.SetVisible(false)
+	op.box.Append(op.notInstalledView.GetWidget())
 }
 
 // onImportProfile handles adding a new OpenVPN profile.
@@ -264,6 +282,57 @@ func (op *OpenVPNPanel) updateEmptyState(isEmpty bool) {
 		op.profilesGroup.SetVisible(true)
 		op.emptyState.SetVisible(false)
 	}
+}
+
+// isOpenVPNInstalled checks if OpenVPN is available on the system.
+// Returns true if either openvpn3 or classic openvpn is found in PATH.
+func (op *OpenVPNPanel) isOpenVPNInstalled() bool {
+	// Check for OpenVPN 3 (preferred for modern systems)
+	if _, err := exec.LookPath("openvpn3"); err == nil {
+		return true
+	}
+	// Fallback to classic OpenVPN
+	if _, err := exec.LookPath("openvpn"); err == nil {
+		return true
+	}
+	return false
+}
+
+// checkAvailability checks if OpenVPN is installed and shows the appropriate view.
+// If OpenVPN is installed, shows normal UI. If not, shows NotInstalledView.
+// This is called on panel creation and when user clicks "Check Again".
+func (op *OpenVPNPanel) checkAvailability() {
+	if op.isOpenVPNInstalled() {
+		op.showNormalUI()
+	} else {
+		op.showNotInstalledView()
+	}
+}
+
+// showNormalUI shows the normal OpenVPN panel UI (status bar, profiles, buttons).
+func (op *OpenVPNPanel) showNormalUI() {
+	// Hide not installed view
+	op.notInstalledView.SetVisible(false)
+
+	// Show normal UI elements
+	op.statusBar.SetVisible(true)
+	op.profilesGroup.SetVisible(true)
+	op.buttonBox.SetVisible(true)
+
+	// Load profiles (this will show emptyState or profiles as appropriate)
+	op.LoadProfiles()
+}
+
+// showNotInstalledView hides normal UI and shows the NotInstalledView.
+func (op *OpenVPNPanel) showNotInstalledView() {
+	// Hide normal UI elements
+	op.statusBar.SetVisible(false)
+	op.profilesGroup.SetVisible(false)
+	op.emptyState.SetVisible(false)
+	op.buttonBox.SetVisible(false)
+
+	// Show not installed view
+	op.notInstalledView.SetVisible(true)
 }
 
 // addProfileRow adds a profile row to the list using AdwExpanderRow.
