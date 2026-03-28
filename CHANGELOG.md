@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.9.2] - 2026-03-28
+
+### Fixed
+- **Split Tunnel UI**: Routes now appear immediately after adding (no manual refresh needed)
+- **Split Tunnel UI**: Fixed GTK widget hierarchy errors when refreshing routes list
+- **Split Tunnel UI**: Added confirmation dialogs before deleting routes and apps
+- **Split Tunnel UI**: Quick Add row now consistently appears at the end of the list
+
 ## [1.9.1] - 2026-03-27
 
 ### Fixed
@@ -194,7 +202,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/yllada/vpn-manager/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/yllada/vpn-manager/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/yllada/vpn-manager/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/yllada/vpn-manager/compare/v1.7.0...v1.8.0
