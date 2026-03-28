@@ -14,6 +14,47 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// SQLite timestamp format (without Go's monotonic clock suffix)
+const sqliteTimestampFormat = "2006-01-02 15:04:05"
+
+// formatTimestamp formats a time.Time for SQLite storage.
+// This strips Go's monotonic clock suffix which breaks SQLite date() functions.
+func formatTimestamp(t time.Time) string {
+	return t.Format(sqliteTimestampFormat)
+}
+
+// parseTimestamp parses a SQLite timestamp string back to time.Time.
+// Returns zero time if the string is empty or invalid.
+func parseTimestamp(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	t, _ := time.ParseInLocation(sqliteTimestampFormat, s, time.Local)
+	return t
+}
+
+// parseNullableTimestamp parses a nullable SQLite timestamp string.
+// Returns nil if the string is empty, otherwise returns a pointer to the parsed time.
+func parseNullableTimestamp(s sql.NullString) *time.Time {
+	if !s.Valid || s.String == "" {
+		return nil
+	}
+	t := parseTimestamp(s.String)
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+// safeDuration calculates the duration between two times safely.
+// Returns 0 if either time is zero to avoid overflow (math.MaxInt64 nanoseconds).
+func safeDuration(start, end time.Time) time.Duration {
+	if start.IsZero() || end.IsZero() {
+		return 0
+	}
+	return end.Sub(start)
+}
+
 // =============================================================================
 // REPOSITORY
 // =============================================================================
@@ -124,10 +165,44 @@ CREATE INDEX IF NOT EXISTS idx_sessions_profile ON sessions(profile_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time DESC);
 `
 
-// migrate runs the database schema migration.
+// migrate runs the database schema migration and data fixes.
 func (r *Repository) migrate() error {
-	_, err := r.db.Exec(schema)
-	return err
+	// Create schema
+	if _, err := r.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Fix corrupted timestamps (Go's monotonic clock suffix breaks SQLite date() functions)
+	if err := r.migrateTimestamps(); err != nil {
+		app.LogWarn("Failed to migrate timestamps: %v", err)
+	}
+
+	return nil
+}
+
+// migrateTimestamps fixes existing corrupted timestamps that contain Go's monotonic clock suffix.
+// This is idempotent and safe to run multiple times.
+func (r *Repository) migrateTimestamps() error {
+	migrations := []string{
+		// Fix sessions.start_time
+		`UPDATE sessions SET start_time = substr(start_time, 1, 19) WHERE start_time LIKE '%m=+%'`,
+		// Fix sessions.end_time
+		`UPDATE sessions SET end_time = substr(end_time, 1, 19) WHERE end_time LIKE '%m=+%'`,
+		// Fix traffic_records.timestamp
+		`UPDATE traffic_records SET timestamp = substr(timestamp, 1, 19) WHERE timestamp LIKE '%m=+%'`,
+	}
+
+	for _, query := range migrations {
+		result, err := r.db.Exec(query)
+		if err != nil {
+			return fmt.Errorf("migration query failed: %w", err)
+		}
+		if rows, _ := result.RowsAffected(); rows > 0 {
+			app.LogInfo("Timestamp migration: fixed %d records", rows)
+		}
+	}
+
+	return nil
 }
 
 // =============================================================================
@@ -145,11 +220,17 @@ func (r *Repository) InsertSession(session *SessionInfo) error {
 		VALUES (?, ?, ?, ?, ?, ?)
 	`
 
+	var endTimeStr *string
+	if session.EndTime != nil {
+		s := formatTimestamp(*session.EndTime)
+		endTimeStr = &s
+	}
+
 	_, err := r.db.Exec(query,
 		session.SessionID,
 		session.ProfileID,
-		session.StartTime,
-		session.EndTime,
+		formatTimestamp(session.StartTime),
+		endTimeStr,
 		session.Interface,
 		session.ServerAddr,
 	)
@@ -167,7 +248,7 @@ func (r *Repository) EndSession(sessionID string) error {
 	defer r.mu.Unlock()
 
 	query := `UPDATE sessions SET end_time = ? WHERE session_id = ? AND end_time IS NULL`
-	_, err := r.db.Exec(query, time.Now(), sessionID)
+	_, err := r.db.Exec(query, formatTimestamp(time.Now()), sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to end session: %w", err)
 	}
@@ -186,13 +267,14 @@ func (r *Repository) GetSession(sessionID string) (*SessionInfo, error) {
 	`
 
 	session := &SessionInfo{}
-	var endTime sql.NullTime
+	var startTimeStr string
+	var endTimeStr sql.NullString
 
 	err := r.db.QueryRow(query, sessionID).Scan(
 		&session.SessionID,
 		&session.ProfileID,
-		&session.StartTime,
-		&endTime,
+		&startTimeStr,
+		&endTimeStr,
 		&session.Interface,
 		&session.ServerAddr,
 	)
@@ -203,9 +285,8 @@ func (r *Repository) GetSession(sessionID string) (*SessionInfo, error) {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	if endTime.Valid {
-		session.EndTime = &endTime.Time
-	}
+	session.StartTime = parseTimestamp(startTimeStr)
+	session.EndTime = parseNullableTimestamp(endTimeStr)
 
 	return session, nil
 }
@@ -228,7 +309,7 @@ func (r *Repository) InsertRecord(record *TrafficRecord) error {
 
 	_, err := r.db.Exec(query,
 		record.SessionID,
-		record.Timestamp,
+		formatTimestamp(record.Timestamp),
 		record.Interface,
 		record.BytesIn,
 		record.BytesOut,
@@ -273,12 +354,14 @@ func (r *Repository) GetSessionRecords(sessionID string) ([]TrafficRecord, error
 	var records []TrafficRecord
 	for rows.Next() {
 		var rec TrafficRecord
+		var timestampStr string
 		if err := rows.Scan(
-			&rec.ID, &rec.SessionID, &rec.Timestamp, &rec.Interface,
+			&rec.ID, &rec.SessionID, &timestampStr, &rec.Interface,
 			&rec.BytesIn, &rec.BytesOut, &rec.PacketsIn, &rec.PacketsOut,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan traffic record: %w", err)
 		}
+		rec.Timestamp = parseTimestamp(timestampStr)
 		records = append(records, rec)
 	}
 
@@ -299,7 +382,7 @@ func (r *Repository) GetSessionSummary(sessionID string) (*SessionSummary, error
 			s.session_id,
 			s.profile_id,
 			s.start_time,
-			COALESCE(s.end_time, datetime('now')) as end_time,
+			COALESCE(s.end_time, datetime('now', 'localtime')) as end_time,
 			COALESCE(MAX(t.bytes_in), 0) as total_bytes_in,
 			COALESCE(MAX(t.bytes_out), 0) as total_bytes_out
 		FROM sessions s
@@ -309,11 +392,12 @@ func (r *Repository) GetSessionSummary(sessionID string) (*SessionSummary, error
 	`
 
 	summary := &SessionSummary{}
+	var startTimeStr, endTimeStr string
 	err := r.db.QueryRow(query, sessionID).Scan(
 		&summary.SessionID,
 		&summary.ProfileID,
-		&summary.StartTime,
-		&summary.EndTime,
+		&startTimeStr,
+		&endTimeStr,
 		&summary.TotalBytesIn,
 		&summary.TotalBytesOut,
 	)
@@ -324,7 +408,9 @@ func (r *Repository) GetSessionSummary(sessionID string) (*SessionSummary, error
 		return nil, fmt.Errorf("failed to get session summary: %w", err)
 	}
 
-	summary.Duration = summary.EndTime.Sub(summary.StartTime)
+	summary.StartTime = parseTimestamp(startTimeStr)
+	summary.EndTime = parseTimestamp(endTimeStr)
+	summary.Duration = safeDuration(summary.StartTime, summary.EndTime)
 	return summary, nil
 }
 
@@ -342,7 +428,7 @@ func (r *Repository) GetRecentSessions(limit int) ([]SessionSummary, error) {
 			s.session_id,
 			s.profile_id,
 			s.start_time,
-			COALESCE(s.end_time, datetime('now')) as end_time,
+			COALESCE(s.end_time, datetime('now', 'localtime')) as end_time,
 			COALESCE(MAX(t.bytes_in), 0) as total_bytes_in,
 			COALESCE(MAX(t.bytes_out), 0) as total_bytes_out
 		FROM sessions s
@@ -361,13 +447,16 @@ func (r *Repository) GetRecentSessions(limit int) ([]SessionSummary, error) {
 	var summaries []SessionSummary
 	for rows.Next() {
 		var s SessionSummary
+		var startTimeStr, endTimeStr string
 		if err := rows.Scan(
-			&s.SessionID, &s.ProfileID, &s.StartTime, &s.EndTime,
+			&s.SessionID, &s.ProfileID, &startTimeStr, &endTimeStr,
 			&s.TotalBytesIn, &s.TotalBytesOut,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan session summary: %w", err)
 		}
-		s.Duration = s.EndTime.Sub(s.StartTime)
+		s.StartTime = parseTimestamp(startTimeStr)
+		s.EndTime = parseTimestamp(endTimeStr)
+		s.Duration = safeDuration(s.StartTime, s.EndTime)
 		summaries = append(summaries, s)
 	}
 
@@ -396,7 +485,12 @@ func (r *Repository) GetDailySummaries(days int) ([]DailySummary, error) {
 			COALESCE(SUM(
 				(SELECT COALESCE(MAX(bytes_out), 0) FROM traffic_records WHERE session_id = s.session_id)
 			), 0) as total_bytes_out,
-			COUNT(DISTINCT s.session_id) as session_count
+			COUNT(DISTINCT s.session_id) as session_count,
+			COALESCE(SUM(
+				CASE WHEN s.end_time IS NOT NULL 
+				THEN CAST((julianday(s.end_time) - julianday(s.start_time)) * 86400 AS INTEGER)
+				ELSE 0 END
+			), 0) as total_duration_seconds
 		FROM sessions s
 		WHERE s.start_time >= date('now', ?)
 		GROUP BY date(s.start_time)
@@ -414,11 +508,14 @@ func (r *Repository) GetDailySummaries(days int) ([]DailySummary, error) {
 	for rows.Next() {
 		var s DailySummary
 		var dateStr string
-		if err := rows.Scan(&dateStr, &s.TotalBytesIn, &s.TotalBytesOut, &s.SessionCount); err != nil {
+		var durationSeconds int64
+		if err := rows.Scan(&dateStr, &s.TotalBytesIn, &s.TotalBytesOut, &s.SessionCount, &durationSeconds); err != nil {
 			return nil, fmt.Errorf("failed to scan daily summary: %w", err)
 		}
-		// Parse date string to time.Time
-		s.Date, _ = time.Parse("2006-01-02", dateStr)
+		// Parse date string to time.Time in local timezone (not UTC)
+		// This ensures date comparison with time.Now().Truncate() works correctly
+		s.Date, _ = time.ParseInLocation("2006-01-02", dateStr, time.Local)
+		s.TotalDuration = time.Duration(durationSeconds) * time.Second
 		summaries = append(summaries, s)
 	}
 
@@ -443,7 +540,12 @@ func (r *Repository) GetDailySummariesForProfile(profileID string, days int) ([]
 			COALESCE(SUM(
 				(SELECT COALESCE(MAX(bytes_out), 0) FROM traffic_records WHERE session_id = s.session_id)
 			), 0) as total_bytes_out,
-			COUNT(DISTINCT s.session_id) as session_count
+			COUNT(DISTINCT s.session_id) as session_count,
+			COALESCE(SUM(
+				CASE WHEN s.end_time IS NOT NULL 
+				THEN CAST((julianday(s.end_time) - julianday(s.start_time)) * 86400 AS INTEGER)
+				ELSE 0 END
+			), 0) as total_duration_seconds
 		FROM sessions s
 		WHERE s.profile_id = ? AND s.start_time >= date('now', ?)
 		GROUP BY date(s.start_time)
@@ -461,10 +563,13 @@ func (r *Repository) GetDailySummariesForProfile(profileID string, days int) ([]
 	for rows.Next() {
 		var s DailySummary
 		var dateStr string
-		if err := rows.Scan(&dateStr, &s.TotalBytesIn, &s.TotalBytesOut, &s.SessionCount); err != nil {
+		var durationSeconds int64
+		if err := rows.Scan(&dateStr, &s.TotalBytesIn, &s.TotalBytesOut, &s.SessionCount, &durationSeconds); err != nil {
 			return nil, fmt.Errorf("failed to scan daily summary: %w", err)
 		}
-		s.Date, _ = time.Parse("2006-01-02", dateStr)
+		// Parse date string to time.Time in local timezone (not UTC)
+		s.Date, _ = time.ParseInLocation("2006-01-02", dateStr, time.Local)
+		s.TotalDuration = time.Duration(durationSeconds) * time.Second
 		summaries = append(summaries, s)
 	}
 
@@ -502,7 +607,7 @@ func (r *Repository) GetTotalStats() (*TotalStats, error) {
 
 	stats := &TotalStats{}
 	var durationSeconds int64
-	var firstSession, lastSession sql.NullTime
+	var firstSession, lastSession sql.NullString
 
 	err := r.db.QueryRow(query).Scan(
 		&stats.TotalBytesIn,
@@ -517,11 +622,11 @@ func (r *Repository) GetTotalStats() (*TotalStats, error) {
 	}
 
 	stats.TotalDuration = time.Duration(durationSeconds) * time.Second
-	if firstSession.Valid {
-		stats.FirstSessionAt = firstSession.Time
+	if firstSession.Valid && firstSession.String != "" {
+		stats.FirstSessionAt = parseTimestamp(firstSession.String)
 	}
-	if lastSession.Valid {
-		stats.LastSessionAt = lastSession.Time
+	if lastSession.Valid && lastSession.String != "" {
+		stats.LastSessionAt = parseTimestamp(lastSession.String)
 	}
 
 	return stats, nil
@@ -554,7 +659,7 @@ func (r *Repository) GetTotalStatsForProfile(profileID string) (*TotalStats, err
 
 	stats := &TotalStats{}
 	var durationSeconds int64
-	var firstSession, lastSession sql.NullTime
+	var firstSession, lastSession sql.NullString
 
 	err := r.db.QueryRow(query, profileID).Scan(
 		&stats.TotalBytesIn,
@@ -569,11 +674,11 @@ func (r *Repository) GetTotalStatsForProfile(profileID string) (*TotalStats, err
 	}
 
 	stats.TotalDuration = time.Duration(durationSeconds) * time.Second
-	if firstSession.Valid {
-		stats.FirstSessionAt = firstSession.Time
+	if firstSession.Valid && firstSession.String != "" {
+		stats.FirstSessionAt = parseTimestamp(firstSession.String)
 	}
-	if lastSession.Valid {
-		stats.LastSessionAt = lastSession.Time
+	if lastSession.Valid && lastSession.String != "" {
+		stats.LastSessionAt = parseTimestamp(lastSession.String)
 	}
 
 	return stats, nil
@@ -624,6 +729,62 @@ func (r *Repository) GetStatsForPeriod(start, end time.Time) (*PeriodStats, erro
 
 	stats.TotalDuration = time.Duration(durationSeconds) * time.Second
 	return stats, nil
+}
+
+// =============================================================================
+// ORPHANED SESSION CLEANUP
+// =============================================================================
+
+// CloseOrphanedSessions closes any sessions that have NULL end_time.
+// This handles sessions that were not properly closed (e.g., app crash, force quit).
+// It sets end_time to the last traffic record timestamp for that session,
+// or to start_time if no traffic records exist.
+func (r *Repository) CloseOrphanedSessions() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Update sessions with traffic records: use MAX(timestamp) from traffic_records
+	queryWithRecords := `
+		UPDATE sessions 
+		SET end_time = (
+			SELECT MAX(timestamp) FROM traffic_records 
+			WHERE traffic_records.session_id = sessions.session_id
+		)
+		WHERE end_time IS NULL 
+		AND EXISTS (
+			SELECT 1 FROM traffic_records 
+			WHERE traffic_records.session_id = sessions.session_id
+		)
+	`
+	result, err := r.db.Exec(queryWithRecords)
+	if err != nil {
+		return fmt.Errorf("failed to close orphaned sessions with records: %w", err)
+	}
+	closedWithRecords, _ := result.RowsAffected()
+
+	// Update sessions without traffic records: use start_time
+	queryWithoutRecords := `
+		UPDATE sessions 
+		SET end_time = start_time
+		WHERE end_time IS NULL 
+		AND NOT EXISTS (
+			SELECT 1 FROM traffic_records 
+			WHERE traffic_records.session_id = sessions.session_id
+		)
+	`
+	result, err = r.db.Exec(queryWithoutRecords)
+	if err != nil {
+		return fmt.Errorf("failed to close orphaned sessions without records: %w", err)
+	}
+	closedWithoutRecords, _ := result.RowsAffected()
+
+	total := closedWithRecords + closedWithoutRecords
+	if total > 0 {
+		app.LogInfo("Closed %d orphaned sessions (%d with records, %d without)",
+			total, closedWithRecords, closedWithoutRecords)
+	}
+
+	return nil
 }
 
 // =============================================================================

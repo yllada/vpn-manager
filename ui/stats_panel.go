@@ -614,6 +614,7 @@ func (sp *StatsPanel) updateTodaySummary() {
 			todayDL = s.TotalBytesIn
 			todayUL = s.TotalBytesOut
 			todaySessions = s.SessionCount
+			todayDuration = s.TotalDuration
 			break
 		}
 	}

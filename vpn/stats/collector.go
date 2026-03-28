@@ -194,6 +194,10 @@ func (c *Collector) Stop() (*SessionSummary, error) {
 	}
 
 	sessionID := c.sessionID
+	profileID := c.profileID
+	startTime := c.startTime
+	bytesIn := c.currentBytesIn
+	bytesOut := c.currentBytesOut
 	c.running = false
 	close(c.stopCh)
 	c.mu.Unlock()
@@ -201,16 +205,35 @@ func (c *Collector) Stop() (*SessionSummary, error) {
 	// Collect final stats
 	c.collectOnce()
 
+	// Capture end time BEFORE any database operations
+	endTime := time.Now()
+
 	// Mark session as ended in database
 	if err := c.repo.EndSession(sessionID); err != nil {
 		app.LogWarn("Failed to end session %s: %v", sessionID, err)
 	}
 
-	// Get session summary
-	summary, err := c.repo.GetSessionSummary(sessionID)
-	if err != nil {
-		app.LogWarn("Failed to get session summary for %s: %v", sessionID, err)
+	// Build summary from collector's tracked values (more reliable than DB round-trip)
+	// The collector has accurate start time and current byte counts in memory
+	summary := &SessionSummary{
+		SessionID:     sessionID,
+		ProfileID:     profileID,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		TotalBytesIn:  bytesIn,
+		TotalBytesOut: bytesOut,
+		Duration:      endTime.Sub(startTime),
 	}
+
+	// Update byte counts from final collection if available
+	c.mu.RLock()
+	if c.currentBytesIn > summary.TotalBytesIn {
+		summary.TotalBytesIn = c.currentBytesIn
+	}
+	if c.currentBytesOut > summary.TotalBytesOut {
+		summary.TotalBytesOut = c.currentBytesOut
+	}
+	c.mu.RUnlock()
 
 	app.LogInfo("Stats collection stopped for session %s", sessionID)
 
@@ -392,6 +415,11 @@ func NewStatsManager(dbPath string) (*StatsManager, error) {
 	repo, err := NewRepository(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stats repository: %w", err)
+	}
+
+	// Close orphaned sessions from previous runs (app crash, force quit, etc.)
+	if err := repo.CloseOrphanedSessions(); err != nil {
+		app.LogWarn("Failed to close orphaned sessions: %v", err)
 	}
 
 	collector := NewCollector(repo, DefaultCollectionInterval)

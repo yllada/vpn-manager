@@ -55,10 +55,11 @@ type SessionSummary struct {
 // DailySummary represents traffic aggregated by day.
 // Used for displaying daily usage charts and trends.
 type DailySummary struct {
-	Date          time.Time `db:"date"`            // The date (time truncated to 00:00:00)
-	TotalBytesIn  uint64    `db:"total_bytes_in"`  // Total bytes received on this day
-	TotalBytesOut uint64    `db:"total_bytes_out"` // Total bytes sent on this day
-	SessionCount  int       `db:"session_count"`   // Number of sessions on this day
+	Date          time.Time     `db:"date"`            // The date (time truncated to 00:00:00)
+	TotalBytesIn  uint64        `db:"total_bytes_in"`  // Total bytes received on this day
+	TotalBytesOut uint64        `db:"total_bytes_out"` // Total bytes sent on this day
+	SessionCount  int           `db:"session_count"`   // Number of sessions on this day
+	TotalDuration time.Duration // Sum of session durations on this day
 }
 
 // MonthlySummary represents traffic aggregated by month.
