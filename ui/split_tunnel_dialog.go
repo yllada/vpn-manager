@@ -9,6 +9,7 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -17,12 +18,15 @@ type SplitTunnelDialog struct {
 	dialog      *adw.Dialog
 	mainWindow  *MainWindow
 	profile     *vpn.Profile
+	prefsPage   *adw.PreferencesPage // Store reference for dynamic updates
 	otpRow      *adw.SwitchRow
 	enabledRow  *adw.SwitchRow
 	modeRow     *adw.ComboRow
 	modeIDs     []string
 	dnsRow      *adw.SwitchRow
 	routesGroup *adw.PreferencesGroup
+	routeRows   []*adw.ActionRow // Track dynamic route rows for cleanup
+	quickAddRow *adw.ActionRow   // Track the Quick Add row for proper ordering
 	routes      []string
 
 	// Per-app tunneling
@@ -30,6 +34,7 @@ type SplitTunnelDialog struct {
 	appModeRow      *adw.ComboRow
 	appModeIDs      []string
 	appsGroup       *adw.PreferencesGroup
+	appRows         []*adw.ActionRow // Track dynamic app rows for cleanup
 	apps            []string
 	appOptionsGroup *adw.PreferencesGroup
 
@@ -99,13 +104,13 @@ func (std *SplitTunnelDialog) build() {
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 
 	// Create content using AdwPreferencesPage
-	prefsPage := adw.NewPreferencesPage()
-	prefsPage.SetTitle(std.profile.Name)
+	std.prefsPage = adw.NewPreferencesPage()
+	std.prefsPage.SetTitle(std.profile.Name)
 
 	// Header info group
 	headerGroup := adw.NewPreferencesGroup()
 	headerGroup.SetDescription("Configure authentication and routing options for this profile")
-	prefsPage.Add(headerGroup)
+	std.prefsPage.Add(headerGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// AUTHENTICATION SECTION
@@ -124,7 +129,7 @@ func (std *SplitTunnelDialog) build() {
 	std.otpRow.SetActive(std.profile.RequiresOTP)
 	authGroup.Add(std.otpRow)
 
-	prefsPage.Add(authGroup)
+	std.prefsPage.Add(authGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// SPLIT TUNNELING SECTION
@@ -139,7 +144,7 @@ func (std *SplitTunnelDialog) build() {
 	std.enabledRow.SetActive(std.profile.SplitTunnelEnabled)
 	splitGroup.Add(std.enabledRow)
 
-	prefsPage.Add(splitGroup)
+	std.prefsPage.Add(splitGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// ROUTING MODE SECTION (conditional on split tunnel enabled)
@@ -166,7 +171,7 @@ func (std *SplitTunnelDialog) build() {
 	std.dnsRow.SetActive(std.profile.SplitTunnelDNS)
 	modeGroup.Add(std.dnsRow)
 
-	prefsPage.Add(modeGroup)
+	std.prefsPage.Add(modeGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// ROUTES SECTION
@@ -186,10 +191,7 @@ func (std *SplitTunnelDialog) build() {
 	})
 	std.routesGroup.SetHeaderSuffix(addRouteBtn)
 
-	// Populate routes
-	std.refreshRoutesList()
-
-	// Quick add buttons
+	// Create Quick Add row (will be managed by refreshRoutesList)
 	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 
 	privateBtn := gtk.NewButton()
@@ -212,12 +214,14 @@ func (std *SplitTunnelDialog) build() {
 	})
 	quickAddBox.Append(localBtn)
 
-	quickAddRow := adw.NewActionRow()
-	quickAddRow.SetTitle("Quick Add")
-	quickAddRow.AddSuffix(quickAddBox)
-	std.routesGroup.Add(quickAddRow)
+	std.quickAddRow = adw.NewActionRow()
+	std.quickAddRow.SetTitle("Quick Add")
+	std.quickAddRow.AddSuffix(quickAddBox)
 
-	prefsPage.Add(std.routesGroup)
+	// Populate routes (also adds the Quick Add row at the end)
+	std.refreshRoutesList()
+
+	std.prefsPage.Add(std.routesGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// PER-APP TUNNELING SECTION
@@ -232,7 +236,7 @@ func (std *SplitTunnelDialog) build() {
 	std.appsEnabledRow.SetActive(std.profile.SplitTunnelAppsEnabled)
 	appSection.Add(std.appsEnabledRow)
 
-	prefsPage.Add(appSection)
+	std.prefsPage.Add(appSection)
 
 	// App options group (mode)
 	std.appOptionsGroup = adw.NewPreferencesGroup()
@@ -249,7 +253,7 @@ func (std *SplitTunnelDialog) build() {
 	std.appModeRow.SetSelected(std.findAppModeIndex(std.profile.SplitTunnelAppMode))
 	std.appOptionsGroup.Add(std.appModeRow)
 
-	prefsPage.Add(std.appOptionsGroup)
+	std.prefsPage.Add(std.appOptionsGroup)
 
 	// Apps list group
 	std.appsGroup = adw.NewPreferencesGroup()
@@ -268,7 +272,7 @@ func (std *SplitTunnelDialog) build() {
 
 	std.refreshAppsList()
 
-	prefsPage.Add(std.appsGroup)
+	std.prefsPage.Add(std.appsGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// SYSTEM INTEGRATION SECTION
@@ -287,7 +291,7 @@ func (std *SplitTunnelDialog) build() {
 		std.useNMRow.SetActive(std.profile.UseNetworkManager)
 		sysGroup.Add(std.useNMRow)
 
-		prefsPage.Add(sysGroup)
+		std.prefsPage.Add(sysGroup)
 	}
 
 	// Toggle options visibility based on enabled switches
@@ -315,7 +319,7 @@ func (std *SplitTunnelDialog) build() {
 	std.appOptionsGroup.SetSensitive(appsEnabled)
 	std.appsGroup.SetSensitive(appsEnabled)
 
-	scrolled.SetChild(prefsPage)
+	scrolled.SetChild(std.prefsPage)
 	toolbarView.SetContent(scrolled)
 	std.dialog.SetChild(toolbarView)
 }
@@ -359,28 +363,61 @@ func (std *SplitTunnelDialog) showAddRouteDialog() {
 	dialog.SetCloseResponse("cancel")
 
 	dialog.ConnectResponse(func(response string) {
+		app.LogDebug("ui", "Add route dialog response: %s", response)
 		if response == "add" {
 			route := strings.TrimSpace(routeEntry.Text())
-			if route != "" && std.validateRoute(route) {
+			app.LogDebug("ui", "Route value: %q", route)
+			isValid := std.validateRoute(route)
+			app.LogDebug("ui", "Route validation result: %v", isValid)
+			if route != "" && isValid {
+				app.LogDebug("ui", "Calling addRoute(%s)", route)
 				std.addRoute(route)
+			} else {
+				app.LogDebug("ui", "Route not added - empty: %v, invalid: %v", route == "", !isValid)
 			}
 		}
 	})
 
-	dialog.Present(std.mainWindow.window)
+	// Present the alert dialog as a child of the split tunnel dialog
+	// Using the dialog's child widget as parent ensures proper modal behavior
+	dialog.Present(std.dialog)
 }
 
 // addRoute adds a route to the list.
 func (std *SplitTunnelDialog) addRoute(route string) {
+	app.LogDebug("ui", "addRoute() called with: %s", route)
 	// Check for duplicates
 	for _, r := range std.routes {
 		if r == route {
+			app.LogDebug("ui", "Route %s already exists, skipping", route)
 			return
 		}
 	}
 
 	std.routes = append(std.routes, route)
+	app.LogDebug("ui", "Routes slice length after append: %d", len(std.routes))
+	app.LogDebug("ui", "Routes: %v", std.routes)
+	app.LogDebug("ui", "Calling refreshRoutesList()")
 	std.refreshRoutesList()
+}
+
+// showRemoveRouteConfirmation shows a confirmation dialog before removing a route.
+func (std *SplitTunnelDialog) showRemoveRouteConfirmation(route string) {
+	dialog := adw.NewAlertDialog("Remove Route", "Are you sure you want to remove "+route+"?")
+
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("remove", "Remove")
+	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
+
+	dialog.ConnectResponse(func(response string) {
+		if response == "remove" {
+			std.removeRoute(route)
+		}
+	})
+
+	dialog.Present(std.dialog)
 }
 
 // removeRoute removes a route from the list.
@@ -395,32 +432,29 @@ func (std *SplitTunnelDialog) removeRoute(route string) {
 	std.refreshRoutesList()
 }
 
-// refreshRoutesList updates the routes list display using AdwActionRow.
+// refreshRoutesList updates the routes list display by updating in-place.
+// This maintains the group's position in the PreferencesPage.
 func (std *SplitTunnelDialog) refreshRoutesList() {
-	// Get parent to replace
-	parent := std.routesGroup.Parent()
+	app.LogDebug("ui", "refreshRoutesList() called, routes count: %d", len(std.routes))
 
-	// Create new group
-	newGroup := adw.NewPreferencesGroup()
-	newGroup.SetTitle("IPs and Networks")
-	newGroup.SetDescription("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
+	// Remove old dynamic route rows
+	for _, row := range std.routeRows {
+		std.routesGroup.Remove(row)
+	}
+	std.routeRows = nil
 
-	// Add route button as header suffix
-	addRouteBtn := gtk.NewButton()
-	addRouteBtn.SetIconName("list-add-symbolic")
-	addRouteBtn.AddCSSClass("flat")
-	addRouteBtn.SetTooltipText("Add Route")
-	addRouteBtn.SetVAlign(gtk.AlignCenter)
-	addRouteBtn.ConnectClicked(func() {
-		std.showAddRouteDialog()
-	})
-	newGroup.SetHeaderSuffix(addRouteBtn)
+	// Remove the Quick Add row if it has a parent (so we can re-add it at the end)
+	if std.quickAddRow != nil && std.quickAddRow.Parent() != nil {
+		std.routesGroup.Remove(std.quickAddRow)
+	}
 
+	// Add route rows for each route
 	if len(std.routes) == 0 {
 		emptyRow := adw.NewActionRow()
 		emptyRow.SetTitle("No routes configured")
 		emptyRow.SetSubtitle("Click + to add a route")
-		newGroup.Add(emptyRow)
+		std.routesGroup.Add(emptyRow)
+		std.routeRows = append(std.routeRows, emptyRow)
 	} else {
 		for _, route := range std.routes {
 			routeCopy := route
@@ -443,50 +477,21 @@ func (std *SplitTunnelDialog) refreshRoutesList() {
 			delBtn.AddCSSClass("flat")
 			delBtn.SetVAlign(gtk.AlignCenter)
 			delBtn.ConnectClicked(func() {
-				std.removeRoute(routeCopy)
+				std.showRemoveRouteConfirmation(routeCopy)
 			})
 			row.AddSuffix(delBtn)
 
-			newGroup.Add(row)
+			std.routesGroup.Add(row)
+			std.routeRows = append(std.routeRows, row)
 		}
 	}
 
-	// Quick add row
-	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-
-	privateBtn := gtk.NewButton()
-	privateBtn.SetLabel("Private Networks")
-	privateBtn.AddCSSClass("flat")
-	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
-	privateBtn.ConnectClicked(func() {
-		std.addRoute("10.0.0.0/8")
-		std.addRoute("172.16.0.0/12")
-		std.addRoute("192.168.0.0/16")
-	})
-	quickAddBox.Append(privateBtn)
-
-	localBtn := gtk.NewButton()
-	localBtn.SetLabel("Local Network")
-	localBtn.AddCSSClass("flat")
-	localBtn.SetTooltipText("192.168.0.0/16")
-	localBtn.ConnectClicked(func() {
-		std.addRoute("192.168.0.0/16")
-	})
-	quickAddBox.Append(localBtn)
-
-	quickAddRow := adw.NewActionRow()
-	quickAddRow.SetTitle("Quick Add")
-	quickAddRow.AddSuffix(quickAddBox)
-	newGroup.Add(quickAddRow)
-
-	// Replace old group with new one
-	if parent != nil {
-		if page, ok := parent.(*adw.PreferencesPage); ok {
-			page.Remove(std.routesGroup)
-			page.Add(newGroup)
-		}
+	// Always add Quick Add row at the end to maintain proper ordering
+	if std.quickAddRow != nil {
+		std.routesGroup.Add(std.quickAddRow)
 	}
-	std.routesGroup = newGroup
+
+	app.LogDebug("ui", "Routes list refreshed, %d rows added", len(std.routeRows))
 }
 
 // findModeIndex returns the index of a mode ID, or 0 if not found.
@@ -515,47 +520,30 @@ func (std *SplitTunnelDialog) findAppModeIndex(modeID string) uint {
 	return 0
 }
 
-// refreshAppsList updates the apps list display using AdwActionRow.
+// refreshAppsList updates the apps list display by updating in-place.
+// This maintains the group's position in the PreferencesPage.
 func (std *SplitTunnelDialog) refreshAppsList() {
-	// Get parent to replace
-	parent := std.appsGroup.Parent()
+	// Remove old dynamic app rows
+	for _, row := range std.appRows {
+		std.appsGroup.Remove(row)
+	}
+	std.appRows = nil
 
-	// Create new group
-	newGroup := adw.NewPreferencesGroup()
-	newGroup.SetTitle("Applications")
-
-	// Add app button as header suffix
-	addAppBtn := gtk.NewButton()
-	addAppBtn.SetIconName("list-add-symbolic")
-	addAppBtn.AddCSSClass("flat")
-	addAppBtn.SetTooltipText("Add Application")
-	addAppBtn.SetVAlign(gtk.AlignCenter)
-	addAppBtn.ConnectClicked(func() {
-		std.showAppSelector()
-	})
-	newGroup.SetHeaderSuffix(addAppBtn)
-
+	// Add app rows for each app
 	if len(std.apps) == 0 {
 		emptyRow := adw.NewActionRow()
 		emptyRow.SetTitle("No applications configured")
 		emptyRow.SetSubtitle("Click + to add an application")
-		newGroup.Add(emptyRow)
+		std.appsGroup.Add(emptyRow)
+		std.appRows = append(std.appRows, emptyRow)
 	} else {
 		for _, app := range std.apps {
 			appCopy := app
 			row := std.createAppRow(appCopy)
-			newGroup.Add(row)
+			std.appsGroup.Add(row)
+			std.appRows = append(std.appRows, row)
 		}
 	}
-
-	// Replace old group with new one
-	if parent != nil {
-		if page, ok := parent.(*adw.PreferencesPage); ok {
-			page.Remove(std.appsGroup)
-			page.Add(newGroup)
-		}
-	}
-	std.appsGroup = newGroup
 }
 
 // createAppRow creates an AdwActionRow for an application.
@@ -581,7 +569,7 @@ func (std *SplitTunnelDialog) createAppRow(executable string) *adw.ActionRow {
 	deleteBtn.SetVAlign(gtk.AlignCenter)
 	deleteBtn.SetTooltipText("Remove application")
 	deleteBtn.ConnectClicked(func() {
-		std.removeApp(executable)
+		std.showRemoveAppConfirmation(executable)
 	})
 	row.AddSuffix(deleteBtn)
 
@@ -599,6 +587,29 @@ func (std *SplitTunnelDialog) addApp(executable string) {
 
 	std.apps = append(std.apps, executable)
 	std.refreshAppsList()
+}
+
+// showRemoveAppConfirmation shows a confirmation dialog before removing an application.
+func (std *SplitTunnelDialog) showRemoveAppConfirmation(executable string) {
+	// Get app name from executable path
+	parts := strings.Split(executable, "/")
+	name := parts[len(parts)-1]
+
+	dialog := adw.NewAlertDialog("Remove Application", "Are you sure you want to remove "+name+"?")
+
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("remove", "Remove")
+	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
+
+	dialog.ConnectResponse(func(response string) {
+		if response == "remove" {
+			std.removeApp(executable)
+		}
+	})
+
+	dialog.Present(std.dialog)
 }
 
 // removeApp removes an application from the list.
@@ -750,7 +761,8 @@ func (std *SplitTunnelDialog) showAppSelector() {
 	contentBox.Append(scrolled)
 	toolbarView.SetContent(contentBox)
 	selectorDialog.SetChild(toolbarView)
-	selectorDialog.Present(std.mainWindow.window)
+	// Present as child of the split tunnel dialog for proper modal behavior
+	selectorDialog.Present(std.dialog)
 }
 
 // saveSettings saves the profile configuration including authentication and split tunnel settings.

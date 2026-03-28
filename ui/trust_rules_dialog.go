@@ -17,7 +17,9 @@ import (
 type TrustRulesDialog struct {
 	dialog       *adw.Dialog
 	mainWindow   *MainWindow
+	prefsPage    *adw.PreferencesPage // Store reference for dynamic updates
 	rulesGroup   *adw.PreferencesGroup
+	ruleRows     []*adw.ActionRow // Track dynamic rule rows for cleanup
 	rules        []trust.TrustRule
 	trustManager *trust.TrustManager
 }
@@ -59,8 +61,8 @@ func (trd *TrustRulesDialog) build() {
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 
 	// Create content using AdwPreferencesPage
-	prefsPage := adw.NewPreferencesPage()
-	prefsPage.SetTitle("Rules")
+	trd.prefsPage = adw.NewPreferencesPage()
+	trd.prefsPage.SetTitle("Rules")
 
 	// ═══════════════════════════════════════════════════════════════════
 	// RULES GROUP
@@ -80,50 +82,32 @@ func (trd *TrustRulesDialog) build() {
 	})
 	trd.rulesGroup.SetHeaderSuffix(addBtn)
 
-	prefsPage.Add(trd.rulesGroup)
+	trd.prefsPage.Add(trd.rulesGroup)
 
 	// Load existing rules
 	trd.refreshRulesList()
 
-	scrolled.SetChild(prefsPage)
+	scrolled.SetChild(trd.prefsPage)
 	toolbarView.SetContent(scrolled)
 
 	trd.dialog.SetChild(toolbarView)
 }
 
-// refreshRulesList updates the rules list UI.
+// refreshRulesList updates the rules list UI by updating in-place.
+// This maintains the group's position in the PreferencesPage.
 func (trd *TrustRulesDialog) refreshRulesList() {
-	// Remove all existing children from the group
-	// We need to iterate through children and remove them
-	// Since PreferencesGroup doesn't have a clear method, we recreate it
-	// Actually, we need to use a different approach - let's use Remove
-
 	// Reload rules from manager
 	if trd.trustManager != nil {
 		trd.rules = trd.trustManager.GetRules()
 	}
 
-	// We need to track rows to remove them
-	// PreferencesGroup.Remove takes a widget, so we'll rebuild the group
-	// Create a temporary parent to get the group's parent
-	parent := trd.rulesGroup.Parent()
+	// Remove old dynamic rule rows
+	for _, row := range trd.ruleRows {
+		trd.rulesGroup.Remove(row)
+	}
+	trd.ruleRows = nil
 
-	// Create new group
-	newGroup := adw.NewPreferencesGroup()
-	newGroup.SetTitle("Network Rules")
-	newGroup.SetDescription("Define how VPN behaves on specific networks")
-
-	// Add "Add Rule" button as header suffix
-	addBtn := gtk.NewButton()
-	addBtn.SetIconName("list-add-symbolic")
-	addBtn.AddCSSClass("flat")
-	addBtn.SetTooltipText("Add Rule")
-	addBtn.SetVAlign(gtk.AlignCenter)
-	addBtn.ConnectClicked(func() {
-		trd.showRuleForm(nil)
-	})
-	newGroup.SetHeaderSuffix(addBtn)
-
+	// Add rule rows
 	if len(trd.rules) == 0 {
 		// Show empty state as an action row
 		emptyRow := adw.NewActionRow()
@@ -137,23 +121,16 @@ func (trd *TrustRulesDialog) refreshRulesList() {
 		emptyIcon.AddCSSClass("dim-label")
 		emptyRow.AddPrefix(emptyIcon)
 
-		newGroup.Add(emptyRow)
+		trd.rulesGroup.Add(emptyRow)
+		trd.ruleRows = append(trd.ruleRows, emptyRow)
 	} else {
 		for _, rule := range trd.rules {
 			ruleCopy := rule // Capture for closure
 			row := trd.createRuleRow(&ruleCopy)
-			newGroup.Add(row)
+			trd.rulesGroup.Add(row)
+			trd.ruleRows = append(trd.ruleRows, row)
 		}
 	}
-
-	// Replace old group with new one
-	if parent != nil {
-		if page, ok := parent.(*adw.PreferencesPage); ok {
-			page.Remove(trd.rulesGroup)
-			page.Add(newGroup)
-		}
-	}
-	trd.rulesGroup = newGroup
 }
 
 // createRuleRow creates an AdwActionRow for a trust rule.

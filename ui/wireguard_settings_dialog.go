@@ -18,11 +18,13 @@ type WireGuardSettingsDialog struct {
 	mainWindow  *MainWindow
 	profile     *wireguard.Profile
 	onSave      func()
+	prefsPage   *adw.PreferencesPage // Store reference for dynamic updates
 	enabledRow  *adw.SwitchRow
 	modeRow     *adw.ComboRow
 	modeIDs     []string
 	dnsRow      *adw.SwitchRow
 	routesGroup *adw.PreferencesGroup
+	routeRows   []*adw.ActionRow // Track dynamic route rows for cleanup
 	routes      []string
 
 	// Per-app tunneling
@@ -30,6 +32,7 @@ type WireGuardSettingsDialog struct {
 	appModeRow      *adw.ComboRow
 	appModeIDs      []string
 	appsGroup       *adw.PreferencesGroup
+	appRows         []*adw.ActionRow // Track dynamic app rows for cleanup
 	apps            []string
 	appOptionsGroup *adw.PreferencesGroup
 }
@@ -97,13 +100,13 @@ func (d *WireGuardSettingsDialog) build() {
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 
 	// Create content using AdwPreferencesPage
-	prefsPage := adw.NewPreferencesPage()
-	prefsPage.SetTitle(d.profile.Name())
+	d.prefsPage = adw.NewPreferencesPage()
+	d.prefsPage.SetTitle(d.profile.Name())
 
 	// Header info group
 	headerGroup := adw.NewPreferencesGroup()
 	headerGroup.SetDescription("Configure split tunneling options for this WireGuard profile")
-	prefsPage.Add(headerGroup)
+	d.prefsPage.Add(headerGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// SPLIT TUNNELING SECTION
@@ -118,7 +121,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.enabledRow.SetActive(d.profile.SplitTunnelEnabled)
 	splitGroup.Add(d.enabledRow)
 
-	prefsPage.Add(splitGroup)
+	d.prefsPage.Add(splitGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// ROUTING MODE SECTION (conditional on split tunnel enabled)
@@ -145,7 +148,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.dnsRow.SetActive(d.profile.RouteDNS)
 	modeGroup.Add(d.dnsRow)
 
-	prefsPage.Add(modeGroup)
+	d.prefsPage.Add(modeGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// ROUTES SECTION
@@ -199,7 +202,7 @@ func (d *WireGuardSettingsDialog) build() {
 	quickAddRow.AddSuffix(quickAddBox)
 	d.routesGroup.Add(quickAddRow)
 
-	prefsPage.Add(d.routesGroup)
+	d.prefsPage.Add(d.routesGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
 	// PER-APP TUNNELING SECTION
@@ -214,7 +217,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.appsEnabledRow.SetActive(d.profile.SplitTunnelAppsEnabled)
 	appSection.Add(d.appsEnabledRow)
 
-	prefsPage.Add(appSection)
+	d.prefsPage.Add(appSection)
 
 	// App options group (mode and apps list)
 	d.appOptionsGroup = adw.NewPreferencesGroup()
@@ -231,7 +234,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.appModeRow.SetSelected(d.findAppModeIndex(d.profile.SplitTunnelAppMode))
 	d.appOptionsGroup.Add(d.appModeRow)
 
-	prefsPage.Add(d.appOptionsGroup)
+	d.prefsPage.Add(d.appOptionsGroup)
 
 	// Apps list group
 	d.appsGroup = adw.NewPreferencesGroup()
@@ -250,7 +253,7 @@ func (d *WireGuardSettingsDialog) build() {
 
 	d.refreshAppsList()
 
-	prefsPage.Add(d.appsGroup)
+	d.prefsPage.Add(d.appsGroup)
 
 	// Toggle options visibility based on enabled checkboxes
 	d.enabledRow.ConnectStateFlagsChanged(func(_ gtk.StateFlags) {
@@ -277,7 +280,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.appOptionsGroup.SetSensitive(appsEnabled)
 	d.appsGroup.SetSensitive(appsEnabled)
 
-	scrolled.SetChild(prefsPage)
+	scrolled.SetChild(d.prefsPage)
 	toolbarView.SetContent(scrolled)
 	d.dialog.SetChild(toolbarView)
 }
@@ -390,6 +393,25 @@ func (d *WireGuardSettingsDialog) addRoute(route string) {
 	d.refreshRoutesList()
 }
 
+// showRemoveRouteConfirmation shows a confirmation dialog before removing a route.
+func (d *WireGuardSettingsDialog) showRemoveRouteConfirmation(route string) {
+	dialog := adw.NewAlertDialog("Remove Route", "Are you sure you want to remove "+route+"?")
+
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("remove", "Remove")
+	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
+
+	dialog.ConnectResponse(func(response string) {
+		if response == "remove" {
+			d.removeRoute(route)
+		}
+	})
+
+	dialog.Present(d.dialog)
+}
+
 // removeRoute removes a route from the list.
 func (d *WireGuardSettingsDialog) removeRoute(route string) {
 	newRoutes := make([]string, 0, len(d.routes))
@@ -402,33 +424,22 @@ func (d *WireGuardSettingsDialog) removeRoute(route string) {
 	d.refreshRoutesList()
 }
 
-// refreshRoutesList updates the routes list display using AdwActionRow.
+// refreshRoutesList updates the routes list display by updating in-place.
+// This maintains the group's position in the PreferencesPage.
 func (d *WireGuardSettingsDialog) refreshRoutesList() {
-	// We need to rebuild the group content
-	// Get parent to replace
-	parent := d.routesGroup.Parent()
+	// Remove old dynamic route rows
+	for _, row := range d.routeRows {
+		d.routesGroup.Remove(row)
+	}
+	d.routeRows = nil
 
-	// Create new group
-	newGroup := adw.NewPreferencesGroup()
-	newGroup.SetTitle("IPs and Networks")
-	newGroup.SetDescription("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
-
-	// Add route button as header suffix
-	addRouteBtn := gtk.NewButton()
-	addRouteBtn.SetIconName("list-add-symbolic")
-	addRouteBtn.AddCSSClass("flat")
-	addRouteBtn.SetTooltipText("Add Route")
-	addRouteBtn.SetVAlign(gtk.AlignCenter)
-	addRouteBtn.ConnectClicked(func() {
-		d.showAddRouteDialog()
-	})
-	newGroup.SetHeaderSuffix(addRouteBtn)
-
+	// Add route rows for each route
 	if len(d.routes) == 0 {
 		emptyRow := adw.NewActionRow()
 		emptyRow.SetTitle("No routes configured")
 		emptyRow.SetSubtitle("Click + to add a route")
-		newGroup.Add(emptyRow)
+		d.routesGroup.Add(emptyRow)
+		d.routeRows = append(d.routeRows, emptyRow)
 	} else {
 		for _, route := range d.routes {
 			routeCopy := route
@@ -451,50 +462,14 @@ func (d *WireGuardSettingsDialog) refreshRoutesList() {
 			delBtn.AddCSSClass("flat")
 			delBtn.SetVAlign(gtk.AlignCenter)
 			delBtn.ConnectClicked(func() {
-				d.removeRoute(routeCopy)
+				d.showRemoveRouteConfirmation(routeCopy)
 			})
 			row.AddSuffix(delBtn)
 
-			newGroup.Add(row)
+			d.routesGroup.Add(row)
+			d.routeRows = append(d.routeRows, row)
 		}
 	}
-
-	// Quick add row
-	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
-
-	privateBtn := gtk.NewButton()
-	privateBtn.SetLabel("Private Networks")
-	privateBtn.AddCSSClass("flat")
-	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
-	privateBtn.ConnectClicked(func() {
-		d.addRoute("10.0.0.0/8")
-		d.addRoute("172.16.0.0/12")
-		d.addRoute("192.168.0.0/16")
-	})
-	quickAddBox.Append(privateBtn)
-
-	localBtn := gtk.NewButton()
-	localBtn.SetLabel("Local Network")
-	localBtn.AddCSSClass("flat")
-	localBtn.SetTooltipText("192.168.0.0/16")
-	localBtn.ConnectClicked(func() {
-		d.addRoute("192.168.0.0/16")
-	})
-	quickAddBox.Append(localBtn)
-
-	quickAddRow := adw.NewActionRow()
-	quickAddRow.SetTitle("Quick Add")
-	quickAddRow.AddSuffix(quickAddBox)
-	newGroup.Add(quickAddRow)
-
-	// Replace old group with new one
-	if parent != nil {
-		if page, ok := parent.(*adw.PreferencesPage); ok {
-			page.Remove(d.routesGroup)
-			page.Add(newGroup)
-		}
-	}
-	d.routesGroup = newGroup
 }
 
 // findAppModeIndex returns the index for the given app mode.
@@ -507,47 +482,30 @@ func (d *WireGuardSettingsDialog) findAppModeIndex(mode string) uint {
 	return 0
 }
 
-// refreshAppsList updates the apps list display using AdwActionRow.
+// refreshAppsList updates the apps list display by updating in-place.
+// This maintains the group's position in the PreferencesPage.
 func (d *WireGuardSettingsDialog) refreshAppsList() {
-	// Get parent to replace
-	parent := d.appsGroup.Parent()
+	// Remove old dynamic app rows
+	for _, row := range d.appRows {
+		d.appsGroup.Remove(row)
+	}
+	d.appRows = nil
 
-	// Create new group
-	newGroup := adw.NewPreferencesGroup()
-	newGroup.SetTitle("Applications")
-
-	// Add app button as header suffix
-	addAppBtn := gtk.NewButton()
-	addAppBtn.SetIconName("list-add-symbolic")
-	addAppBtn.AddCSSClass("flat")
-	addAppBtn.SetTooltipText("Add Application")
-	addAppBtn.SetVAlign(gtk.AlignCenter)
-	addAppBtn.ConnectClicked(func() {
-		d.showAppSelector()
-	})
-	newGroup.SetHeaderSuffix(addAppBtn)
-
+	// Add app rows for each app
 	if len(d.apps) == 0 {
 		emptyRow := adw.NewActionRow()
 		emptyRow.SetTitle("No applications configured")
 		emptyRow.SetSubtitle("Click + to add an application")
-		newGroup.Add(emptyRow)
+		d.appsGroup.Add(emptyRow)
+		d.appRows = append(d.appRows, emptyRow)
 	} else {
 		for _, app := range d.apps {
 			appCopy := app
 			row := d.createAppRow(appCopy)
-			newGroup.Add(row)
+			d.appsGroup.Add(row)
+			d.appRows = append(d.appRows, row)
 		}
 	}
-
-	// Replace old group with new one
-	if parent != nil {
-		if page, ok := parent.(*adw.PreferencesPage); ok {
-			page.Remove(d.appsGroup)
-			page.Add(newGroup)
-		}
-	}
-	d.appsGroup = newGroup
 }
 
 // createAppRow creates an AdwActionRow for an application.
@@ -573,7 +531,7 @@ func (d *WireGuardSettingsDialog) createAppRow(executable string) *adw.ActionRow
 	deleteBtn.SetVAlign(gtk.AlignCenter)
 	deleteBtn.SetTooltipText("Remove application")
 	deleteBtn.ConnectClicked(func() {
-		d.removeApp(executable)
+		d.showRemoveAppConfirmation(executable)
 	})
 	row.AddSuffix(deleteBtn)
 
@@ -591,6 +549,29 @@ func (d *WireGuardSettingsDialog) addApp(executable string) {
 
 	d.apps = append(d.apps, executable)
 	d.refreshAppsList()
+}
+
+// showRemoveAppConfirmation shows a confirmation dialog before removing an application.
+func (d *WireGuardSettingsDialog) showRemoveAppConfirmation(executable string) {
+	// Get app name from executable path
+	parts := strings.Split(executable, "/")
+	name := parts[len(parts)-1]
+
+	dialog := adw.NewAlertDialog("Remove Application", "Are you sure you want to remove "+name+"?")
+
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("remove", "Remove")
+	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
+
+	dialog.ConnectResponse(func(response string) {
+		if response == "remove" {
+			d.removeApp(executable)
+		}
+	})
+
+	dialog.Present(d.dialog)
 }
 
 // removeApp removes an application from the list.
