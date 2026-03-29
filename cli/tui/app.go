@@ -41,7 +41,7 @@ func Run(manager *vpn.Manager) error {
 	setupTUISignalHandler(program)
 
 	// Setup EventBus bridge - subscribes to app events and sends them to the TUI
-	stopEventBridge := setupEventBusBridge(manager.ProfileManager(), app.GetEventBus(), program)
+	stopEventBridge := setupEventBusBridge(manager, manager.ProfileManager(), app.GetEventBus(), program)
 	defer stopEventBridge()
 
 	// Run the program
@@ -74,15 +74,21 @@ func setupTUISignalHandler(program *tea.Program) {
 // setupEventBusBridge subscribes to application events and converts them to Bubble Tea messages.
 // This is the recommended pattern for integrating external event sources with Bubble Tea.
 // Returns a cleanup function that should be called when the TUI exits.
-func setupEventBusBridge(pm *vpn.ProfileManager, eventBus *app.EventBus, program *tea.Program) func() {
+func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus *app.EventBus, program *tea.Program) func() {
 	var subscriptions []*app.Subscription
 
 	// Subscribe to connection established events
 	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventConnectionEstablished, func(e *app.Event) {
 		if data, ok := e.Data.(*app.ConnectionEventData); ok {
 			app.LogDebug("tui", "EventBus: connection established for %s", data.ProfileID)
+			// Look up the actual connection from manager
+			var conn *vpn.Connection
+			if c, exists := manager.GetConnection(data.ProfileID); exists {
+				conn = c
+			}
 			program.Send(ConnectionUpdatedMsg{
-				Status: data.Status,
+				Connection: conn,
+				Status:     data.Status,
 			})
 		}
 	}))
@@ -108,8 +114,14 @@ func setupEventBusBridge(pm *vpn.ProfileManager, eventBus *app.EventBus, program
 	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventConnectionStarting, func(e *app.Event) {
 		if data, ok := e.Data.(*app.ConnectionEventData); ok {
 			app.LogDebug("tui", "EventBus: connection starting for %s", data.ProfileID)
+			// Look up the actual connection from manager (may not exist yet during startup)
+			var conn *vpn.Connection
+			if c, exists := manager.GetConnection(data.ProfileID); exists {
+				conn = c
+			}
 			program.Send(ConnectionUpdatedMsg{
-				Status: vpn.StatusConnecting,
+				Connection: conn,
+				Status:     vpn.StatusConnecting,
 			})
 		}
 	}))
@@ -118,8 +130,14 @@ func setupEventBusBridge(pm *vpn.ProfileManager, eventBus *app.EventBus, program
 	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventStatusChanged, func(e *app.Event) {
 		if data, ok := e.Data.(*app.ConnectionEventData); ok {
 			app.LogDebug("tui", "EventBus: status changed to %v", data.Status)
+			// Look up the actual connection from manager
+			var conn *vpn.Connection
+			if c, exists := manager.GetConnection(data.ProfileID); exists {
+				conn = c
+			}
 			program.Send(ConnectionUpdatedMsg{
-				Status: data.Status,
+				Connection: conn,
+				Status:     data.Status,
 			})
 		}
 	}))

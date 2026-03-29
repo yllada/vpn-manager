@@ -364,8 +364,8 @@ func handleProfilesKeys(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keys.Tab):
-		m.currentView = ViewDashboard
-		m.keys = m.keys.SetContext(ContextDashboard)
+		m.currentView = ViewStats
+		m.keys = m.keys.SetContext(ContextStats)
 		return m, nil
 
 	case key.Matches(msg, m.keys.Select):
