@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,18 +12,149 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
+// OutputFormat controls how CLI output is rendered.
+type OutputFormat int
+
+const (
+	// FormatText outputs human-readable colored text (default).
+	FormatText OutputFormat = iota
+	// FormatJSON outputs machine-readable JSON.
+	FormatJSON
+)
+
+// StatusIcons for visual indicators.
+const (
+	IconConnected    = "✓"
+	IconDisconnected = "✗"
+	IconConnecting   = "⟳"
+	IconError        = "⚠"
+)
+
+// colorSupport detects if the terminal supports ANSI colors.
+func colorSupport() bool {
+	// Check NO_COLOR environment variable (https://no-color.org/)
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+
+	// Check TERM environment variable
+	term := os.Getenv("TERM")
+	if term == "" || term == "dumb" {
+		return false
+	}
+
+	// Check if stdout is a terminal
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		// Not a terminal (e.g., pipe or redirect)
+		return false
+	}
+
+	return true
+}
+
+// styles holds the lipgloss styles for colored output.
+type styles struct {
+	connected    lipgloss.Style
+	disconnected lipgloss.Style
+	connecting   lipgloss.Style
+	error        lipgloss.Style
+	ipAddress    lipgloss.Style
+	serverName   lipgloss.Style
+	uptime       lipgloss.Style
+	header       lipgloss.Style
+	muted        lipgloss.Style
+}
+
+// newStyles creates styles based on color support.
+func newStyles() styles {
+	if !colorSupport() {
+		// Return unstyled (no colors)
+		return styles{
+			connected:    lipgloss.NewStyle(),
+			disconnected: lipgloss.NewStyle(),
+			connecting:   lipgloss.NewStyle(),
+			error:        lipgloss.NewStyle(),
+			ipAddress:    lipgloss.NewStyle(),
+			serverName:   lipgloss.NewStyle(),
+			uptime:       lipgloss.NewStyle(),
+			header:       lipgloss.NewStyle(),
+			muted:        lipgloss.NewStyle(),
+		}
+	}
+
+	return styles{
+		connected:    lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true), // Green
+		disconnected: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),  // Red
+		connecting:   lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true), // Yellow
+		error:        lipgloss.NewStyle().Foreground(lipgloss.Color("9")),             // Red
+		ipAddress:    lipgloss.NewStyle().Foreground(lipgloss.Color("14")),            // Cyan
+		serverName:   lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true), // Blue
+		uptime:       lipgloss.NewStyle().Foreground(lipgloss.Color("13")),            // Magenta
+		header:       lipgloss.NewStyle().Foreground(lipgloss.Color("7")).Bold(true),  // White/Bold
+		muted:        lipgloss.NewStyle().Foreground(lipgloss.Color("8")),             // Gray
+	}
+}
+
 // CLI represents the command-line interface.
 type CLI struct {
 	manager *vpn.Manager
+	format  OutputFormat
+	styles  styles
+}
+
+// StatusData represents VPN connection status for JSON output.
+type StatusData struct {
+	Connections []ConnectionData `json:"connections"`
+	Count       int              `json:"count"`
+}
+
+// ConnectionData represents a single VPN connection for JSON output.
+type ConnectionData struct {
+	Profile    string `json:"profile"`
+	Status     string `json:"status"`
+	StatusCode int    `json:"status_code"`
+	IPAddress  string `json:"ip_address,omitempty"`
+	Uptime     string `json:"uptime,omitempty"`
+	UptimeSecs int64  `json:"uptime_seconds,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+	Server     string `json:"server,omitempty"`
+	BytesSent  uint64 `json:"bytes_sent,omitempty"`
+	BytesRecv  uint64 `json:"bytes_received,omitempty"`
+}
+
+// ProfileData represents a VPN profile for JSON output.
+type ProfileData struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	StatusCode  int    `json:"status_code"`
+	AutoConnect bool   `json:"auto_connect"`
+	RequiresOTP bool   `json:"requires_otp"`
+}
+
+// ProfileListData represents a list of profiles for JSON output.
+type ProfileListData struct {
+	Profiles []ProfileData `json:"profiles"`
+	Count    int           `json:"count"`
 }
 
 // New creates a new CLI instance.
 func New() (*CLI, error) {
+	return NewWithFormat(FormatText)
+}
+
+// NewWithFormat creates a new CLI instance with the specified output format.
+func NewWithFormat(format OutputFormat) (*CLI, error) {
 	manager, err := vpn.NewManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize VPN manager: %w", err)
@@ -30,12 +162,24 @@ func New() (*CLI, error) {
 
 	return &CLI{
 		manager: manager,
+		format:  format,
+		styles:  newStyles(),
 	}, nil
+}
+
+// SetFormat sets the output format (text or JSON).
+func (c *CLI) SetFormat(format OutputFormat) {
+	c.format = format
+	c.styles = newStyles()
 }
 
 // ListProfiles lists all configured VPN profiles.
 func (c *CLI) ListProfiles() error {
 	profiles := c.manager.ProfileManager().List()
+
+	if c.format == FormatJSON {
+		return c.listProfilesJSON(profiles)
+	}
 
 	if len(profiles) == 0 {
 		fmt.Println("No VPN profiles configured.")
@@ -44,23 +188,33 @@ func (c *CLI) ListProfiles() error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tNAME\tSTATUS\tAUTO-CONNECT\tOTP")
-	_, _ = fmt.Fprintln(w, "--\t----\t------\t------------\t---")
+	_, _ = fmt.Fprintln(w, c.styles.header.Render("ID")+"\t"+
+		c.styles.header.Render("NAME")+"\t"+
+		c.styles.header.Render("STATUS")+"\t"+
+		c.styles.header.Render("AUTO-CONNECT")+"\t"+
+		c.styles.header.Render("OTP"))
+	_, _ = fmt.Fprintln(w, c.styles.muted.Render("--")+"\t"+
+		c.styles.muted.Render("----")+"\t"+
+		c.styles.muted.Render("------")+"\t"+
+		c.styles.muted.Render("------------")+"\t"+
+		c.styles.muted.Render("---"))
 
 	for _, profile := range profiles {
-		status := "Disconnected"
+		status := vpn.StatusDisconnected
 		if conn, exists := c.manager.GetConnection(profile.ID); exists {
-			status = conn.GetStatus().String()
+			status = conn.GetStatus()
 		}
 
-		autoConnect := "No"
+		statusDisplay := c.formatStatus(status)
+
+		autoConnect := c.styles.muted.Render("No")
 		if profile.AutoConnect {
-			autoConnect = "Yes"
+			autoConnect = c.styles.connected.Render("Yes")
 		}
 
-		otp := "No"
+		otp := c.styles.muted.Render("No")
 		if profile.RequiresOTP {
-			otp = "Yes"
+			otp = c.styles.connecting.Render("Yes")
 		}
 
 		// Truncate ID for display
@@ -70,11 +224,41 @@ func (c *CLI) ListProfiles() error {
 		}
 
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			shortID, profile.Name, status, autoConnect, otp)
+			c.styles.muted.Render(shortID),
+			c.styles.serverName.Render(profile.Name),
+			statusDisplay,
+			autoConnect,
+			otp)
 	}
 
 	_ = w.Flush()
 	return nil
+}
+
+// listProfilesJSON outputs profiles in JSON format.
+func (c *CLI) listProfilesJSON(profiles []*vpn.Profile) error {
+	data := ProfileListData{
+		Profiles: make([]ProfileData, 0, len(profiles)),
+		Count:    len(profiles),
+	}
+
+	for _, profile := range profiles {
+		status := vpn.StatusDisconnected
+		if conn, exists := c.manager.GetConnection(profile.ID); exists {
+			status = conn.GetStatus()
+		}
+
+		data.Profiles = append(data.Profiles, ProfileData{
+			ID:          profile.ID,
+			Name:        profile.Name,
+			Status:      status.String(),
+			StatusCode:  int(status),
+			AutoConnect: profile.AutoConnect,
+			RequiresOTP: profile.RequiresOTP,
+		})
+	}
+
+	return json.NewEncoder(os.Stdout).Encode(data)
 }
 
 // Connect connects to a VPN profile by name or ID.
@@ -185,32 +369,125 @@ func (c *CLI) Disconnect(nameOrID string) error {
 func (c *CLI) Status() error {
 	connections := c.manager.ListConnections()
 
+	if c.format == FormatJSON {
+		return c.statusJSON(connections)
+	}
+
 	if len(connections) == 0 {
-		fmt.Println("No active VPN connections.")
+		icon := IconDisconnected
+		if colorSupport() {
+			icon = c.styles.disconnected.Render(icon)
+		}
+		fmt.Printf("%s No active VPN connections.\n", icon)
 		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "PROFILE\tSTATUS\tUPTIME\tIP ADDRESS")
-	_, _ = fmt.Fprintln(w, "-------\t------\t------\t----------")
+	_, _ = fmt.Fprintln(w, c.styles.header.Render("PROFILE")+"\t"+
+		c.styles.header.Render("STATUS")+"\t"+
+		c.styles.header.Render("UPTIME")+"\t"+
+		c.styles.header.Render("IP ADDRESS"))
+	_, _ = fmt.Fprintln(w, c.styles.muted.Render("-------")+"\t"+
+		c.styles.muted.Render("------")+"\t"+
+		c.styles.muted.Render("------")+"\t"+
+		c.styles.muted.Render("----------"))
 
 	for _, conn := range connections {
 		uptime := ""
 		if conn.GetStatus() == vpn.StatusConnected {
-			uptime = formatDuration(conn.GetUptime())
+			uptime = c.styles.uptime.Render(formatDuration(conn.GetUptime()))
+		} else {
+			uptime = c.styles.muted.Render("-")
 		}
 
 		ip := conn.IPAddress
 		if ip == "" {
-			ip = "-"
+			ip = c.styles.muted.Render("-")
+		} else {
+			ip = c.styles.ipAddress.Render(ip)
 		}
 
+		statusDisplay := c.formatStatus(conn.GetStatus())
+
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			conn.Profile.Name, conn.GetStatus().String(), uptime, ip)
+			c.styles.serverName.Render(conn.Profile.Name),
+			statusDisplay,
+			uptime,
+			ip)
 	}
 
 	_ = w.Flush()
 	return nil
+}
+
+// statusJSON outputs connection status in JSON format.
+func (c *CLI) statusJSON(connections []*vpn.Connection) error {
+	data := StatusData{
+		Connections: make([]ConnectionData, 0, len(connections)),
+		Count:       len(connections),
+	}
+
+	for _, conn := range connections {
+		connData := ConnectionData{
+			Profile:    conn.Profile.Name,
+			Status:     conn.GetStatus().String(),
+			StatusCode: int(conn.GetStatus()),
+			BytesSent:  conn.BytesSent,
+			BytesRecv:  conn.BytesRecv,
+		}
+
+		if conn.GetStatus() == vpn.StatusConnected {
+			uptime := conn.GetUptime()
+			connData.Uptime = formatDuration(uptime)
+			connData.UptimeSecs = int64(uptime.Seconds())
+		}
+
+		if conn.IPAddress != "" {
+			connData.IPAddress = conn.IPAddress
+		}
+
+		data.Connections = append(data.Connections, connData)
+	}
+
+	return json.NewEncoder(os.Stdout).Encode(data)
+}
+
+// formatStatus returns a formatted status string with icon and color.
+func (c *CLI) formatStatus(status vpn.ConnectionStatus) string {
+	var icon, text string
+	var style lipgloss.Style
+
+	switch status {
+	case vpn.StatusConnected:
+		icon = IconConnected
+		text = "Connected"
+		style = c.styles.connected
+	case vpn.StatusConnecting:
+		icon = IconConnecting
+		text = "Connecting"
+		style = c.styles.connecting
+	case vpn.StatusDisconnecting:
+		icon = IconConnecting
+		text = "Disconnecting"
+		style = c.styles.connecting
+	case vpn.StatusDisconnected:
+		icon = IconDisconnected
+		text = "Disconnected"
+		style = c.styles.disconnected
+	case vpn.StatusError:
+		icon = IconError
+		text = "Error"
+		style = c.styles.error
+	default:
+		icon = IconDisconnected
+		text = status.String()
+		style = c.styles.muted
+	}
+
+	if colorSupport() {
+		return style.Render(icon + " " + text)
+	}
+	return icon + " " + text
 }
 
 // findProfile finds a profile by name or ID (case-insensitive).
@@ -253,27 +530,34 @@ Usage:
 Options:
   --version         Show version and exit
   --verbose         Enable verbose logging
+  --tui             Launch interactive TUI mode
   --list            List all VPN profiles
   --connect NAME    Connect to a VPN profile
   --disconnect [NAME] Disconnect from VPN (all if no name)
   --status          Show current connection status
+  --json            Output in JSON format (for --list, --status)
   --run COMMAND     Run a command through VPN (requires active connection)
   --list-apps       List installed applications for split tunneling
   --help            Show this help message
 
 Examples:
   vpn-manager --list
+  vpn-manager --list --json
+  vpn-manager --tui
   vpn-manager --connect "Work VPN"
   vpn-manager --disconnect
   vpn-manager --status
+  vpn-manager --status --json
   vpn-manager --run firefox
   vpn-manager --run "curl https://api.ipify.org"
 
 Notes:
+  - TUI mode provides an interactive terminal interface
   - CLI mode requires saved credentials (use GUI to save)
   - Profiles requiring OTP must be connected via GUI
   - Run without options to launch the GUI
-  - --run requires an active VPN connection with app tunneling enabled`)
+  - --run requires an active VPN connection with app tunneling enabled
+  - JSON output is useful for scripting and automation`)
 }
 
 // RunApp runs a command through the VPN tunnel using cgroups.

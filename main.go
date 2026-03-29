@@ -30,6 +30,7 @@ import (
 
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/cli"
+	"github.com/yllada/vpn-manager/cli/tui"
 	"github.com/yllada/vpn-manager/ui"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -48,11 +49,15 @@ var (
 	verbose     = flag.Bool("verbose", false, "Enable verbose logging")
 	showHelp    = flag.Bool("help", false, "Show help message")
 
+	// TUI mode flag
+	tuiMode = flag.Bool("tui", false, "Launch interactive TUI mode")
+
 	// CLI flags
 	listProfiles   = flag.Bool("list", false, "List all VPN profiles")
 	connectProfile = flag.String("connect", "", "Connect to a VPN profile by name")
 	disconnectVPN  = flag.String("disconnect", "", "Disconnect from VPN (use 'all' or profile name)")
 	showStatus     = flag.Bool("status", false, "Show current connection status")
+	jsonOutput     = flag.Bool("json", false, "Output in JSON format (for --list, --status)")
 	runApp         = flag.Bool("run", false, "Run a command through VPN (remaining args are the command)")
 	listApps       = flag.Bool("list-apps", false, "List installed applications for split tunneling")
 
@@ -124,6 +129,12 @@ func main() {
 		return
 	}
 
+	// Check if TUI mode is requested
+	if *tuiMode {
+		runTUI()
+		return
+	}
+
 	// Start the GTK application (GUI mode)
 	app.LogInfo("Starting %s v%s", app.AppName, appVersion)
 	application, err := ui.NewApplication(app.AppID, appVersion)
@@ -143,7 +154,13 @@ func main() {
 // runCLI handles command-line interface operations.
 // It accepts a context for graceful shutdown support.
 func runCLI(ctx context.Context) {
-	cliApp, err := cli.New()
+	// Determine output format
+	format := cli.FormatText
+	if *jsonOutput {
+		format = cli.FormatJSON
+	}
+
+	cliApp, err := cli.NewWithFormat(format)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -186,6 +203,25 @@ func runCLI(ctx context.Context) {
 
 	if cliErr != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
+		os.Exit(1)
+	}
+}
+
+// runTUI launches the interactive Terminal User Interface.
+// It creates a VPN manager and runs the Bubble Tea TUI application.
+func runTUI() {
+	app.LogInfo("Starting TUI mode")
+
+	manager, err := vpn.NewManager()
+	if err != nil {
+		app.LogError("Failed to initialize VPN manager: %v", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := tui.Run(manager); err != nil {
+		app.LogError("TUI error: %v", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
