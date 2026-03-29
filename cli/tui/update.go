@@ -3,6 +3,8 @@
 package tui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,6 +18,11 @@ import (
 // handleUpdate processes incoming messages and returns the updated model and commands.
 func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// If OAuth prompt is visible, it captures all input
+	if m.oauthPrompt.Visible() {
+		return handleOAuthPrompt(m, msg)
+	}
 
 	// If auth dialog is visible, it captures all input
 	if m.authDialog.Visible() {
@@ -43,6 +50,8 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.profilesList.SetSize(msg.Width-4, listHeight)
 		// Update confirm dialog size
 		m.confirmDialog.SetSize(msg.Width, msg.Height)
+		// Update OAuth prompt size
+		m.oauthPrompt.SetSize(msg.Width, msg.Height)
 		// Update status panel width and sparkline width
 		m.statusPanel.SetWidth(msg.Width - 4)
 		// Sparkline width: roughly 1/3 of available content width, min 15, max 30
@@ -240,6 +249,13 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	case QuitMsg:
 		m.quitting = true
 		return m, tea.Quit
+
+	// Tailscale OAuth flow messages
+	case TailscaleAuthURLMsg:
+		return handleTailscaleAuthURL(m, msg)
+
+	case TailscaleAuthCompleteMsg:
+		return handleTailscaleAuthComplete(m, msg)
 	}
 
 	return m, nil
@@ -777,4 +793,111 @@ func (m *Model) findProfile(profileID string) *vpn.Profile {
 		}
 	}
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+// OAuth Prompt Handlers (Tailscale)
+// -----------------------------------------------------------------------------
+
+// handleOAuthPrompt processes messages when the OAuth prompt is visible.
+// The prompt captures all input until dismissed.
+func handleOAuthPrompt(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		var cmd tea.Cmd
+		m.oauthPrompt, cmd = m.oauthPrompt.Update(msg)
+		return m, cmd
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.oauthPrompt.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case components.OAuthPromptResult:
+		// User cancelled OAuth flow
+		if msg.Cancelled {
+			app.LogInfo("tui", "OAuth flow cancelled by user")
+			m.oauthPrompt.Hide()
+			m.toastManager.AddInfo("Authentication cancelled")
+		}
+		return m, nil
+
+	case components.OAuthSpinnerTickMsg:
+		// Animate the spinner in the OAuth prompt
+		var cmd tea.Cmd
+		m.oauthPrompt, cmd = m.oauthPrompt.Update(spinner.TickMsg{})
+		// Continue ticking while visible
+		if m.oauthPrompt.Visible() && m.oauthPrompt.State() == components.OAuthPromptWaiting {
+			return m, tea.Batch(cmd, components.OAuthSpinnerTickCmd())
+		}
+		return m, cmd
+
+	case TailscaleAuthCompleteMsg:
+		// OAuth flow completed
+		if msg.Success {
+			m.oauthPrompt.ShowSuccess("Tailscale")
+			m.toastManager.AddSuccess("Tailscale authenticated successfully")
+			// Hide after brief delay by returning a tick
+			return m, tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg {
+				return oauthSuccessHideMsg{}
+			})
+		} else {
+			errMsg := "Authentication failed"
+			if msg.Error != nil {
+				errMsg = msg.Error.Error()
+			}
+			m.oauthPrompt.ShowError("Tailscale", errMsg)
+		}
+		return m, nil
+
+	case oauthSuccessHideMsg:
+		m.oauthPrompt.Hide()
+		return m, nil
+
+	case spinner.TickMsg:
+		// Keep spinner running in background
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case TickMsg:
+		// Keep ticking in background
+		m.toastManager.Tick()
+		return m, tickCmd()
+	}
+
+	return m, nil
+}
+
+// oauthSuccessHideMsg is an internal message to hide the OAuth prompt after success.
+type oauthSuccessHideMsg struct{}
+
+// handleTailscaleAuthURL processes the TailscaleAuthURLMsg and shows the OAuth prompt.
+func handleTailscaleAuthURL(m Model, msg TailscaleAuthURLMsg) (tea.Model, tea.Cmd) {
+	app.LogInfo("tui", "Tailscale auth URL received: %s", msg.URL)
+
+	// Show the OAuth prompt
+	m.oauthPrompt.SetSize(m.width, m.height)
+	m.oauthPrompt.Show("Tailscale", msg.URL)
+
+	// Start spinner animation
+	return m, components.OAuthSpinnerTickCmd()
+}
+
+// handleTailscaleAuthComplete processes the TailscaleAuthCompleteMsg.
+func handleTailscaleAuthComplete(m Model, msg TailscaleAuthCompleteMsg) (tea.Model, tea.Cmd) {
+	if m.oauthPrompt.Visible() {
+		// Forward to OAuth prompt handler
+		return handleOAuthPrompt(m, msg)
+	}
+
+	// If prompt not visible, just show toast
+	if msg.Success {
+		m.toastManager.AddSuccess("Tailscale connected")
+	} else if msg.Error != nil {
+		m.toastManager.AddError("Tailscale: " + msg.Error.Error())
+	}
+
+	return m, nil
 }

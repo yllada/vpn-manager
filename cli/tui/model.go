@@ -94,6 +94,9 @@ type Model struct {
 	authProfileID string    // Profile being authenticated (used by auth flow)
 	authPassword  string    // Temp storage during OTP step (used by auth flow)
 	authDialog    components.AuthDialog
+
+	// OAuth prompt for Tailscale browser-based authentication
+	oauthPrompt components.OAuthPrompt
 }
 
 // NewModel creates a new Model with the given VPN manager.
@@ -120,6 +123,9 @@ func NewModel(manager *vpn.Manager) Model {
 	// Initialize health gauge
 	healthGauge := components.NewHealthGauge()
 
+	// Initialize OAuth prompt for Tailscale
+	oauthPrompt := components.NewOAuthPrompt()
+
 	return Model{
 		manager:       manager,
 		eventBus:      app.GetEventBus(),
@@ -134,6 +140,7 @@ func NewModel(manager *vpn.Manager) Model {
 		healthGauge:   healthGauge,
 		authState:     AuthStateNone,
 		authDialog:    components.NewAuthDialog(),
+		oauthPrompt:   oauthPrompt,
 	}
 }
 

@@ -4,11 +4,13 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
+	"golang.org/x/term"
 )
 
 // OutputFormat controls how CLI output is rendered.
@@ -279,6 +282,7 @@ func (c *CLI) Connect(nameOrID string) error {
 	username := profile.Username
 	password := ""
 
+	// Try to get saved password from keyring
 	if profile.SavePassword {
 		savedPassword, err := keyring.Get(profile.ID)
 		if err == nil {
@@ -286,13 +290,34 @@ func (c *CLI) Connect(nameOrID string) error {
 		}
 	}
 
-	if username == "" || password == "" {
-		return fmt.Errorf("no saved credentials for %s. Please connect via GUI first to save credentials", profile.Name)
+	// If no username, we can't connect
+	if username == "" {
+		return fmt.Errorf("no username configured for %s. Please configure via GUI first", profile.Name)
 	}
 
-	// Check if OTP is required
+	// If no saved password, prompt interactively
+	if password == "" {
+		var err error
+		password, err = promptPassword("Password: ")
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		if password == "" {
+			return fmt.Errorf("password cannot be empty")
+		}
+	}
+
+	// If OTP is required, prompt for it
 	if profile.RequiresOTP {
-		return fmt.Errorf("profile %s requires OTP. Please connect via GUI", profile.Name)
+		otp, err := promptOTP()
+		if err != nil {
+			return fmt.Errorf("failed to read OTP: %w", err)
+		}
+		if otp == "" {
+			return fmt.Errorf("OTP code cannot be empty")
+		}
+		// OpenVPN pattern: append OTP to password
+		password = password + otp
 	}
 
 	fmt.Printf("Connecting to %s...\n", profile.Name)
@@ -520,6 +545,28 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", seconds)
 }
 
+// promptPassword prompts the user for a password with hidden input.
+func promptPassword(prompt string) (string, error) {
+	fmt.Print(prompt)
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println() // New line after password input
+	if err != nil {
+		return "", err
+	}
+	return string(password), nil
+}
+
+// promptOTP prompts the user for an OTP code with visible input.
+func promptOTP() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter OTP code: ")
+	otp, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(otp), nil
+}
+
 // PrintHelp prints CLI usage help.
 func PrintHelp() {
 	fmt.Println(`VPN Manager - Command Line Interface
@@ -553,8 +600,8 @@ Examples:
 
 Notes:
   - TUI mode provides an interactive terminal interface
-  - CLI mode requires saved credentials (use GUI to save)
-  - Profiles requiring OTP must be connected via GUI
+  - Password will be prompted if not saved (hidden input)
+  - OTP code will be prompted if required by the profile
   - Run without options to launch the GUI
   - --run requires an active VPN connection with app tunneling enabled
   - JSON output is useful for scripting and automation`)

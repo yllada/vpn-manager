@@ -116,3 +116,29 @@ type AuthFailedMsg struct {
 type AuthSuccessMsg struct {
 	ProfileID string
 }
+
+// ============================================================================
+// Tailscale OAuth messages
+// ============================================================================
+
+// TailscaleAuthURLMsg contains the OAuth URL for browser login.
+// Sent when Tailscale requires browser-based authentication.
+type TailscaleAuthURLMsg struct {
+	URL string
+}
+
+// TailscaleAuthCompleteMsg signals that OAuth authentication completed.
+type TailscaleAuthCompleteMsg struct {
+	Success bool
+	Error   error
+}
+
+// TailscaleAuthCancelledMsg signals that the user cancelled OAuth flow.
+type TailscaleAuthCancelledMsg struct{}
+
+// TailscaleStatusUpdatedMsg signals that Tailscale status changed.
+type TailscaleStatusUpdatedMsg struct {
+	Connected    bool
+	BackendState string
+	NeedsLogin   bool
+}
