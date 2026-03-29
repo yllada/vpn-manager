@@ -678,37 +678,53 @@ func (c *CLI) runAppThroughTunnel(appTunnel *vpn.AppTunnel, executable string, a
 	// Get cgroup path from tunnel
 	cgroupPath := "/sys/fs/cgroup/vpn_tunnel"
 
-	// Build command to run in cgroup
-	var cmdExec *exec.Cmd
-	fullCmd := executable
-	if len(args) > 0 {
-		fullCmd = executable + " " + strings.Join(args, " ")
-	}
-
 	// Check cgroup version
 	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err == nil {
-		// cgroup v2
-		cmdExec = exec.Command("sh", "-c", fmt.Sprintf(
-			"echo $$ > %s/cgroup.procs && exec %s",
-			cgroupPath, fullCmd,
-		))
-	} else {
-		// cgroup v1
-		if _, err := exec.LookPath("cgexec"); err == nil {
-			cmdExec = exec.Command("cgexec", append([]string{"-g", "net_cls:vpn_tunnel", executable}, args...)...)
-		} else {
-			cmdExec = exec.Command("sh", "-c", fmt.Sprintf(
-				"echo $$ > %s/cgroup.procs && exec %s",
-				cgroupPath, fullCmd,
-			))
-		}
+		// cgroup v2: Start process, add to cgroup, then wait
+		return runInCgroupV2(cgroupPath, executable, args)
 	}
 
+	// cgroup v1
+	if _, err := exec.LookPath("cgexec"); err == nil {
+		// Use cgexec directly with separate arguments (safe from injection)
+		cmdExec := exec.Command("cgexec", append([]string{"-g", "net_cls:vpn_tunnel", executable}, args...)...)
+		cmdExec.Stdin = os.Stdin
+		cmdExec.Stdout = os.Stdout
+		cmdExec.Stderr = os.Stderr
+		return cmdExec.Run()
+	}
+
+	// cgroup v1 fallback without cgexec
+	return runInCgroupV2(cgroupPath, executable, args)
+}
+
+// runInCgroupV2 runs a command in a cgroup by starting the process,
+// adding its PID to the cgroup, and waiting for completion.
+// This avoids shell injection by not using sh -c with user input.
+func runInCgroupV2(cgroupPath, executable string, args []string) error {
+	// Create command with direct arguments (no shell interpretation)
+	cmdExec := exec.Command(executable, args...)
 	cmdExec.Stdin = os.Stdin
 	cmdExec.Stdout = os.Stdout
 	cmdExec.Stderr = os.Stderr
 
-	return cmdExec.Run()
+	// Start the process to get its PID
+	if err := cmdExec.Start(); err != nil {
+		return fmt.Errorf("failed to start process: %w", err)
+	}
+
+	// Add process to cgroup by writing its PID
+	cgroupProcsPath := cgroupPath + "/cgroup.procs"
+	pidStr := fmt.Sprintf("%d", cmdExec.Process.Pid)
+	if err := os.WriteFile(cgroupProcsPath, []byte(pidStr), 0644); err != nil {
+		// If we can't add to cgroup, kill the process and return error
+		_ = cmdExec.Process.Kill()
+		_, _ = cmdExec.Process.Wait()
+		return fmt.Errorf("failed to add process to cgroup: %w", err)
+	}
+
+	// Wait for process to complete
+	return cmdExec.Wait()
 }
 
 // ListApps lists installed applications that can be used for split tunneling.

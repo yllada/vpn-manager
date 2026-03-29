@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -102,7 +103,9 @@ type Profile struct {
 
 // ProfileManager manages VPN profiles.
 // It handles loading, saving, and manipulating profiles stored on disk.
+// All methods are safe for concurrent use.
 type ProfileManager struct {
+	mu         sync.RWMutex
 	profiles   []*Profile
 	configDir  string
 	configFile string
@@ -149,15 +152,28 @@ func (pm *ProfileManager) Load() error {
 		return fmt.Errorf("failed to read profiles file: %w", err)
 	}
 
-	if err := yaml.Unmarshal(data, &pm.profiles); err != nil {
+	var profiles []*Profile
+	if err := yaml.Unmarshal(data, &profiles); err != nil {
 		return fmt.Errorf("failed to parse profiles file: %w", err)
 	}
+
+	pm.mu.Lock()
+	pm.profiles = profiles
+	pm.mu.Unlock()
 
 	return nil
 }
 
 // Save persists profiles to the configuration file.
 func (pm *ProfileManager) Save() error {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.saveLocked()
+}
+
+// saveLocked persists profiles without acquiring locks.
+// Caller MUST hold at least a read lock.
+func (pm *ProfileManager) saveLocked() error {
 	data, err := yaml.Marshal(&pm.profiles)
 	if err != nil {
 		return fmt.Errorf("failed to serialize profiles: %w", err)
@@ -174,7 +190,7 @@ func (pm *ProfileManager) Save() error {
 // It validates the configuration file, generates a unique ID,
 // and copies the config file to the application's directory.
 func (pm *ProfileManager) Add(profile *Profile) error {
-	// Validate the configuration file
+	// Validate the configuration file (before acquiring lock - I/O operation)
 	if err := validateConfigFile(profile.ConfigPath); err != nil {
 		return fmt.Errorf("invalid config file: %w", err)
 	}
@@ -211,14 +227,20 @@ func (pm *ProfileManager) Add(profile *Profile) error {
 	}
 
 	profile.ConfigPath = destPath
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	pm.profiles = append(pm.profiles, profile)
 
-	return pm.Save()
+	return pm.saveLocked()
 }
 
 // Remove removes a profile by ID.
 // It also deletes the associated configuration file and keyring entry.
 func (pm *ProfileManager) Remove(id string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
 	for i, profile := range pm.profiles {
 		if profile.ID == id {
 			// Remove configuration file (ignore error - file might already be deleted)
@@ -226,43 +248,67 @@ func (pm *ProfileManager) Remove(id string) error {
 
 			// Remove from slice
 			pm.profiles = append(pm.profiles[:i], pm.profiles[i+1:]...)
-			return pm.Save()
+			return pm.saveLocked()
 		}
 	}
 	return ErrProfileNotFound
 }
 
 // Get retrieves a profile by ID.
+// Returns a copy to prevent data races after the lock is released.
 func (pm *ProfileManager) Get(id string) (*Profile, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
 	for _, profile := range pm.profiles {
 		if profile.ID == id {
-			return profile, nil
+			// Return a copy to prevent data races
+			profileCopy := *profile
+			return &profileCopy, nil
 		}
 	}
 	return nil, ErrProfileNotFound
 }
 
 // GetByName retrieves a profile by name.
+// Returns a copy to prevent data races after the lock is released.
 func (pm *ProfileManager) GetByName(name string) (*Profile, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
 	for _, profile := range pm.profiles {
 		if profile.Name == name {
-			return profile, nil
+			// Return a copy to prevent data races
+			profileCopy := *profile
+			return &profileCopy, nil
 		}
 	}
 	return nil, ErrProfileNotFound
 }
 
 // List returns all profiles.
+// Returns a copy of the slice to prevent data races after the lock is released.
 func (pm *ProfileManager) List() []*Profile {
-	return pm.profiles
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	result := make([]*Profile, len(pm.profiles))
+	for i, p := range pm.profiles {
+		profileCopy := *p
+		result[i] = &profileCopy
+	}
+	return result
 }
 
 // Update updates an existing profile.
 func (pm *ProfileManager) Update(profile *Profile) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
 	for i, p := range pm.profiles {
 		if p.ID == profile.ID {
 			pm.profiles[i] = profile
-			return pm.Save()
+			return pm.saveLocked()
 		}
 	}
 	return ErrProfileNotFound
@@ -447,15 +493,23 @@ type ExportedProfile struct {
 // Sensitive data (passwords) are NOT included.
 // Config file contents ARE included for portability.
 func (pm *ProfileManager) Export(filePath string) error {
+	// Copy profile data under lock to minimize lock hold time
+	pm.mu.RLock()
+	profilesCopy := make([]Profile, len(pm.profiles))
+	for i, p := range pm.profiles {
+		profilesCopy[i] = *p
+	}
+	pm.mu.RUnlock()
+
 	exportData := ExportData{
 		Version:      "1.0",
 		ExportedAt:   time.Now(),
-		ProfileCount: len(pm.profiles),
-		Profiles:     make([]ExportedProfile, 0, len(pm.profiles)),
+		ProfileCount: len(profilesCopy),
+		Profiles:     make([]ExportedProfile, 0, len(profilesCopy)),
 	}
 
-	for _, profile := range pm.profiles {
-		// Read the OpenVPN config file content
+	for _, profile := range profilesCopy {
+		// Read the OpenVPN config file content (outside lock - I/O operation)
 		configContent := ""
 		if profile.ConfigPath != "" {
 			if data, err := os.ReadFile(profile.ConfigPath); err == nil {
@@ -507,23 +561,16 @@ func (pm *ProfileManager) Import(filePath string) (int, error) {
 		return 0, fmt.Errorf("invalid backup file: missing version")
 	}
 
-	imported := 0
+	// Prepare all profiles before acquiring lock
+	profilesToAdd := make([]*Profile, 0, len(exportData.Profiles))
 	for _, ep := range exportData.Profiles {
-		// Check for duplicate names
-		name := ep.Name
-		suffix := 1
-		for pm.nameExists(name) {
-			name = fmt.Sprintf("%s (%d)", ep.Name, suffix)
-			suffix++
-		}
-
 		// Generate new unique ID
 		profileID, err := generateUUID()
 		if err != nil {
 			continue // Skip this profile on error
 		}
 
-		// Create temporary config file
+		// Create config file (I/O before lock)
 		configPath := filepath.Join(pm.configDir, fmt.Sprintf("%s.ovpn", profileID))
 		if ep.ConfigContent != "" {
 			if err := os.WriteFile(configPath, []byte(ep.ConfigContent), 0600); err != nil {
@@ -533,7 +580,7 @@ func (pm *ProfileManager) Import(filePath string) (int, error) {
 
 		profile := &Profile{
 			ID:                 profileID,
-			Name:               name,
+			Name:               ep.Name, // Will be deduplicated under lock
 			ConfigPath:         configPath,
 			AutoConnect:        ep.AutoConnect,
 			RequiresOTP:        ep.RequiresOTP,
@@ -545,12 +592,33 @@ func (pm *ProfileManager) Import(filePath string) (int, error) {
 			SavePassword:       false, // User must re-enter credentials
 		}
 
+		profilesToAdd = append(profilesToAdd, profile)
+	}
+
+	if len(profilesToAdd) == 0 {
+		return 0, nil
+	}
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	imported := 0
+	for _, profile := range profilesToAdd {
+		// Check for duplicate names under lock
+		name := profile.Name
+		suffix := 1
+		for pm.nameExistsLocked(name) {
+			name = fmt.Sprintf("%s (%d)", profile.Name, suffix)
+			suffix++
+		}
+		profile.Name = name
+
 		pm.profiles = append(pm.profiles, profile)
 		imported++
 	}
 
 	if imported > 0 {
-		if err := pm.Save(); err != nil {
+		if err := pm.saveLocked(); err != nil {
 			return imported, fmt.Errorf("imported %d profiles but failed to save: %w", imported, err)
 		}
 	}
@@ -558,8 +626,16 @@ func (pm *ProfileManager) Import(filePath string) (int, error) {
 	return imported, nil
 }
 
-// nameExists checks if a profile name already exists.
-func (pm *ProfileManager) nameExists(name string) bool {
+// NameExists checks if a profile name already exists.
+func (pm *ProfileManager) NameExists(name string) bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.nameExistsLocked(name)
+}
+
+// nameExistsLocked checks if a profile name already exists without acquiring locks.
+// Caller MUST hold at least a read lock.
+func (pm *ProfileManager) nameExistsLocked(name string) bool {
 	for _, p := range pm.profiles {
 		if strings.EqualFold(p.Name, name) {
 			return true

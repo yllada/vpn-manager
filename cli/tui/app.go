@@ -37,8 +37,12 @@ func Run(manager *vpn.Manager) error {
 	// Create the program
 	program := tea.NewProgram(model, opts...)
 
+	// Done channel for coordinating goroutine cleanup
+	done := make(chan struct{})
+	defer close(done)
+
 	// Setup signal handling for graceful shutdown
-	setupTUISignalHandler(program)
+	setupTUISignalHandler(program, done)
 
 	// Setup EventBus bridge - subscribes to app events and sends them to the TUI
 	stopEventBridge := setupEventBusBridge(manager, manager.ProfileManager(), app.GetEventBus(), program)
@@ -60,14 +64,21 @@ func Run(manager *vpn.Manager) error {
 }
 
 // setupTUISignalHandler sets up signal handling for graceful TUI shutdown.
-func setupTUISignalHandler(program *tea.Program) {
+// The done channel allows the goroutine to exit cleanly when the program terminates.
+func setupTUISignalHandler(program *tea.Program, done <-chan struct{}) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		<-sigChan
-		app.LogInfo("tui", "Received shutdown signal")
-		program.Send(QuitMsg{})
+		select {
+		case <-sigChan:
+			app.LogInfo("tui", "Received shutdown signal")
+			program.Send(QuitMsg{})
+		case <-done:
+			// Program exited normally, clean up signal handling
+			signal.Stop(sigChan)
+			return
+		}
 	}()
 }
 

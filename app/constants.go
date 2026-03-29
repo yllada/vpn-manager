@@ -48,7 +48,8 @@ const (
 	// NetworkManagerConnectionTimeout is the timeout for NM connections.
 	NetworkManagerConnectionTimeout = 60 * time.Second
 	// CredentialCleanupDelay is the delay before removing temporary credential files.
-	CredentialCleanupDelay = 30 * time.Second
+	// Keep short (5s) to minimize exposure window while allowing OpenVPN to read.
+	CredentialCleanupDelay = 5 * time.Second
 )
 
 // =============================================================================

@@ -94,7 +94,8 @@ const (
 	CleanupDelay = 500 * time.Millisecond
 
 	// CredentialCleanupDelay is the delay before removing credential files.
-	CredentialCleanupDelay = 30 * time.Second
+	// Keep short (5s) to minimize exposure window while allowing OpenVPN to read.
+	CredentialCleanupDelay = 5 * time.Second
 
 	// NMConnectionTimeout is the timeout for NetworkManager operations.
 	NMConnectionTimeout = 60 * time.Second
