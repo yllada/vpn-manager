@@ -59,6 +59,11 @@ func renderView(m Model) string {
 
 	mainContent := b.String()
 
+	// If auth dialog is visible, render it as an overlay
+	if m.authDialog.Visible() {
+		return m.authDialog.ViewOverlay(mainContent)
+	}
+
 	// If confirmation dialog is visible, render it as an overlay
 	if m.confirmDialog.IsVisible() {
 		return m.confirmDialog.ViewOverlay(mainContent)

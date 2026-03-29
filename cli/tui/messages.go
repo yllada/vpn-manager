@@ -80,3 +80,39 @@ type ShowToastMsg struct {
 	Type    components.ToastType
 	Message string
 }
+
+// ============================================================================
+// Auth-related messages
+// ============================================================================
+
+// AuthRequiredMsg is sent when a connection needs authentication.
+type AuthRequiredMsg struct {
+	ProfileID     string
+	ProfileName   string
+	NeedsPassword bool // Password not in keyring
+	NeedsOTP      bool // Profile has RequiresOTP=true
+}
+
+// AuthSubmittedMsg is sent when user submits credentials.
+type AuthSubmittedMsg struct {
+	ProfileID string
+	Password  string
+	OTP       string
+}
+
+// AuthCancelledMsg is sent when user cancels auth dialog.
+type AuthCancelledMsg struct {
+	ProfileID string
+}
+
+// AuthFailedMsg is sent when authentication fails.
+type AuthFailedMsg struct {
+	ProfileID string
+	Error     error
+	CanRetry  bool // True if user can retry (e.g., wrong password)
+}
+
+// AuthSuccessMsg is sent when authentication succeeds.
+type AuthSuccessMsg struct {
+	ProfileID string
+}

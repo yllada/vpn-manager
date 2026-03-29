@@ -9,12 +9,18 @@ import (
 
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/cli/tui/components"
+	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
 // handleUpdate processes incoming messages and returns the updated model and commands.
 func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// If auth dialog is visible, it captures all input
+	if m.authDialog.Visible() {
+		return handleAuthDialog(m, msg)
+	}
 
 	// If confirmation dialog is visible, it captures all input
 	if m.confirmDialog.IsVisible() {
@@ -79,6 +85,33 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Confirmation dialog result
 	case components.ConfirmResult:
 		return handleConfirmResult(m, msg)
+
+	// Auth dialog result
+	case components.AuthDialogResult:
+		return handleAuthDialogResult(m, msg)
+
+	// Auth required - determine what credentials are needed
+	case AuthRequiredMsg:
+		return handleAuthRequired(m, msg)
+
+	// Auth success
+	case AuthSuccessMsg:
+		m.authState = AuthStateNone
+		m.authPassword = ""
+		m.authProfileID = ""
+		return m, nil
+
+	// Auth failed
+	case AuthFailedMsg:
+		m.authState = AuthStateNone
+		if msg.Error != nil {
+			m.toastManager.AddError("Authentication failed: " + msg.Error.Error())
+		}
+		if msg.CanRetry {
+			// Could re-show auth dialog here if desired
+			m.authPassword = ""
+		}
+		return m, nil
 
 	// Connection status changed
 	case ConnectionUpdatedMsg:
@@ -383,31 +416,30 @@ func handleStatsKeys(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // connectToProfile creates a command to connect to a VPN profile.
+// This starts the auth flow - checking keyring first, then showing dialog if needed.
 func connectToProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil || profile == nil {
 			return ErrorMsg{Err: app.WrapError(nil, "invalid manager or profile")}
 		}
 
-		// For now, we attempt connection without credentials
-		// The actual implementation will need to handle credential retrieval
-		app.LogInfo("tui", "Connecting to profile: %s", profile.Name)
+		app.LogInfo("tui", "Starting auth flow for profile: %s", profile.Name)
 
-		// Note: Full credential handling will be added in later phases
-		err := manager.Connect(profile.ID, profile.Username, "")
-		if err != nil {
-			return ErrorMsg{Err: err}
+		// Check keyring for saved password
+		savedPassword, err := keyring.Get(profile.ID)
+		hasSavedPassword := err == nil && savedPassword != ""
+
+		// Determine what we need
+		needsPassword := !hasSavedPassword
+		needsOTP := profile.RequiresOTP
+
+		// Return auth required message with the details
+		return AuthRequiredMsg{
+			ProfileID:     profile.ID,
+			ProfileName:   profile.Name,
+			NeedsPassword: needsPassword,
+			NeedsOTP:      needsOTP,
 		}
-
-		// Get the connection status
-		if conn, exists := manager.GetConnection(profile.ID); exists {
-			return ConnectionUpdatedMsg{
-				Connection: conn,
-				Status:     conn.GetStatus(),
-			}
-		}
-
-		return ConnectionUpdatedMsg{}
 	}
 }
 
@@ -565,4 +597,184 @@ func showDeleteConfirm(m *Model, profile *vpn.Profile) {
 		ConfirmActionDelete,
 		profile,
 	)
+}
+
+// -----------------------------------------------------------------------------
+// Auth Dialog Handlers
+// -----------------------------------------------------------------------------
+
+// handleAuthDialog processes messages when the authentication dialog is visible.
+// The dialog captures all input until dismissed.
+func handleAuthDialog(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		var cmd tea.Cmd
+		m.authDialog, cmd = m.authDialog.Update(msg)
+		return m, cmd
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.authDialog.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case spinner.TickMsg:
+		// Keep spinner running in background
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case TickMsg:
+		// Keep ticking in background
+		m.toastManager.Tick()
+		return m, tickCmd()
+
+	case components.AuthDialogResult:
+		// Forward to the result handler
+		return handleAuthDialogResult(m, msg)
+	}
+
+	return m, nil
+}
+
+// handleAuthRequired processes the AuthRequiredMsg and shows the appropriate dialog.
+func handleAuthRequired(m Model, msg AuthRequiredMsg) (tea.Model, tea.Cmd) {
+	// Find the profile
+	profile := m.findProfile(msg.ProfileID)
+	if profile == nil {
+		m.toastManager.AddError("Profile not found")
+		return m, nil
+	}
+
+	// Check keyring for saved password
+	savedPassword, err := keyring.Get(profile.ID)
+	hasSavedPassword := err == nil && savedPassword != ""
+
+	// Determine what we need
+	needsPassword := !hasSavedPassword
+	needsOTP := profile.RequiresOTP
+
+	// If we have everything, connect directly
+	if hasSavedPassword && !needsOTP {
+		app.LogInfo("tui", "Using saved password for profile: %s", profile.Name)
+		return m, doConnect(m.manager, profile.ID, profile.Username, savedPassword)
+	}
+
+	// Store profile info for auth flow
+	m.authProfileID = profile.ID
+	if hasSavedPassword {
+		m.authPassword = savedPassword
+	}
+
+	// Determine dialog state
+	var dialogState components.AuthDialogState
+	if needsPassword && needsOTP {
+		dialogState = components.AuthDialogPasswordAndOTP
+		m.authState = AuthStatePassword
+	} else if needsPassword {
+		dialogState = components.AuthDialogPassword
+		m.authState = AuthStatePassword
+	} else {
+		// OTP only (password saved)
+		dialogState = components.AuthDialogOTP
+		m.authState = AuthStateOTP
+	}
+
+	// Update auth dialog size and show it
+	m.authDialog.SetSize(m.width, m.height)
+	m.authDialog.Show(profile.Name, dialogState)
+
+	app.LogInfo("tui", "Showing auth dialog for profile: %s (needsPassword=%v, needsOTP=%v)",
+		profile.Name, needsPassword, needsOTP)
+
+	return m, nil
+}
+
+// handleAuthDialogResult processes the result from the authentication dialog.
+func handleAuthDialogResult(m Model, result components.AuthDialogResult) (tea.Model, tea.Cmd) {
+	if !result.Submitted {
+		// User cancelled
+		app.LogInfo("tui", "Auth cancelled for profile: %s", result.ProfileName)
+		m.authDialog.Hide()
+		m.authState = AuthStateNone
+		m.authPassword = ""
+		m.authProfileID = ""
+		return m, nil
+	}
+
+	// User submitted credentials
+	password, otp := result.Password, result.OTP
+
+	// If we had saved password, use it
+	if m.authPassword != "" && password == "" {
+		password = m.authPassword
+	}
+
+	// Combine password + OTP (OpenVPN pattern)
+	fullPassword := password
+	if otp != "" {
+		fullPassword = password + otp
+	}
+
+	// Find the profile to check SavePassword flag
+	profile := m.findProfile(m.authProfileID)
+	if profile == nil {
+		m.authDialog.Hide()
+		m.authState = AuthStateNone
+		m.toastManager.AddError("Profile not found")
+		return m, nil
+	}
+
+	// Save password if profile has SavePassword=true and we got a new password
+	if profile.SavePassword && password != "" && result.Password != "" {
+		if err := keyring.Store(profile.ID, password); err != nil {
+			app.LogError("tui", "Failed to save password to keyring: %v", err)
+		} else {
+			app.LogInfo("tui", "Password saved to keyring for profile: %s", profile.Name)
+		}
+	}
+
+	app.LogInfo("tui", "Auth submitted for profile: %s", profile.Name)
+
+	m.authDialog.Hide()
+	m.authState = AuthStateConnecting
+	m.authPassword = "" // Clear temporary storage
+
+	return m, doConnect(m.manager, profile.ID, profile.Username, fullPassword)
+}
+
+// doConnect creates a command to perform the actual VPN connection.
+func doConnect(manager *vpn.Manager, profileID, username, fullPassword string) tea.Cmd {
+	return func() tea.Msg {
+		if manager == nil {
+			return ErrorMsg{Err: app.WrapError(nil, "invalid manager")}
+		}
+
+		app.LogInfo("tui", "Executing connection for profile ID: %s", profileID)
+
+		err := manager.Connect(profileID, username, fullPassword)
+		if err != nil {
+			return AuthFailedMsg{ProfileID: profileID, Error: err, CanRetry: true}
+		}
+
+		// Get the connection status
+		if conn, exists := manager.GetConnection(profileID); exists {
+			return ConnectionUpdatedMsg{
+				Connection: conn,
+				Status:     conn.GetStatus(),
+			}
+		}
+
+		return AuthSuccessMsg{ProfileID: profileID}
+	}
+}
+
+// findProfile finds a profile by ID from the loaded profiles.
+func (m *Model) findProfile(profileID string) *vpn.Profile {
+	for _, p := range m.profiles {
+		if p.ID == profileID {
+			return p
+		}
+	}
+	return nil
 }

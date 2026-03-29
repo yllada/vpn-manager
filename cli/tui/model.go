@@ -34,6 +34,20 @@ const (
 	ViewConnecting
 )
 
+// AuthState represents the current authentication state.
+type AuthState int
+
+const (
+	// AuthStateNone indicates no authentication in progress.
+	AuthStateNone AuthState = iota
+	// AuthStatePassword indicates waiting for password input.
+	AuthStatePassword
+	// AuthStateOTP indicates waiting for OTP input.
+	AuthStateOTP
+	// AuthStateConnecting indicates auth submitted, connecting in progress.
+	AuthStateConnecting
+)
+
 // Model represents the main TUI state and implements tea.Model.
 type Model struct {
 	// manager is the VPN manager instance for operations.
@@ -74,6 +88,12 @@ type Model struct {
 
 	// Help overlay visibility
 	showHelp bool
+
+	// Auth state
+	authState     AuthState // Current auth flow state
+	authProfileID string    // Profile being authenticated (used by auth flow)
+	authPassword  string    // Temp storage during OTP step (used by auth flow)
+	authDialog    components.AuthDialog
 }
 
 // NewModel creates a new Model with the given VPN manager.
@@ -112,6 +132,8 @@ func NewModel(manager *vpn.Manager) Model {
 		statusPanel:   statusPanel,
 		toastManager:  toastManager,
 		healthGauge:   healthGauge,
+		authState:     AuthStateNone,
+		authDialog:    components.NewAuthDialog(),
 	}
 }
 
