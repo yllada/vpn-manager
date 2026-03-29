@@ -12,6 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.12.0] - 2026-03-29
+
+### Added
+- **TUI**: Tailscale OAuth authentication flow with browser-based login
+- **TUI**: Polling mechanism for OAuth completion detection
+
+### Fixed
+- **SECURITY**: Command injection vulnerability in CLI cgroup execution - now uses `exec.Command` directly instead of shell
+- **SECURITY**: Reduced credential file exposure window from 30s to 5s
+- **CONCURRENCY**: ProfileManager now thread-safe with `sync.RWMutex` (prevents data races)
+- **TUI**: Stats tab now accessible via Tab key navigation (was unreachable)
+- **TUI**: Dashboard now updates correctly after VPN connects (was frozen)
+- **TUI**: Disconnect action now works (was silently failing due to nil Connection)
+- **TUI**: Signal handler goroutine leak fixed with proper cleanup channel
+
+### Changed
+- ProfileManager getters now return copies to prevent data races after lock release
+
 ## [1.11.2] - 2026-03-29
 
 ### Fixed
@@ -280,7 +298,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.11.2...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/yllada/vpn-manager/compare/v1.11.2...v1.12.0
 [1.11.2]: https://github.com/yllada/vpn-manager/compare/v1.11.1...v1.11.2
 [1.11.1]: https://github.com/yllada/vpn-manager/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/yllada/vpn-manager/compare/v1.10.0...v1.11.0
