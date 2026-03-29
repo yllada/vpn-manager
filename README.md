@@ -120,6 +120,8 @@ vpn-manager --list                    # List profiles
 vpn-manager --connect "My VPN"        # Connect
 vpn-manager --disconnect all          # Disconnect all
 vpn-manager --status                  # Show status
+vpn-manager --status --json           # JSON output for scripting
+vpn-manager --tui                     # Launch interactive TUI
 vpn-manager --recover-killswitch      # Recover kill switch after crash
 vpn-manager --disable-killswitch      # Disable kill switch
 ```
@@ -136,11 +138,37 @@ vpn-manager --disable-killswitch      # Disable kill switch
 | `--connect NAME` | Connect to a profile |
 | `--disconnect NAME\|all` | Disconnect from profile(s) |
 | `--status` | Show connection status |
+| `--json` | Output in JSON format (for scripting) |
+| `--tui` | Launch interactive terminal UI |
 | `--run COMMAND` | Run command through VPN tunnel |
 | `--list-apps` | List apps for split tunneling |
 | `--recover-killswitch` | Recover kill switch state after crash |
 | `--disable-killswitch` | Force disable kill switch |
 </details>
+
+## Interactive TUI
+
+Launch a full terminal interface with `--tui`:
+
+```bash
+vpn-manager --tui
+```
+
+The TUI provides a dashboard view with real-time connection status and a profile selector with fuzzy search.
+
+### TUI Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Switch between Dashboard and Profiles |
+| `c` | Connect to selected profile |
+| `d` | Disconnect |
+| `j/k` or arrows | Navigate list |
+| `/` | Filter profiles (fuzzy search) |
+| `Enter` | Select profile |
+| `?` | Toggle help |
+| `Esc` | Cancel/back |
+| `q` | Quit |
 
 ## Configuration
 

@@ -12,6 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.11.0] - 2026-03-28
+
+### Added
+- **Interactive TUI** (`--tui` flag) — Terminal-based interface built with Bubble Tea
+  - Dashboard view with real-time connection status
+  - Profile selector with fuzzy search filtering
+  - Connection spinner with visual feedback
+  - Keyboard-driven navigation (Elm architecture)
+- **TUI Keyboard Shortcuts**:
+  - `c` - Connect to selected profile
+  - `d` - Disconnect
+  - `Tab` - Switch between Dashboard and Profiles views
+  - `j/k` or arrows - Navigate list
+  - `/` - Filter profiles (fuzzy search)
+  - `?` - Toggle help
+  - `q` - Quit
+  - `Enter` - Select profile
+  - `Esc` - Cancel/back
+- **JSON Output** (`--json` flag) — Machine-readable output for scripting and automation
+- **Colorized CLI Output** — Enhanced terminal output using Lip Gloss styling
+  - ANSI fallback for terminals without color support
+  - Respects `NO_COLOR` environment variable
+
+### Technical
+- Bubble Tea framework with bubbles/list component
+- Lip Gloss for consistent terminal styling
+
 ## [1.10.0] - 2026-03-28
 
 ### Added
@@ -225,7 +252,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.9.2...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/yllada/vpn-manager/compare/v1.10.0...v1.11.0
+[1.10.0]: https://github.com/yllada/vpn-manager/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/yllada/vpn-manager/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/yllada/vpn-manager/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/yllada/vpn-manager/compare/v1.8.0...v1.9.0
