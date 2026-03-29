@@ -33,6 +33,7 @@ import (
 	"github.com/yllada/vpn-manager/cli/tui"
 	"github.com/yllada/vpn-manager/ui"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
 
 // Build-time variables injected via ldflags (-X main.appVersion=x.y.z)
@@ -217,6 +218,17 @@ func runTUI() {
 		app.LogError("Failed to initialize VPN manager: %v", err)
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Register Tailscale provider if available
+	if tsProvider, tsErr := tailscale.NewProvider(); tsErr == nil {
+		manager.RegisterProvider(tsProvider)
+		// Ensure current user is configured as Tailscale operator
+		app.SafeGoWithName("tailscale-ensure-operator", func() {
+			if err := tsProvider.EnsureOperator(); err != nil {
+				app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
+			}
+		})
 	}
 
 	if err := tui.Run(manager); err != nil {

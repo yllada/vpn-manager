@@ -3,6 +3,8 @@
 package tui
 
 import (
+	"context"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -13,6 +15,7 @@ import (
 	"github.com/yllada/vpn-manager/cli/tui/components"
 	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
 
 // handleUpdate processes incoming messages and returns the updated model and commands.
@@ -256,6 +259,9 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TailscaleAuthCompleteMsg:
 		return handleTailscaleAuthComplete(m, msg)
+
+	case tailscaleAuthPollMsg:
+		return handleTailscaleAuthPoll(m, m.manager)
 	}
 
 	return m, nil
@@ -433,6 +439,7 @@ func handleStatsKeys(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // connectToProfile creates a command to connect to a VPN profile.
 // This starts the auth flow - checking keyring first, then showing dialog if needed.
+// For Tailscale profiles, it handles OAuth-based authentication.
 func connectToProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil || profile == nil {
@@ -440,6 +447,11 @@ func connectToProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 		}
 
 		app.LogInfo("tui", "Starting auth flow for profile: %s", profile.Name)
+
+		// Check if this is a Tailscale profile
+		if isTailscaleProfile(profile.ID) {
+			return connectToTailscaleCmd(manager)()
+		}
 
 		// Check keyring for saved password
 		savedPassword, err := keyring.Get(profile.ID)
@@ -456,6 +468,83 @@ func connectToProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 			NeedsPassword: needsPassword,
 			NeedsOTP:      needsOTP,
 		}
+	}
+}
+
+// isTailscaleProfile checks if a profile ID belongs to Tailscale.
+func isTailscaleProfile(profileID string) bool {
+	return strings.HasPrefix(profileID, "tailscale-")
+}
+
+// connectToTailscaleCmd creates a command to connect to Tailscale.
+// It checks the current status and initiates OAuth if needed.
+func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
+	return func() tea.Msg {
+		// Get Tailscale provider
+		providerIface, ok := manager.GetProvider(app.ProviderTailscale)
+		if !ok {
+			return ErrorMsg{Err: app.WrapError(nil, "Tailscale provider not available")}
+		}
+
+		tsProvider, ok := providerIface.(*tailscale.Provider)
+		if !ok {
+			return ErrorMsg{Err: app.WrapError(nil, "invalid Tailscale provider type")}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Check current status
+		status, err := tsProvider.Status(ctx)
+		if err != nil {
+			return ErrorMsg{Err: app.WrapError(err, "failed to get Tailscale status")}
+		}
+
+		app.LogInfo("tui", "Tailscale status: BackendState=%s", status.BackendState)
+
+		// If needs login, initiate OAuth flow
+		if status.BackendState == "NeedsLogin" {
+			app.LogInfo("tui", "Tailscale needs login, initiating OAuth flow")
+
+			// Get auth URL by calling Login
+			authURL, err := tsProvider.Login(ctx, "")
+			if err != nil {
+				// Check for permission errors
+				errStr := err.Error()
+				if strings.Contains(errStr, "Access denied") || strings.Contains(errStr, "profiles access denied") {
+					return ErrorMsg{Err: app.WrapError(err, "Tailscale requires operator permissions. Run: sudo tailscale set --operator=$USER")}
+				}
+				return ErrorMsg{Err: app.WrapError(err, "failed to initiate Tailscale login")}
+			}
+
+			if authURL != "" {
+				// Return the auth URL message - this will show the OAuth prompt
+				return TailscaleAuthURLMsg{URL: authURL}
+			}
+
+			// No URL returned, might already be logging in
+			return ShowToastMsg{Type: components.ToastInfo, Message: "Tailscale login in progress..."}
+		}
+
+		// Already logged in - try to connect (bring up)
+		if status.BackendState == "Stopped" || status.BackendState == "NoState" {
+			app.LogInfo("tui", "Tailscale is logged in but stopped, connecting...")
+
+			err := tsProvider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
+			if err != nil {
+				return ErrorMsg{Err: app.WrapError(err, "failed to connect Tailscale")}
+			}
+
+			return TailscaleAuthCompleteMsg{Success: true}
+		}
+
+		// Already running
+		if status.BackendState == "Running" {
+			return ShowToastMsg{Type: components.ToastInfo, Message: "Tailscale already connected"}
+		}
+
+		// Other states (Starting, NeedsMachineAuth, etc.)
+		return ShowToastMsg{Type: components.ToastInfo, Message: "Tailscale is " + status.BackendState}
 	}
 }
 
@@ -873,6 +962,9 @@ func handleOAuthPrompt(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 // oauthSuccessHideMsg is an internal message to hide the OAuth prompt after success.
 type oauthSuccessHideMsg struct{}
 
+// tailscaleAuthPollMsg is an internal message to poll Tailscale auth status.
+type tailscaleAuthPollMsg struct{}
+
 // handleTailscaleAuthURL processes the TailscaleAuthURLMsg and shows the OAuth prompt.
 func handleTailscaleAuthURL(m Model, msg TailscaleAuthURLMsg) (tea.Model, tea.Cmd) {
 	app.LogInfo("tui", "Tailscale auth URL received: %s", msg.URL)
@@ -881,8 +973,87 @@ func handleTailscaleAuthURL(m Model, msg TailscaleAuthURLMsg) (tea.Model, tea.Cm
 	m.oauthPrompt.SetSize(m.width, m.height)
 	m.oauthPrompt.Show("Tailscale", msg.URL)
 
-	// Start spinner animation
-	return m, components.OAuthSpinnerTickCmd()
+	// Start spinner animation and polling for auth completion
+	return m, tea.Batch(
+		components.OAuthSpinnerTickCmd(),
+		tailscaleAuthPollCmd(),
+	)
+}
+
+// tailscaleAuthPollCmd returns a command to poll Tailscale auth status.
+func tailscaleAuthPollCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return tailscaleAuthPollMsg{}
+	})
+}
+
+// handleTailscaleAuthPoll checks if Tailscale authentication has completed.
+func handleTailscaleAuthPoll(m Model, manager *vpn.Manager) (tea.Model, tea.Cmd) {
+	// Only poll if OAuth prompt is visible and in waiting state
+	if !m.oauthPrompt.Visible() || m.oauthPrompt.State() != components.OAuthPromptWaiting {
+		return m, nil
+	}
+
+	// Get Tailscale provider
+	providerIface, ok := manager.GetProvider(app.ProviderTailscale)
+	if !ok {
+		return m, tailscaleAuthPollCmd() // Continue polling
+	}
+
+	tsProvider, ok := providerIface.(*tailscale.Provider)
+	if !ok {
+		return m, tailscaleAuthPollCmd()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	status, err := tsProvider.Status(ctx)
+	if err != nil {
+		app.LogDebug("tui", "Tailscale poll error: %v", err)
+		return m, tailscaleAuthPollCmd()
+	}
+
+	app.LogDebug("tui", "Tailscale poll: BackendState=%s", status.BackendState)
+
+	// Check if auth completed
+	switch status.BackendState {
+	case "Running":
+		// Auth completed successfully - Tailscale is connected
+		return m, func() tea.Msg {
+			return TailscaleAuthCompleteMsg{Success: true}
+		}
+
+	case "Stopped":
+		// Auth completed but not connected yet - try to connect
+		app.LogInfo("tui", "Tailscale auth complete, connecting...")
+		err := tsProvider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
+		if err != nil {
+			return m, func() tea.Msg {
+				return TailscaleAuthCompleteMsg{Success: false, Error: err}
+			}
+		}
+		return m, func() tea.Msg {
+			return TailscaleAuthCompleteMsg{Success: true}
+		}
+
+	case "NeedsLogin":
+		// Still waiting for auth
+		return m, tailscaleAuthPollCmd()
+
+	case "NeedsMachineAuth":
+		// Machine needs admin approval
+		return m, func() tea.Msg {
+			return TailscaleAuthCompleteMsg{
+				Success: false,
+				Error:   app.WrapError(nil, "machine needs admin approval in Tailscale admin console"),
+			}
+		}
+
+	default:
+		// Other states - keep polling
+		return m, tailscaleAuthPollCmd()
+	}
 }
 
 // handleTailscaleAuthComplete processes the TailscaleAuthCompleteMsg.
