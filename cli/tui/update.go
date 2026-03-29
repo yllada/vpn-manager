@@ -8,12 +8,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/cli/tui/components"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
 // handleUpdate processes incoming messages and returns the updated model and commands.
 func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// If confirmation dialog is visible, it captures all input
+	if m.confirmDialog.IsVisible() {
+		return handleConfirmDialog(m, msg)
+	}
 
 	switch msg := msg.(type) {
 
@@ -29,6 +35,19 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 			listHeight = 5
 		}
 		m.profilesList.SetSize(msg.Width-4, listHeight)
+		// Update confirm dialog size
+		m.confirmDialog.SetSize(msg.Width, msg.Height)
+		// Update status panel width and sparkline width
+		m.statusPanel.SetWidth(msg.Width - 4)
+		// Sparkline width: roughly 1/3 of available content width, min 15, max 30
+		sparklineWidth := (msg.Width - 30) / 3 // Leave room for label and value
+		if sparklineWidth < 15 {
+			sparklineWidth = 15
+		}
+		if sparklineWidth > 30 {
+			sparklineWidth = 30
+		}
+		m.statusPanel.SetSparklineWidth(sparklineWidth)
 		app.LogDebug("tui", "Window resized: %dx%d", m.width, m.height)
 		return m, nil
 
@@ -40,6 +59,8 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProfilesLoadedMsg:
 		m.profiles = msg
 		m.profilesList.SetProfiles(msg)
+		// Update status panel profile count
+		m.statusPanel.SetProfileCount(len(msg))
 		// Update connected profile indicator if we have a connection
 		if m.connection != nil && m.connection.Profile != nil {
 			m.profilesList.SetConnectedProfile(m.connection.Profile.ID)
@@ -55,36 +76,91 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	// Confirmation dialog result
+	case components.ConfirmResult:
+		return handleConfirmResult(m, msg)
+
 	// Connection status changed
 	case ConnectionUpdatedMsg:
+		prevStatus := vpn.StatusDisconnected
+		if m.connection != nil {
+			prevStatus = m.connection.GetStatus()
+		}
 		m.connection = msg.Connection
 		m.connectionStatus = statusToString(msg.Status)
+		// Update status panel with connection data
+		m.statusPanel.SetConnection(msg.Connection)
+		// Sync progress bar state with connection status
+		m.statusPanel.SyncProgressWithConnection()
 		// Update profiles list connected indicator
 		if msg.Connection != nil && msg.Connection.Profile != nil {
 			m.profilesList.SetConnectedProfile(msg.Connection.Profile.ID)
 		} else {
 			m.profilesList.SetConnectedProfile("")
+			// Reset bandwidth tracking when disconnected
+			m.statusPanel.ResetBandwidth()
 		}
+
+		// Show toast notifications for connection state changes
+		profileName := ""
+		if msg.Connection != nil && msg.Connection.Profile != nil {
+			profileName = msg.Connection.Profile.Name
+		}
+		switch msg.Status {
+		case vpn.StatusConnected:
+			if prevStatus != vpn.StatusConnected {
+				if profileName != "" {
+					m.toastManager.AddSuccess("Connected to " + profileName)
+				} else {
+					m.toastManager.AddSuccess("VPN Connected")
+				}
+			}
+		case vpn.StatusDisconnected:
+			if prevStatus == vpn.StatusConnected || prevStatus == vpn.StatusDisconnecting {
+				m.toastManager.AddInfo("VPN Disconnected")
+			}
+		}
+
 		// Update view state based on connection status
 		if msg.Status == vpn.StatusConnecting {
 			m.currentView = ViewConnecting
 			m.keys = m.keys.SetContext(ContextConnecting)
+			// Start progress bar animation
+			cmds = append(cmds, progressTickCmd())
 		} else if m.currentView == ViewConnecting {
 			// Return to dashboard after connecting/failing
 			m.currentView = ViewDashboard
 			m.keys = m.keys.SetContext(ContextDashboard)
 		}
 		app.LogDebug("tui", "Connection updated: %v", msg.Status)
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	// Stats updated
 	case StatsUpdatedMsg:
 		m.stats = msg.Stats
+		// Update status panel with new stats
+		m.statusPanel.SetStats(msg.Stats)
+		return m, nil
+
+	// Latency updated
+	case LatencyUpdatedMsg:
+		m.latency = msg.Latency
+		// Update health gauge with new latency
+		m.healthGauge.SetLatency(msg.Latency)
+		return m, nil
+
+	// Show toast notification
+	case ShowToastMsg:
+		m.toastManager.Add(components.NewToast(msg.Type, msg.Message))
 		return m, nil
 
 	// Error occurred
 	case ErrorMsg:
 		m.err = msg.Err
+		// Show error toast
+		if msg.Err != nil {
+			m.toastManager.AddError(msg.Err.Error())
+		}
 		// Return to dashboard on error if we were connecting
 		if m.currentView == ViewConnecting {
 			m.currentView = ViewDashboard
@@ -94,12 +170,31 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Tick for time-based updates (uptime counter, etc.)
 	case TickMsg:
-		// Refresh stats if connected
+		// Refresh stats and update bandwidth sparklines if connected
 		if m.connection != nil && m.connection.GetStatus() == vpn.StatusConnected {
 			cmds = append(cmds, loadStats(m.manager))
+			// Update bandwidth sparklines with current traffic delta
+			m.statusPanel.UpdateBandwidth()
+		}
+		// Tick toast manager to expire old toasts
+		m.toastManager.Tick()
+		// Update toast manager width
+		m.toastManager.SetWidth(m.width / 3)
+		if m.toastManager.Width < 30 {
+			m.toastManager.SetWidth(30)
 		}
 		// Continue ticking
 		cmds = append(cmds, tickCmd())
+		return m, tea.Batch(cmds...)
+
+	// Progress bar tick for connecting animation
+	case components.ProgressTickMsg:
+		// Update the progress bar animation in the status panel
+		m.statusPanel.UpdateProgressAnimation()
+		// Continue progress animation if still connecting
+		if m.connection != nil && m.connection.GetStatus() == vpn.StatusConnecting {
+			cmds = append(cmds, progressTickCmd())
+		}
 		return m, tea.Batch(cmds...)
 
 	// Spinner tick for connecting animation
@@ -192,12 +287,9 @@ func handleDashboardKeys(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Disconnect):
-		// 'd' disconnects current connection and shows spinner
+		// 'd' shows confirmation dialog before disconnecting
 		if m.connection != nil && m.connection.Profile != nil {
-			// Transition to connecting state (shows spinner during disconnect)
-			m.currentView = ViewConnecting
-			m.keys = m.keys.SetContext(ContextConnecting)
-			return m, disconnectProfile(m.manager, m.connection.Profile)
+			showDisconnectConfirm(&m, m.connection.Profile)
 		}
 		return m, nil
 
@@ -238,8 +330,9 @@ func handleProfilesKeys(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Disconnect):
-		if m.connection != nil {
-			return m, disconnectProfile(m.manager, m.connection.Profile)
+		// Show confirmation dialog before disconnecting
+		if m.connection != nil && m.connection.Profile != nil {
+			showDisconnectConfirm(&m, m.connection.Profile)
 		}
 		return m, nil
 
@@ -373,4 +466,103 @@ func viewStateToContext(view ViewState) ViewContext {
 	default:
 		return ContextDashboard
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Confirmation Dialog Handlers
+// -----------------------------------------------------------------------------
+
+// ConfirmAction constants for identifying confirmation types.
+const (
+	ConfirmActionDisconnect = "disconnect"
+	ConfirmActionDelete     = "delete"
+)
+
+// handleConfirmDialog processes messages when the confirmation dialog is visible.
+// The dialog captures all input until dismissed.
+func handleConfirmDialog(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		var cmd tea.Cmd
+		m.confirmDialog, cmd = m.confirmDialog.Update(msg)
+		return m, cmd
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.confirmDialog.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case spinner.TickMsg:
+		// Keep spinner running in background
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case TickMsg:
+		// Keep ticking in background
+		return m, tickCmd()
+	}
+
+	return m, nil
+}
+
+// handleConfirmResult processes the result of a confirmation dialog.
+func handleConfirmResult(m Model, result components.ConfirmResult) (tea.Model, tea.Cmd) {
+	if !result.Confirmed {
+		// User canceled - just close the dialog
+		app.LogDebug("tui", "Confirmation canceled for action: %s", result.Action)
+		return m, nil
+	}
+
+	// User confirmed the action
+	switch result.Action {
+	case ConfirmActionDisconnect:
+		// Execute disconnect
+		if profile, ok := result.Data.(*vpn.Profile); ok && profile != nil {
+			app.LogInfo("tui", "User confirmed disconnect from: %s", profile.Name)
+			m.currentView = ViewConnecting
+			m.keys = m.keys.SetContext(ContextConnecting)
+			return m, disconnectProfile(m.manager, profile)
+		}
+
+	case ConfirmActionDelete:
+		// Execute delete (to be implemented when delete functionality is added)
+		if profile, ok := result.Data.(*vpn.Profile); ok && profile != nil {
+			app.LogInfo("tui", "User confirmed delete of: %s", profile.Name)
+			// TODO: Implement profile deletion
+			// return m, deleteProfile(m.manager, profile)
+		}
+	}
+
+	return m, nil
+}
+
+// showDisconnectConfirm displays a confirmation dialog for disconnecting.
+func showDisconnectConfirm(m *Model, profile *vpn.Profile) {
+	if profile == nil {
+		return
+	}
+	m.confirmDialog.Show(
+		"Disconnect VPN?",
+		"Are you sure you want to disconnect from \""+profile.Name+"\"?",
+		ConfirmActionDisconnect,
+		profile,
+	)
+}
+
+// showDeleteConfirm displays a confirmation dialog for deleting a profile.
+// TODO: Wire this up to a delete keybinding when profile deletion is fully implemented.
+//
+//nolint:unused // Prepared for profile deletion feature (see ConfirmActionDelete handler)
+func showDeleteConfirm(m *Model, profile *vpn.Profile) {
+	if profile == nil {
+		return
+	}
+	m.confirmDialog.Show(
+		"Delete Profile?",
+		"Are you sure you want to delete \""+profile.Name+"\"?\nThis action cannot be undone.",
+		ConfirmActionDelete,
+		profile,
+	)
 }

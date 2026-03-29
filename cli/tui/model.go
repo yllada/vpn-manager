@@ -51,16 +51,25 @@ type Model struct {
 	quitting    bool
 
 	// Sub-models (from bubbles)
-	help         help.Model
-	keys         KeyMap
-	spinner      spinner.Model
-	profilesList components.ProfilesModel
+	help          help.Model
+	keys          KeyMap
+	spinner       spinner.Model
+	profilesList  components.ProfilesModel
+	confirmDialog components.ConfirmModel
+	statusPanel   components.StatusModel // Persistent status panel with sparklines
+
+	// Toast notifications
+	toastManager *components.ToastManager
+
+	// Health gauge for connection quality
+	healthGauge components.GaugeModel
 
 	// Data state
 	profiles         []*vpn.Profile
 	connection       *vpn.Connection // Current active connection, nil if disconnected
 	connectionStatus string          // Human-readable connection status
 	stats            *stats.SessionSummary
+	latency          time.Duration // Current connection latency
 	err              error
 
 	// Help overlay visibility
@@ -79,14 +88,30 @@ func NewModel(manager *vpn.Manager) Model {
 	// Initialize empty profiles list - will be populated via ProfilesLoadedMsg
 	profilesList := components.NewProfilesModel(nil, 80, 20)
 
+	// Initialize confirmation dialog
+	confirmDialog := components.NewConfirmModel()
+
+	// Initialize status panel with bandwidth sparklines
+	statusPanel := components.NewStatusModel()
+
+	// Initialize toast manager
+	toastManager := components.NewToastManager()
+
+	// Initialize health gauge
+	healthGauge := components.NewHealthGauge()
+
 	return Model{
-		manager:      manager,
-		eventBus:     app.GetEventBus(),
-		currentView:  ViewDashboard,
-		keys:         DefaultKeyMap(),
-		help:         h,
-		spinner:      s,
-		profilesList: profilesList,
+		manager:       manager,
+		eventBus:      app.GetEventBus(),
+		currentView:   ViewDashboard,
+		keys:          DefaultKeyMap(),
+		help:          h,
+		spinner:       s,
+		profilesList:  profilesList,
+		confirmDialog: confirmDialog,
+		statusPanel:   statusPanel,
+		toastManager:  toastManager,
+		healthGauge:   healthGauge,
 	}
 }
 
@@ -154,6 +179,12 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(tickInterval, func(t time.Time) tea.Msg {
 		return TickMsg{}
 	})
+}
+
+// progressTickCmd returns a command that sends a ProgressTickMsg for animation.
+// This is a wrapper for components.ProgressTickCmd for use within the tui package.
+func progressTickCmd() tea.Cmd {
+	return components.ProgressTickCmd()
 }
 
 // loadStats creates a command that loads current traffic statistics.

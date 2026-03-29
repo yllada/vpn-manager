@@ -5,26 +5,86 @@ package styles
 import "github.com/charmbracelet/lipgloss"
 
 // -----------------------------------------------------------------------------
-// Adaptive Color Palette
+// ASCII Art Banner
+// -----------------------------------------------------------------------------
+
+// Banner is the ASCII art logo displayed on the dashboard.
+// Designed to be visually striking yet professional.
+const Banner = `
+██╗   ██╗██████╗ ███╗   ██╗      ███╗   ███╗ █████╗ ███╗   ██╗ █████╗  ██████╗ ███████╗██████╗ 
+██║   ██║██╔══██╗████╗  ██║      ████╗ ████║██╔══██╗████╗  ██║██╔══██╗██╔════╝ ██╔════╝██╔══██╗
+██║   ██║██████╔╝██╔██╗ ██║█████╗██╔████╔██║███████║██╔██╗ ██║███████║██║  ███╗█████╗  ██████╔╝
+╚██╗ ██╔╝██╔═══╝ ██║╚██╗██║╚════╝██║╚██╔╝██║██╔══██║██║╚██╗██║██╔══██║██║   ██║██╔══╝  ██╔══██╗
+ ╚████╔╝ ██║     ██║ ╚████║      ██║ ╚═╝ ██║██║  ██║██║ ╚████║██║  ██║╚██████╔╝███████╗██║  ██║
+  ╚═══╝  ╚═╝     ╚═╝  ╚═══╝      ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝`
+
+// BannerCompact is a smaller version for narrow terminals.
+const BannerCompact = `╔═══════════════════════════╗
+║   ◈ VPN-MANAGER ◈        ║
+╚═══════════════════════════╝`
+
+// BannerMinimal is the smallest version for very narrow terminals.
+const BannerMinimal = `◈ VPN-MANAGER ◈`
+
+// -----------------------------------------------------------------------------
+// Unicode Status Indicators
+// -----------------------------------------------------------------------------
+
+const (
+	// IndicatorConnected is shown when VPN is connected (lock closed).
+	IndicatorConnected = "🔒"
+	// IndicatorDisconnected is shown when VPN is disconnected (lock open).
+	IndicatorDisconnected = "🔓"
+	// IndicatorError is shown when there's a connection error.
+	IndicatorError = "✗"
+	// IndicatorSuccess is shown for successful operations.
+	IndicatorSuccess = "✓"
+	// IndicatorWarning is shown for warning states.
+	IndicatorWarning = "⚠"
+	// IndicatorInfo is shown for informational messages.
+	IndicatorInfo = "ℹ"
+	// IndicatorBullet is a simple bullet point.
+	IndicatorBullet = "•"
+	// IndicatorArrowRight is a right-pointing arrow.
+	IndicatorArrowRight = "→"
+	// IndicatorArrowDown is a download indicator.
+	IndicatorArrowDown = "↓"
+	// IndicatorArrowUp is an upload indicator.
+	IndicatorArrowUp = "↑"
+)
+
+// SpinnerFrames are the frames for the connecting spinner animation.
+// Uses braille pattern characters for smooth animation.
+var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// -----------------------------------------------------------------------------
+// Adaptive Color Palette (Enhanced)
 // -----------------------------------------------------------------------------
 // Uses AdaptiveColor for visibility in both light and dark terminals.
-// Format: AdaptiveColor{Light: "color-for-light-bg", Dark: "color-for-dark-bg"}
+// Color scheme inspired by popular TUIs like lazygit and k9s.
 
 var (
 	// Status colors - semantic colors for connection states
-	ColorConnected    = lipgloss.AdaptiveColor{Light: "#00A651", Dark: "#50FA7B"} // Green
-	ColorDisconnected = lipgloss.AdaptiveColor{Light: "#C41E3A", Dark: "#FF5555"} // Red
-	ColorConnecting   = lipgloss.AdaptiveColor{Light: "#D4A017", Dark: "#F1FA8C"} // Yellow/Warning
-	ColorWarning      = lipgloss.AdaptiveColor{Light: "#FF8C00", Dark: "#FFB86C"} // Orange
+	ColorConnected    = lipgloss.AdaptiveColor{Light: "#00875F", Dark: "#50FA7B"} // Vibrant Green
+	ColorDisconnected = lipgloss.AdaptiveColor{Light: "#AF0000", Dark: "#FF5555"} // Strong Red
+	ColorConnecting   = lipgloss.AdaptiveColor{Light: "#AF8700", Dark: "#F1FA8C"} // Bright Yellow
+	ColorWarning      = lipgloss.AdaptiveColor{Light: "#D75F00", Dark: "#FFB86C"} // Orange
 
-	// UI element colors
-	ColorAccent     = lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#BD93F9"} // Purple/Indigo
-	ColorHighlight  = lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#6272A4"} // Selection highlight
-	ColorBorder     = lipgloss.AdaptiveColor{Light: "#CCCCCC", Dark: "#44475A"} // Border/Divider
-	ColorText       = lipgloss.AdaptiveColor{Light: "#282A36", Dark: "#F8F8F2"} // Primary text
-	ColorSubtle     = lipgloss.AdaptiveColor{Light: "#6E6E6E", Dark: "#6272A4"} // Secondary text
-	ColorMuted      = lipgloss.AdaptiveColor{Light: "#999999", Dark: "#44475A"} // Tertiary/disabled
-	ColorBackground = lipgloss.AdaptiveColor{Light: "#FAFAFA", Dark: "#282A36"} // Background panels
+	// UI element colors - enhanced palette
+	ColorAccent      = lipgloss.AdaptiveColor{Light: "#5F5FD7", Dark: "#BD93F9"} // Rich Purple
+	ColorAccentAlt   = lipgloss.AdaptiveColor{Light: "#0087D7", Dark: "#8BE9FD"} // Cyan accent
+	ColorHighlight   = lipgloss.AdaptiveColor{Light: "#5F5FD7", Dark: "#6272A4"} // Selection highlight
+	ColorBorder      = lipgloss.AdaptiveColor{Light: "#BCBCBC", Dark: "#44475A"} // Border/Divider
+	ColorBorderFocus = lipgloss.AdaptiveColor{Light: "#5F5FD7", Dark: "#BD93F9"} // Focused border
+	ColorText        = lipgloss.AdaptiveColor{Light: "#1C1C1C", Dark: "#F8F8F2"} // Primary text
+	ColorSubtle      = lipgloss.AdaptiveColor{Light: "#585858", Dark: "#6272A4"} // Secondary text
+	ColorMuted       = lipgloss.AdaptiveColor{Light: "#8A8A8A", Dark: "#44475A"} // Tertiary/disabled
+	ColorBackground  = lipgloss.AdaptiveColor{Light: "#EEEEEE", Dark: "#282A36"} // Background panels
+
+	// Gradient colors for banner
+	ColorGradient1 = lipgloss.AdaptiveColor{Light: "#5F5FD7", Dark: "#FF79C6"} // Pink/Purple
+	ColorGradient2 = lipgloss.AdaptiveColor{Light: "#0087D7", Dark: "#BD93F9"} // Purple
+	ColorGradient3 = lipgloss.AdaptiveColor{Light: "#00AFAF", Dark: "#8BE9FD"} // Cyan
 )
 
 // -----------------------------------------------------------------------------
@@ -58,6 +118,20 @@ var (
 	StyleHeaderTitle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#F8F8F2"})
+
+	// StyleBanner renders the ASCII art banner with gradient effect.
+	StyleBanner = lipgloss.NewStyle().
+			Foreground(ColorGradient2).
+			Bold(true)
+
+	// StyleBannerGlow adds a subtle glow effect to the banner.
+	StyleBannerGlow = lipgloss.NewStyle().
+			Foreground(ColorAccentAlt)
+
+	// StyleBannerSubtitle is for the tagline under the banner.
+	StyleBannerSubtitle = lipgloss.NewStyle().
+				Foreground(ColorSubtle).
+				Italic(true)
 )
 
 // -----------------------------------------------------------------------------
@@ -103,6 +177,12 @@ var (
 				BorderForeground(ColorAccent).
 				Padding(0, BorderPadding)
 
+	// StyleThickBorder creates a thick border for important sections.
+	StyleThickBorder = lipgloss.NewStyle().
+				Border(lipgloss.ThickBorder()).
+				BorderForeground(ColorBorderFocus).
+				Padding(0, BorderPadding)
+
 	// StylePanel creates a panel with subtle background.
 	StylePanel = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -112,8 +192,18 @@ var (
 	// StyleFocusedPanel creates a panel that indicates focus.
 	StyleFocusedPanel = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorAccent).
+				BorderForeground(ColorBorderFocus).
 				Padding(ContentPadding)
+
+	// StyleGlowPanel creates a panel with accent-colored border for emphasis.
+	StyleGlowPanel = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorAccentAlt).
+			Padding(ContentPadding)
+
+	// StyleSeparator is a horizontal separator line.
+	StyleSeparator = lipgloss.NewStyle().
+			Foreground(ColorMuted)
 )
 
 // -----------------------------------------------------------------------------
@@ -225,30 +315,54 @@ var (
 )
 
 // -----------------------------------------------------------------------------
-// Indicator Styles
+// Indicator Styles (Enhanced with Unicode)
 // -----------------------------------------------------------------------------
 
 var (
 	// StyleIndicatorConnected is used for connection status indicators.
 	StyleIndicatorConnected = lipgloss.NewStyle().
 				Foreground(ColorConnected).
-				SetString("●")
+				SetString(IndicatorConnected)
 
 	// StyleIndicatorDisconnected is used for disconnection status indicators.
 	StyleIndicatorDisconnected = lipgloss.NewStyle().
 					Foreground(ColorDisconnected).
-					SetString("●")
+					SetString(IndicatorDisconnected)
 
 	// StyleIndicatorConnecting is used for connecting status indicators.
 	StyleIndicatorConnecting = lipgloss.NewStyle().
 					Foreground(ColorConnecting).
 					SetString("◐")
 
+	// StyleIndicatorError is used for error indicators.
+	StyleIndicatorError = lipgloss.NewStyle().
+				Foreground(ColorDisconnected).
+				Bold(true).
+				SetString(IndicatorError)
+
+	// StyleIndicatorSuccess is used for success indicators.
+	StyleIndicatorSuccess = lipgloss.NewStyle().
+				Foreground(ColorConnected).
+				Bold(true).
+				SetString(IndicatorSuccess)
+
+	// StyleIndicatorWarning is used for warning indicators.
+	StyleIndicatorWarning = lipgloss.NewStyle().
+				Foreground(ColorWarning).
+				Bold(true).
+				SetString(IndicatorWarning)
+
 	// StyleCursor is the cursor/selection indicator.
 	StyleCursor = lipgloss.NewStyle().
 			Foreground(ColorAccent).
 			Bold(true).
 			SetString("▸")
+
+	// StyleCursorAlt is an alternative cursor style.
+	StyleCursorAlt = lipgloss.NewStyle().
+			Foreground(ColorAccentAlt).
+			Bold(true).
+			SetString("›")
 )
 
 // -----------------------------------------------------------------------------
@@ -300,4 +414,166 @@ func RenderListItem(text string, selected bool, cursor bool) string {
 // ApplyWidth sets the width of a style and returns the modified style.
 func ApplyWidth(style lipgloss.Style, width int) lipgloss.Style {
 	return style.Width(width)
+}
+
+// -----------------------------------------------------------------------------
+// Banner Rendering Helpers
+// -----------------------------------------------------------------------------
+
+// RenderBanner returns the appropriate banner for the given width.
+// Uses the full banner for wide terminals, compact for medium, minimal for narrow.
+func RenderBanner(width int) string {
+	switch {
+	case width >= 95:
+		return StyleBanner.Render(Banner)
+	case width >= 35:
+		return StyleBanner.Render(BannerCompact)
+	default:
+		return StyleBanner.Render(BannerMinimal)
+	}
+}
+
+// RenderBannerWithSubtitle returns the banner with a subtitle.
+func RenderBannerWithSubtitle(width int, subtitle string) string {
+	banner := RenderBanner(width)
+	if subtitle == "" {
+		subtitle = "Secure VPN Management"
+	}
+	sub := StyleBannerSubtitle.Render(subtitle)
+	return lipgloss.JoinVertical(lipgloss.Center, banner, sub)
+}
+
+// RenderSeparator returns a horizontal separator of the given width.
+func RenderSeparator(width int) string {
+	if width <= 0 {
+		width = 40
+	}
+	line := ""
+	for i := 0; i < width; i++ {
+		line += "─"
+	}
+	return StyleSeparator.Render(line)
+}
+
+// RenderSeparatorDouble returns a double-line separator.
+func RenderSeparatorDouble(width int) string {
+	if width <= 0 {
+		width = 40
+	}
+	line := ""
+	for i := 0; i < width; i++ {
+		line += "═"
+	}
+	return StyleSeparator.Render(line)
+}
+
+// -----------------------------------------------------------------------------
+// Enhanced Status Rendering
+// -----------------------------------------------------------------------------
+
+// RenderStatusWithIcon returns a styled status string with Unicode icon.
+func RenderStatusWithIcon(connected bool, connecting bool, hasError bool) string {
+	switch {
+	case hasError:
+		return StyleIndicatorError.String() + " " + StyleError.Render("Error")
+	case connecting:
+		return StyleIndicatorConnecting.String() + " " + StyleStatusConnecting.Render("Connecting...")
+	case connected:
+		return StyleIndicatorConnected.String() + " " + StyleStatusConnected.Render("Connected")
+	default:
+		return StyleIndicatorDisconnected.String() + " " + StyleStatusDisconnected.Render("Disconnected")
+	}
+}
+
+// GetSpinnerFrame returns the spinner frame for the given tick.
+func GetSpinnerFrame(tick int) string {
+	return SpinnerFrames[tick%len(SpinnerFrames)]
+}
+
+// RenderSpinnerFrame returns a styled spinner frame.
+func RenderSpinnerFrame(tick int) string {
+	frame := GetSpinnerFrame(tick)
+	return StyleStatusConnecting.Render(frame)
+}
+
+// -----------------------------------------------------------------------------
+// Empty State Rendering
+// -----------------------------------------------------------------------------
+
+// StyleEmptyState is used for empty state messages.
+var StyleEmptyState = lipgloss.NewStyle().
+	Foreground(ColorSubtle).
+	Padding(1, 2)
+
+// StyleEmptyStateTitle is for empty state titles.
+var StyleEmptyStateTitle = lipgloss.NewStyle().
+	Foreground(ColorMuted).
+	Bold(true)
+
+// StyleEmptyStateIcon is for empty state icons.
+var StyleEmptyStateIcon = lipgloss.NewStyle().
+	Foreground(ColorMuted)
+
+// RenderEmptyState renders a friendly empty state message.
+func RenderEmptyState(title, message, hint string, width int) string {
+	if width <= 0 {
+		width = 60
+	}
+
+	// Icon
+	icon := StyleEmptyStateIcon.Render("○")
+
+	// Title
+	titleStr := StyleEmptyStateTitle.Render(title)
+
+	// Message
+	msgStr := StyleEmptyState.Render(message)
+
+	// Hint (if provided)
+	var hintStr string
+	if hint != "" {
+		hintStr = StyleSubtle.Render(hint)
+	}
+
+	// Compose
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		icon,
+		"",
+		titleStr,
+		msgStr,
+	)
+	if hintStr != "" {
+		content = lipgloss.JoinVertical(lipgloss.Center, content, "", hintStr)
+	}
+
+	return StylePanel.Width(width - 4).Render(content)
+}
+
+// RenderWelcome renders a welcome message for first-time users.
+func RenderWelcome(width int) string {
+	if width <= 0 {
+		width = 60
+	}
+
+	title := StyleTitle.Render("Welcome to VPN Manager!")
+	message := StyleSubtle.Render("Get started by adding your first VPN profile.")
+
+	hints := []string{
+		StyleHelpKey.Render("Tab") + StyleHelpDesc.Render(" switch views"),
+		StyleHelpKey.Render("?") + StyleHelpDesc.Render(" help"),
+		StyleHelpKey.Render("q") + StyleHelpDesc.Render(" quit"),
+	}
+	hintLine := lipgloss.JoinHorizontal(lipgloss.Top, hints[0], "  ", hints[1], "  ", hints[2])
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		title,
+		"",
+		message,
+		"",
+		hintLine,
+	)
+
+	return StyleGlowPanel.Width(width - 4).Render(content)
 }

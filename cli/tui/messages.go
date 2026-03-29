@@ -4,6 +4,9 @@
 package tui
 
 import (
+	"time"
+
+	"github.com/yllada/vpn-manager/cli/tui/components"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/stats"
 )
@@ -17,6 +20,11 @@ type ConnectionUpdatedMsg struct {
 // StatsUpdatedMsg is sent when traffic statistics are updated.
 type StatsUpdatedMsg struct {
 	Stats *stats.SessionSummary
+}
+
+// LatencyUpdatedMsg is sent when connection latency is measured.
+type LatencyUpdatedMsg struct {
+	Latency time.Duration
 }
 
 // ProfilesLoadedMsg is sent when VPN profiles are loaded or refreshed.
@@ -37,6 +45,9 @@ func (e ErrorMsg) Error() string {
 
 // TickMsg is sent on regular intervals for time-based updates.
 type TickMsg struct{}
+
+// ToastTickMsg is sent periodically to check for expired toasts.
+type ToastTickMsg struct{}
 
 // WindowSizeMsg is sent when the terminal window is resized.
 // This wraps tea.WindowSizeMsg for internal use.
@@ -62,4 +73,10 @@ type ProfileSelectedMsg struct {
 type ViewChangedMsg struct {
 	From ViewState
 	To   ViewState
+}
+
+// ShowToastMsg triggers a toast notification to be displayed.
+type ShowToastMsg struct {
+	Type    components.ToastType
+	Message string
 }

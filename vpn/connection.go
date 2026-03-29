@@ -58,6 +58,12 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 
 	m.connections[profileID] = conn
 
+	// Emit connection starting event
+	app.Emit(app.EventConnectionStarting, "Manager", app.ConnectionEventData{
+		ProfileID:   profileID,
+		ProfileName: profile.Name,
+	})
+
 	// Use NetworkManager if enabled and available
 	if profile.UseNetworkManager && m.nmBackend.IsAvailable() {
 		app.SafeGoWithName("vpn-nm-connection", func() {
@@ -337,8 +343,17 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 				conn.mu.Lock()
 				conn.Status = StatusConnected
 				conn.IPAddress = ip
+				profileID := conn.Profile.ID
+				profileName := conn.Profile.Name
 				conn.mu.Unlock()
 				app.LogDebug("vpn", "Connected via NetworkManager - IP: %s", ip)
+
+				// Emit connection established event
+				app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
+					ProfileID:   profileID,
+					ProfileName: profileName,
+					IPAddress:   ip,
+				})
 
 				// Enable post-connection features (kill switch, split tunnel, stats)
 				m.enablePostConnectionFeatures(conn)
@@ -546,7 +561,17 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			app.LogDebug("vpn", "Connection established!")
 			conn.mu.Lock()
 			conn.Status = StatusConnected
+			profileID := conn.Profile.ID
+			profileName := conn.Profile.Name
+			ipAddress := conn.IPAddress
 			conn.mu.Unlock()
+
+			// Emit connection established event
+			app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
+				ProfileID:   profileID,
+				ProfileName: profileName,
+				IPAddress:   ipAddress,
+			})
 
 			// Enable post-connection features (kill switch, split tunnel, stats)
 			m.enablePostConnectionFeatures(conn)
@@ -612,7 +637,16 @@ func (m *Manager) handleConnectionError(conn *Connection, err error) {
 	conn.mu.Lock()
 	conn.Status = StatusError
 	conn.LastError = err.Error()
+	profileID := conn.Profile.ID
+	profileName := conn.Profile.Name
 	conn.mu.Unlock()
+
+	// Emit connection failed event
+	app.Emit(app.EventConnectionFailed, "Manager", app.ConnectionEventData{
+		ProfileID:   profileID,
+		ProfileName: profileName,
+		Error:       err,
+	})
 
 	if conn.logHandler != nil {
 		conn.logHandler(fmt.Sprintf("Error: %v", err))

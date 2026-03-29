@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.11.1] - 2026-03-29
+
+### Fixed
+- **TUI**: VPN connection not working — EventBus events were never emitted in `vpn/connection.go`
+
+### Enhanced
+- **TUI Visual Overhaul**:
+  - Responsive ASCII banner (full/compact/minimal based on terminal width)
+  - Connection progress bar with animated indeterminate mode
+  - Bandwidth sparklines with real-time visualization (▁▂▃▅▇█)
+  - Health gauge showing connection quality based on latency
+  - Toast notifications for connection events
+  - Confirmation dialogs for destructive actions (disconnect)
+  - Enhanced status indicators (🔒 🔓 ✗ ◐)
+  - Improved color palette with gradients and better contrast
+
 ## [1.11.0] - 2026-03-28
 
 ### Added
@@ -252,7 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/yllada/vpn-manager/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/yllada/vpn-manager/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/yllada/vpn-manager/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/yllada/vpn-manager/compare/v1.9.1...v1.9.2

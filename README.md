@@ -154,7 +154,15 @@ Launch a full terminal interface with `--tui`:
 vpn-manager --tui
 ```
 
-The TUI provides a dashboard view with real-time connection status and a profile selector with fuzzy search.
+The TUI provides a rich dashboard with real-time monitoring:
+
+- **Responsive ASCII banner** — Adapts to terminal width (full/compact/minimal)
+- **Connection progress bar** — Animated indeterminate mode during connection
+- **Bandwidth sparklines** — Real-time visualization (▁▂▃▅▇█)
+- **Health gauge** — Connection quality based on latency
+- **Toast notifications** — Connection events feedback
+- **Confirmation dialogs** — Safety prompts for destructive actions
+- **Profile selector** — Fuzzy search filtering
 
 ### TUI Keyboard Shortcuts
 

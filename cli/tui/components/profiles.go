@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/yllada/vpn-manager/cli/tui/styles"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -273,22 +274,12 @@ func (m ProfilesModel) View() string {
 
 // renderEmptyState renders a helpful message when no profiles exist.
 func (m ProfilesModel) renderEmptyState() string {
-	emptyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.AdaptiveColor{Light: "#6E6E6E", Dark: "#6272A4"}).
-		Padding(2, 4)
-
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.AdaptiveColor{Light: "#282A36", Dark: "#F8F8F2"}).
-		MarginBottom(1)
-
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("VPN Profiles"))
-	b.WriteString("\n\n")
-	b.WriteString(emptyStyle.Render("No profiles configured."))
-	b.WriteString("\n")
-	b.WriteString(emptyStyle.Render("Use the GUI to add VPN profiles."))
-	return b.String()
+	return styles.RenderEmptyState(
+		"No VPN Profiles",
+		"You haven't added any VPN profiles yet.",
+		"Use the GUI to import .ovpn configuration files",
+		m.width,
+	)
 }
 
 // SelectedProfile returns the currently selected profile, or nil if none.

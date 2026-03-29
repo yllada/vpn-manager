@@ -26,12 +26,44 @@ type StatusModel struct {
 
 	// ProfileCount is the number of available VPN profiles.
 	ProfileCount int
+
+	// BandwidthPanel shows real-time bandwidth sparklines.
+	BandwidthPanel *BandwidthPanel
+
+	// Progress is the connection progress bar component.
+	Progress *ProgressModel
+
+	// HealthGauge shows connection quality visualization.
+	HealthGauge *GaugeModel
+
+	// lastBytesRecv tracks bytes received for bandwidth calculation.
+	lastBytesRecv uint64
+
+	// lastBytesSent tracks bytes sent for bandwidth calculation.
+	lastBytesSent uint64
+
+	// ShowSparklines controls whether to display bandwidth sparklines.
+	ShowSparklines bool
+
+	// ShowProgressBar controls whether to display the progress bar.
+	ShowProgressBar bool
+
+	// ShowHealthGauge controls whether to display the health gauge.
+	ShowHealthGauge bool
 }
 
 // NewStatusModel creates a new StatusModel with default values.
 func NewStatusModel() StatusModel {
+	progress := NewProgressModel()
+	healthGauge := NewHealthGauge()
 	return StatusModel{
-		Width: 60, // Default width
+		Width:           60, // Default width
+		BandwidthPanel:  NewBandwidthPanel(20),
+		Progress:        &progress,
+		HealthGauge:     &healthGauge,
+		ShowSparklines:  true,
+		ShowProgressBar: true,
+		ShowHealthGauge: true,
 	}
 }
 
@@ -61,58 +93,80 @@ func (m StatusModel) View() string {
 func (m StatusModel) renderDisconnected() string {
 	var b strings.Builder
 
-	// Title
+	// Title with separator
 	b.WriteString(styles.StyleTitle.Render("Connection Status"))
+	b.WriteString("\n")
+	b.WriteString(styles.RenderSeparator(m.contentWidth() - 4))
 	b.WriteString("\n\n")
 
-	// Status indicator
-	indicator := styles.RenderStatusIndicator(false, false)
-	statusText := styles.StyleStatusDisconnected.Render("Disconnected")
-	b.WriteString(fmt.Sprintf("  %s %s\n\n", indicator, statusText))
+	// Status indicator with enhanced icon
+	statusText := styles.RenderStatusWithIcon(false, false, false)
+	b.WriteString(fmt.Sprintf("  %s\n\n", statusText))
 
-	// Profile info
+	// Profile info with friendly empty state
 	if m.ProfileCount > 0 {
 		profileInfo := fmt.Sprintf("%d profile(s) available", m.ProfileCount)
-		b.WriteString(styles.StyleSubtle.Render(fmt.Sprintf("  %s\n", profileInfo)))
-		b.WriteString(styles.StyleSubtle.Render("  Press [c] to connect"))
+		b.WriteString(styles.StyleSubtle.Render(fmt.Sprintf("  %s %s\n", styles.IndicatorBullet, profileInfo)))
+		b.WriteString(styles.StyleInfo.Render(fmt.Sprintf("  %s Press ", styles.IndicatorArrowRight)))
+		b.WriteString(styles.StyleHelpKey.Render("[c]"))
+		b.WriteString(styles.StyleInfo.Render(" to connect"))
 	} else {
-		b.WriteString(styles.StyleSubtle.Render("  No profiles configured\n"))
-		b.WriteString(styles.StyleSubtle.Render("  Use the GUI to add profiles"))
+		// Friendly empty state
+		b.WriteString(styles.StyleMuted.Render("  No profiles configured\n\n"))
+		b.WriteString(styles.StyleSubtle.Render("  Get started:\n"))
+		b.WriteString(styles.StyleSubtle.Render("  1. Use the GUI to add VPN profiles\n"))
+		b.WriteString(styles.StyleSubtle.Render("  2. Import .ovpn configuration files\n"))
 	}
 
 	return styles.StyleBorder.Width(m.contentWidth()).Render(b.String())
 }
 
-// renderConnecting renders the connecting state view.
+// renderConnecting renders the connecting state view with animated progress bar.
 func (m StatusModel) renderConnecting() string {
 	var b strings.Builder
 
-	// Title
+	// Title with separator
 	b.WriteString(styles.StyleTitle.Render("Connection Status"))
+	b.WriteString("\n")
+	b.WriteString(styles.RenderSeparator(m.contentWidth() - 4))
 	b.WriteString("\n\n")
 
-	// Status indicator
+	// Status indicator with animated spinner frame
 	indicator := styles.RenderStatusIndicator(false, true)
 	statusText := styles.StyleStatusConnecting.Render("Connecting...")
-	b.WriteString(fmt.Sprintf("  %s %s\n", indicator, statusText))
+	b.WriteString(fmt.Sprintf("  %s %s\n\n", indicator, statusText))
+
+	// Show animated progress bar if enabled and available
+	if m.ShowProgressBar && m.Progress != nil {
+		b.WriteString("  ")
+		b.WriteString(m.Progress.renderIndeterminateBar())
+		b.WriteString("\n")
+	}
 
 	// Profile info
 	if m.Connection != nil && m.Connection.Profile != nil {
 		profileName := m.Connection.Profile.Name
-		b.WriteString(styles.StyleSubtle.Render(fmt.Sprintf("\n  Profile: %s", profileName)))
+		b.WriteString("\n")
+		b.WriteString(styles.StyleSubtle.Render(fmt.Sprintf("  %s Profile: ", styles.IndicatorBullet)))
+		b.WriteString(styles.StyleValue.Render(profileName))
 	}
 
-	b.WriteString(styles.StyleSubtle.Render("\n\n  Press [Esc] to cancel"))
+	b.WriteString("\n\n")
+	b.WriteString(styles.StyleMuted.Render("  Press "))
+	b.WriteString(styles.StyleHelpKey.Render("[Esc]"))
+	b.WriteString(styles.StyleMuted.Render(" to cancel"))
 
-	return styles.StyleBorder.Width(m.contentWidth()).Render(b.String())
+	return styles.StyleFocusedPanel.Width(m.contentWidth()).Render(b.String())
 }
 
 // renderDisconnecting renders the disconnecting state view.
 func (m StatusModel) renderDisconnecting() string {
 	var b strings.Builder
 
-	// Title
+	// Title with separator
 	b.WriteString(styles.StyleTitle.Render("Connection Status"))
+	b.WriteString("\n")
+	b.WriteString(styles.RenderSeparator(m.contentWidth() - 4))
 	b.WriteString("\n\n")
 
 	// Status indicator
@@ -122,24 +176,27 @@ func (m StatusModel) renderDisconnecting() string {
 
 	if m.Connection != nil && m.Connection.Profile != nil {
 		profileName := m.Connection.Profile.Name
-		b.WriteString(styles.StyleSubtle.Render(fmt.Sprintf("\n  Profile: %s", profileName)))
+		b.WriteString("\n")
+		b.WriteString(styles.StyleSubtle.Render(fmt.Sprintf("  %s Profile: ", styles.IndicatorBullet)))
+		b.WriteString(styles.StyleValue.Render(profileName))
 	}
 
-	return styles.StyleBorder.Width(m.contentWidth()).Render(b.String())
+	return styles.StyleFocusedPanel.Width(m.contentWidth()).Render(b.String())
 }
 
 // renderConnected renders the connected state view with full details.
 func (m StatusModel) renderConnected() string {
 	var b strings.Builder
 
-	// Title
+	// Title with separator
 	b.WriteString(styles.StyleTitle.Render("Connection Status"))
+	b.WriteString("\n")
+	b.WriteString(styles.RenderSeparator(m.contentWidth() - 4))
 	b.WriteString("\n\n")
 
-	// Status indicator
-	indicator := styles.RenderStatusIndicator(true, false)
-	statusText := styles.StyleStatusConnected.Render("Connected")
-	b.WriteString(fmt.Sprintf("  %s %s\n\n", indicator, statusText))
+	// Status indicator with enhanced icon
+	statusText := styles.RenderStatusWithIcon(true, false, false)
+	b.WriteString(fmt.Sprintf("  %s\n\n", statusText))
 
 	// Connection details
 	if m.Connection != nil {
@@ -168,43 +225,71 @@ func (m StatusModel) renderConnected() string {
 		b.WriteString(styles.RenderKeyValue("  Uptime", uptimeStr))
 		b.WriteString("\n")
 
-		// Traffic stats
+		// Connection health gauge
+		if m.ShowHealthGauge && m.HealthGauge != nil {
+			b.WriteString("\n")
+			b.WriteString(styles.StyleSubtle.Render("  ─── Connection Health ───"))
+			b.WriteString("\n")
+			b.WriteString("  ")
+			b.WriteString(m.HealthGauge.Render())
+			b.WriteString("\n")
+		}
+
+		// Bandwidth sparklines (real-time speed visualization)
+		if m.ShowSparklines && m.BandwidthPanel != nil {
+			b.WriteString("\n")
+			b.WriteString(m.BandwidthPanel.ViewWithTitle())
+			b.WriteString("\n")
+		}
+
+		// Traffic stats with enhanced separator (total bytes)
+		b.WriteString("\n")
+		b.WriteString(styles.StyleSubtle.Render("  ─── Total Traffic ───"))
 		b.WriteString("\n")
 		b.WriteString(m.renderTrafficStats())
 	}
 
-	return styles.StyleBorder.Width(m.contentWidth()).Render(b.String())
+	return styles.StyleFocusedPanel.Width(m.contentWidth()).Render(b.String())
 }
 
-// renderError renders the error state view.
+// renderError renders the error state view with error progress bar.
 func (m StatusModel) renderError() string {
 	var b strings.Builder
 
-	// Title
+	// Title with separator
 	b.WriteString(styles.StyleTitle.Render("Connection Status"))
+	b.WriteString("\n")
+	b.WriteString(styles.RenderSeparator(m.contentWidth() - 4))
 	b.WriteString("\n\n")
 
-	// Status indicator
-	indicator := styles.RenderStatusIndicator(false, false)
-	statusText := styles.StyleError.Render("Error")
-	b.WriteString(fmt.Sprintf("  %s %s\n\n", indicator, statusText))
+	// Status indicator with error icon
+	statusText := styles.RenderStatusWithIcon(false, false, true)
+	b.WriteString(fmt.Sprintf("  %s\n\n", statusText))
+
+	// Show error progress bar if enabled and available
+	if m.ShowProgressBar && m.Progress != nil {
+		b.WriteString("  ")
+		b.WriteString(m.Progress.renderErrorBar())
+		b.WriteString("\n\n")
+	}
 
 	// Error details
 	if m.Connection != nil && m.Connection.LastError != "" {
-		b.WriteString(styles.StyleError.Render(fmt.Sprintf("  %s", m.Connection.LastError)))
+		b.WriteString(styles.StyleError.Render(fmt.Sprintf("  %s %s", styles.IndicatorWarning, m.Connection.LastError)))
 		b.WriteString("\n")
 	}
 
-	b.WriteString(styles.StyleSubtle.Render("\n  Press [c] to retry connection"))
+	b.WriteString("\n")
+	b.WriteString(styles.StyleMuted.Render("  Press "))
+	b.WriteString(styles.StyleHelpKey.Render("[c]"))
+	b.WriteString(styles.StyleMuted.Render(" to retry connection"))
 
-	return styles.StyleBorder.Width(m.contentWidth()).Render(b.String())
+	return styles.StyleBorder.Width(m.contentWidth()).BorderForeground(styles.ColorDisconnected).Render(b.String())
 }
 
 // renderTrafficStats renders the traffic statistics section.
 func (m StatusModel) renderTrafficStats() string {
 	var b strings.Builder
-
-	b.WriteString(styles.StyleSubtle.Render("  Traffic\n"))
 
 	// Use stats if available, otherwise use connection bytes
 	var bytesIn, bytesOut uint64
@@ -216,13 +301,19 @@ func (m StatusModel) renderTrafficStats() string {
 		bytesOut = m.Connection.BytesSent
 	}
 
-	// Format as key-value pairs with icons
-	downloadStr := fmt.Sprintf("  %s %s", styles.StyleStatusConnected.Render("↓"), formatBytes(bytesIn))
-	uploadStr := fmt.Sprintf("  %s %s", styles.StyleStatusWarning.Render("↑"), formatBytes(bytesOut))
+	// Format as key-value pairs with enhanced icons
+	downloadStr := fmt.Sprintf("  %s %s %s",
+		styles.StyleStatusConnected.Render(styles.IndicatorArrowDown),
+		styles.StyleLabel.Render("Down:"),
+		styles.StyleValue.Render(formatBytes(bytesIn)))
+	uploadStr := fmt.Sprintf("  %s %s %s",
+		styles.StyleWarning.Render(styles.IndicatorArrowUp),
+		styles.StyleLabel.Render("Up:  "),
+		styles.StyleValue.Render(formatBytes(bytesOut)))
 
-	b.WriteString(styles.StyleNormal.Render(downloadStr))
+	b.WriteString(downloadStr)
 	b.WriteString("\n")
-	b.WriteString(styles.StyleNormal.Render(uploadStr))
+	b.WriteString(uploadStr)
 
 	return b.String()
 }
@@ -312,6 +403,170 @@ func (m *StatusModel) SetWidth(width int) {
 // SetProfileCount sets the number of available profiles.
 func (m *StatusModel) SetProfileCount(count int) {
 	m.ProfileCount = count
+}
+
+// UpdateBandwidth calculates and updates bandwidth based on current traffic stats.
+// Call this on each tick to update the sparkline visualization.
+// Returns the calculated download and upload speeds in bytes/sec.
+func (m *StatusModel) UpdateBandwidth() (downloadSpeed, uploadSpeed float64) {
+	if m.BandwidthPanel == nil || m.Connection == nil {
+		return 0, 0
+	}
+
+	// Get current bytes.
+	var bytesIn, bytesOut uint64
+	if m.Stats != nil {
+		bytesIn = m.Stats.TotalBytesIn
+		bytesOut = m.Stats.TotalBytesOut
+	} else {
+		bytesIn = m.Connection.BytesRecv
+		bytesOut = m.Connection.BytesSent
+	}
+
+	// Calculate speed (bytes per second, assuming 1 second tick interval).
+	if m.lastBytesRecv > 0 && bytesIn >= m.lastBytesRecv {
+		downloadSpeed = float64(bytesIn - m.lastBytesRecv)
+	}
+	if m.lastBytesSent > 0 && bytesOut >= m.lastBytesSent {
+		uploadSpeed = float64(bytesOut - m.lastBytesSent)
+	}
+
+	// Update last values.
+	m.lastBytesRecv = bytesIn
+	m.lastBytesSent = bytesOut
+
+	// Push to sparklines.
+	m.BandwidthPanel.Push(downloadSpeed, uploadSpeed)
+
+	return downloadSpeed, uploadSpeed
+}
+
+// ResetBandwidth clears the bandwidth history and resets tracking.
+// Call this when disconnecting or switching profiles.
+func (m *StatusModel) ResetBandwidth() {
+	if m.BandwidthPanel != nil {
+		m.BandwidthPanel.Clear()
+	}
+	m.lastBytesRecv = 0
+	m.lastBytesSent = 0
+}
+
+// SetShowSparklines enables or disables sparkline display.
+func (m *StatusModel) SetShowSparklines(show bool) {
+	m.ShowSparklines = show
+}
+
+// SetSparklineWidth sets the width of bandwidth sparklines.
+func (m *StatusModel) SetSparklineWidth(width int) {
+	if m.BandwidthPanel != nil {
+		m.BandwidthPanel.SetSparklineWidth(width)
+	}
+}
+
+// GetBandwidthStats returns current bandwidth statistics.
+func (m *StatusModel) GetBandwidthStats() (downloadCurrent, uploadCurrent, downloadPeak, uploadPeak float64) {
+	if m.BandwidthPanel == nil {
+		return 0, 0, 0, 0
+	}
+	return m.BandwidthPanel.GetDownloadCurrent(),
+		m.BandwidthPanel.GetUploadCurrent(),
+		m.BandwidthPanel.GetDownloadPeak(),
+		m.BandwidthPanel.GetUploadPeak()
+}
+
+// SetShowProgressBar enables or disables the progress bar display.
+func (m *StatusModel) SetShowProgressBar(show bool) {
+	m.ShowProgressBar = show
+}
+
+// SetShowHealthGauge enables or disables the health gauge display.
+func (m *StatusModel) SetShowHealthGauge(show bool) {
+	m.ShowHealthGauge = show
+}
+
+// SetHealthLatency sets the health gauge value based on latency measurement.
+func (m *StatusModel) SetHealthLatency(latency time.Duration) {
+	if m.HealthGauge != nil {
+		m.HealthGauge.SetLatency(latency)
+	}
+}
+
+// SetHealthValue sets the health gauge value directly (0-100).
+func (m *StatusModel) SetHealthValue(percent int) {
+	if m.HealthGauge != nil {
+		m.HealthGauge.SetValue(percent)
+	}
+}
+
+// GetHealthLevel returns the current health level.
+func (m *StatusModel) GetHealthLevel() HealthLevel {
+	if m.HealthGauge == nil {
+		return HealthUnknown
+	}
+	return m.HealthGauge.GetLevel()
+}
+
+// UpdateProgressAnimation advances the progress bar animation.
+// Call this on each tick to update the connecting animation.
+func (m *StatusModel) UpdateProgressAnimation() {
+	if m.Progress != nil && m.Progress.State == ProgressConnecting {
+		// Manually advance the animation
+		step := 0.04
+		m.Progress.animationPos += step * float64(m.Progress.animationDir)
+
+		// Bounce at edges
+		if m.Progress.animationPos >= 1.0 {
+			m.Progress.animationPos = 1.0
+			m.Progress.animationDir = -1
+		} else if m.Progress.animationPos <= 0.0 {
+			m.Progress.animationPos = 0.0
+			m.Progress.animationDir = 1
+		}
+	}
+}
+
+// SetProgressState sets the progress bar state and syncs with connection status.
+func (m *StatusModel) SetProgressState(state ProgressState) {
+	if m.Progress != nil {
+		m.Progress.State = state
+		if state == ProgressConnecting {
+			m.Progress.animationPos = 0.0
+			m.Progress.animationDir = 1
+		}
+	}
+}
+
+// SyncProgressWithConnection syncs the progress bar state with the connection status.
+func (m *StatusModel) SyncProgressWithConnection() {
+	if m.Progress == nil {
+		return
+	}
+
+	if m.Connection == nil {
+		m.Progress.State = ProgressIdle
+		return
+	}
+
+	status := m.Connection.GetStatus()
+	switch status {
+	case vpn.StatusConnecting:
+		m.Progress.State = ProgressConnecting
+		if m.Connection.Profile != nil {
+			m.Progress.ProfileName = m.Connection.Profile.Name
+		}
+	case vpn.StatusConnected:
+		m.Progress.State = ProgressConnected
+		if m.Connection.Profile != nil {
+			m.Progress.ProfileName = m.Connection.Profile.Name
+		}
+	case vpn.StatusError:
+		m.Progress.State = ProgressFailed
+		if m.Connection.LastError != "" {
+			m.Progress.ErrorMessage = m.Connection.LastError
+		}
+	default:
+		m.Progress.State = ProgressIdle
+	}
 }
 
 // Update processes messages for the status component.
