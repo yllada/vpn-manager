@@ -723,12 +723,23 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 		formatBytesCompact(session.TotalBytesOut))
 	row.SetSubtitle(subtitle)
 
+	// Add provider icon as prefix based on provider type
+	providerIcon := createRowIcon(getProviderIcon(session.ProviderType))
+	row.AddPrefix(providerIcon)
+
 	// Add profile ID as detail row
 	profileRow := adw.NewActionRow()
 	profileRow.SetTitle("Profile")
 	profileRow.SetSubtitle(session.ProfileID)
-	profileRow.AddPrefix(createRowIcon("network-vpn-symbolic"))
+	profileRow.AddPrefix(createRowIcon("user-info-symbolic"))
 	row.AddRow(profileRow)
+
+	// Add provider type detail row
+	providerRow := adw.NewActionRow()
+	providerRow.SetTitle("Provider")
+	providerRow.SetSubtitle(getProviderDisplayName(session.ProviderType))
+	providerRow.AddPrefix(createRowIcon(getProviderIcon(session.ProviderType)))
+	row.AddRow(providerRow)
 
 	// Add start time detail
 	startRow := adw.NewActionRow()
@@ -747,6 +758,34 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 	}
 
 	sp.sessionsList.Append(row)
+}
+
+// getProviderIcon returns the appropriate icon for a VPN provider type.
+func getProviderIcon(providerType app.VPNProviderType) string {
+	switch providerType {
+	case app.ProviderOpenVPN:
+		return "network-vpn-symbolic"
+	case app.ProviderTailscale:
+		return "network-workgroup-symbolic"
+	case app.ProviderWireGuard:
+		return "security-high-symbolic"
+	default:
+		return "network-vpn-symbolic"
+	}
+}
+
+// getProviderDisplayName returns a human-readable name for a VPN provider type.
+func getProviderDisplayName(providerType app.VPNProviderType) string {
+	switch providerType {
+	case app.ProviderOpenVPN:
+		return "OpenVPN"
+	case app.ProviderTailscale:
+		return "Tailscale"
+	case app.ProviderWireGuard:
+		return "WireGuard"
+	default:
+		return string(providerType)
+	}
 }
 
 // =============================================================================

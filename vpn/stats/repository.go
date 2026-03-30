@@ -192,6 +192,11 @@ func (r *Repository) migrate() error {
 		app.LogWarn("Failed to migrate timestamps: %v", err)
 	}
 
+	// Add provider_type column for multi-provider stats support
+	if err := r.addProviderTypeColumn(); err != nil {
+		app.LogWarn("Failed to add provider_type column: %v", err)
+	}
+
 	return nil
 }
 
@@ -220,6 +225,31 @@ func (r *Repository) migrateTimestamps() error {
 	return nil
 }
 
+// addProviderTypeColumn adds the provider_type column to sessions table.
+// This migration is idempotent (safe to run multiple times).
+// SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check manually.
+func (r *Repository) addProviderTypeColumn() error {
+	var count int
+	err := r.db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('sessions') 
+		WHERE name='provider_type'
+	`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check provider_type column: %w", err)
+	}
+
+	if count == 0 {
+		// Column doesn't exist, add it with default 'openvpn' for existing sessions
+		_, err = r.db.Exec(`ALTER TABLE sessions ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'openvpn'`)
+		if err != nil {
+			return fmt.Errorf("failed to add provider_type column: %w", err)
+		}
+		app.LogInfo("Added provider_type column to sessions table")
+	}
+
+	return nil
+}
+
 // =============================================================================
 // SESSION OPERATIONS
 // =============================================================================
@@ -231,8 +261,8 @@ func (r *Repository) InsertSession(session *SessionInfo) error {
 	defer r.mu.Unlock()
 
 	query := `
-		INSERT INTO sessions (session_id, profile_id, start_time, end_time, interface, server_addr)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO sessions (session_id, profile_id, provider_type, start_time, end_time, interface, server_addr)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	var endTimeStr *string
@@ -241,9 +271,16 @@ func (r *Repository) InsertSession(session *SessionInfo) error {
 		endTimeStr = &s
 	}
 
+	// Convert provider type to string for storage
+	providerStr := string(session.ProviderType)
+	if providerStr == "" {
+		providerStr = string(app.ProviderOpenVPN) // Default for backwards compatibility
+	}
+
 	_, err := r.db.Exec(query,
 		session.SessionID,
 		session.ProfileID,
+		providerStr,
 		formatTimestamp(session.StartTime),
 		endTimeStr,
 		session.Interface,
@@ -277,17 +314,19 @@ func (r *Repository) GetSession(sessionID string) (*SessionInfo, error) {
 	defer r.mu.RUnlock()
 
 	query := `
-		SELECT session_id, profile_id, start_time, end_time, interface, server_addr
+		SELECT session_id, profile_id, provider_type, start_time, end_time, interface, server_addr
 		FROM sessions WHERE session_id = ?
 	`
 
 	session := &SessionInfo{}
 	var startTimeStr string
 	var endTimeStr sql.NullString
+	var providerStr string
 
 	err := r.db.QueryRow(query, sessionID).Scan(
 		&session.SessionID,
 		&session.ProfileID,
+		&providerStr,
 		&startTimeStr,
 		&endTimeStr,
 		&session.Interface,
@@ -300,6 +339,7 @@ func (r *Repository) GetSession(sessionID string) (*SessionInfo, error) {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
+	session.ProviderType = app.VPNProviderType(providerStr)
 	session.StartTime = parseTimestamp(startTimeStr)
 	session.EndTime = parseNullableTimestamp(endTimeStr)
 
@@ -396,6 +436,7 @@ func (r *Repository) GetSessionSummary(sessionID string) (*SessionSummary, error
 		SELECT 
 			s.session_id,
 			s.profile_id,
+			s.provider_type,
 			s.start_time,
 			COALESCE(s.end_time, datetime('now', 'localtime')) as end_time,
 			COALESCE(MAX(t.bytes_in), 0) as total_bytes_in,
@@ -408,9 +449,11 @@ func (r *Repository) GetSessionSummary(sessionID string) (*SessionSummary, error
 
 	summary := &SessionSummary{}
 	var startTimeStr, endTimeStr string
+	var providerStr string
 	err := r.db.QueryRow(query, sessionID).Scan(
 		&summary.SessionID,
 		&summary.ProfileID,
+		&providerStr,
 		&startTimeStr,
 		&endTimeStr,
 		&summary.TotalBytesIn,
@@ -423,6 +466,7 @@ func (r *Repository) GetSessionSummary(sessionID string) (*SessionSummary, error
 		return nil, fmt.Errorf("failed to get session summary: %w", err)
 	}
 
+	summary.ProviderType = app.VPNProviderType(providerStr)
 	summary.StartTime = parseTimestamp(startTimeStr)
 	summary.EndTime = parseTimestamp(endTimeStr)
 	summary.Duration = safeDuration(summary.StartTime, summary.EndTime)
@@ -442,6 +486,7 @@ func (r *Repository) GetRecentSessions(limit int) ([]SessionSummary, error) {
 		SELECT 
 			s.session_id,
 			s.profile_id,
+			s.provider_type,
 			s.start_time,
 			COALESCE(s.end_time, datetime('now', 'localtime')) as end_time,
 			COALESCE(MAX(t.bytes_in), 0) as total_bytes_in,
@@ -463,12 +508,14 @@ func (r *Repository) GetRecentSessions(limit int) ([]SessionSummary, error) {
 	for rows.Next() {
 		var s SessionSummary
 		var startTimeStr, endTimeStr string
+		var providerStr string
 		if err := rows.Scan(
-			&s.SessionID, &s.ProfileID, &startTimeStr, &endTimeStr,
+			&s.SessionID, &s.ProfileID, &providerStr, &startTimeStr, &endTimeStr,
 			&s.TotalBytesIn, &s.TotalBytesOut,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan session summary: %w", err)
 		}
+		s.ProviderType = app.VPNProviderType(providerStr)
 		s.StartTime = parseTimestamp(startTimeStr)
 		s.EndTime = parseTimestamp(endTimeStr)
 		s.Duration = safeDuration(s.StartTime, s.EndTime)

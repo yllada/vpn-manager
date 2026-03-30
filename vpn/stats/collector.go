@@ -90,17 +90,18 @@ func readStatFile(basePath, statName string) (uint64, error) {
 // and stores them in the SQLite database. It manages session lifecycle
 // and provides non-blocking writes to avoid impacting VPN performance.
 type Collector struct {
-	repo       *Repository
-	interval   time.Duration
-	vpnIface   string
-	sessionID  string
-	profileID  string
-	serverAddr string
-	prevStats  *interfaceStats
-	startTime  time.Time
-	stopCh     chan struct{}
-	running    bool
-	mu         sync.RWMutex
+	repo         *Repository
+	interval     time.Duration
+	vpnIface     string
+	sessionID    string
+	profileID    string
+	providerType app.VPNProviderType
+	serverAddr   string
+	prevStats    *interfaceStats
+	startTime    time.Time
+	stopCh       chan struct{}
+	running      bool
+	mu           sync.RWMutex
 
 	// Current session totals (for live display)
 	currentBytesIn  uint64
@@ -131,7 +132,7 @@ func NewCollector(repo *Repository, interval time.Duration) *Collector {
 // Start begins traffic collection for a new VPN session.
 // It creates a new session record and starts the collection goroutine.
 // Returns the session ID for tracking.
-func (c *Collector) Start(profileID, vpnIface, serverAddr string) (string, error) {
+func (c *Collector) Start(profileID string, providerType app.VPNProviderType, vpnIface, serverAddr string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -143,6 +144,7 @@ func (c *Collector) Start(profileID, vpnIface, serverAddr string) (string, error
 	sessionID := uuid.New().String()
 	c.sessionID = sessionID
 	c.profileID = profileID
+	c.providerType = providerType
 	c.vpnIface = vpnIface
 	c.serverAddr = serverAddr
 	c.startTime = time.Now()
@@ -154,11 +156,12 @@ func (c *Collector) Start(profileID, vpnIface, serverAddr string) (string, error
 
 	// Create session record in database
 	session := &SessionInfo{
-		SessionID:  sessionID,
-		ProfileID:  profileID,
-		StartTime:  c.startTime,
-		Interface:  vpnIface,
-		ServerAddr: serverAddr,
+		SessionID:    sessionID,
+		ProfileID:    profileID,
+		ProviderType: providerType,
+		StartTime:    c.startTime,
+		Interface:    vpnIface,
+		ServerAddr:   serverAddr,
 	}
 
 	if err := c.repo.InsertSession(session); err != nil {
@@ -176,8 +179,8 @@ func (c *Collector) Start(profileID, vpnIface, serverAddr string) (string, error
 		c.collectLoop()
 	})
 
-	app.LogInfo("Stats collection started for session %s (interface: %s, profile: %s)",
-		sessionID, vpnIface, profileID)
+	app.LogInfo("Stats collection started for session %s (interface: %s, profile: %s, provider: %s)",
+		sessionID, vpnIface, profileID, providerType)
 
 	return sessionID, nil
 }
@@ -195,6 +198,7 @@ func (c *Collector) Stop() (*SessionSummary, error) {
 
 	sessionID := c.sessionID
 	profileID := c.profileID
+	providerType := c.providerType
 	startTime := c.startTime
 	bytesIn := c.currentBytesIn
 	bytesOut := c.currentBytesOut
@@ -218,6 +222,7 @@ func (c *Collector) Stop() (*SessionSummary, error) {
 	summary := &SessionSummary{
 		SessionID:     sessionID,
 		ProfileID:     profileID,
+		ProviderType:  providerType,
 		StartTime:     startTime,
 		EndTime:       endTime,
 		TotalBytesIn:  bytesIn,
@@ -275,6 +280,7 @@ func (c *Collector) GetCurrentStats() *SessionSummary {
 	return &SessionSummary{
 		SessionID:     c.sessionID,
 		ProfileID:     c.profileID,
+		ProviderType:  c.providerType,
 		StartTime:     c.startTime,
 		EndTime:       now,
 		TotalBytesIn:  c.currentBytesIn,
@@ -445,8 +451,8 @@ func (sm *StatsManager) Close() error {
 }
 
 // StartSession begins tracking a new VPN session.
-func (sm *StatsManager) StartSession(profileID, vpnIface, serverAddr string) (string, error) {
-	return sm.collector.Start(profileID, vpnIface, serverAddr)
+func (sm *StatsManager) StartSession(profileID string, providerType app.VPNProviderType, vpnIface, serverAddr string) (string, error) {
+	return sm.collector.Start(profileID, providerType, vpnIface, serverAddr)
 }
 
 // EndSession stops tracking the current session.

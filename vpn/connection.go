@@ -277,7 +277,7 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	}
 
 	// Stats Collection
-	m.StartStatsCollection(conn.Profile.ID, tunIface, vpnServerIP)
+	m.StartStatsCollection(conn.Profile.ID, app.ProviderOpenVPN, tunIface, vpnServerIP)
 }
 
 // runNMConnection executes VPN connection via NetworkManager.

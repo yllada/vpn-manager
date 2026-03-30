@@ -298,12 +298,12 @@ func (m *Manager) StatsManager() *stats.StatsManager {
 // StartStatsCollection begins traffic statistics collection for a connection.
 // Call this when a VPN connection is established.
 // Returns the session ID for tracking, or empty string if stats unavailable.
-func (m *Manager) StartStatsCollection(profileID, vpnIface, serverAddr string) string {
+func (m *Manager) StartStatsCollection(profileID string, providerType app.VPNProviderType, vpnIface, serverAddr string) string {
 	if m.statsManager == nil {
 		return ""
 	}
 
-	sessionID, err := m.statsManager.StartSession(profileID, vpnIface, serverAddr)
+	sessionID, err := m.statsManager.StartSession(profileID, providerType, vpnIface, serverAddr)
 	if err != nil {
 		app.LogWarn("stats", "Failed to start stats collection: %v", err)
 		return ""

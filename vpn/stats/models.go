@@ -2,7 +2,11 @@
 // This file contains data models for traffic records and session summaries.
 package stats
 
-import "time"
+import (
+	"time"
+
+	"github.com/yllada/vpn-manager/app"
+)
 
 // =============================================================================
 // TRAFFIC RECORD
@@ -28,24 +32,26 @@ type TrafficRecord struct {
 // SessionInfo represents metadata about a VPN session.
 // A session starts when VPN connects and ends when it disconnects.
 type SessionInfo struct {
-	SessionID  string     `db:"session_id"`  // Unique session identifier (UUID)
-	ProfileID  string     `db:"profile_id"`  // VPN profile that was connected
-	StartTime  time.Time  `db:"start_time"`  // When the session started
-	EndTime    *time.Time `db:"end_time"`    // When the session ended (nil if active)
-	Interface  string     `db:"interface"`   // VPN interface used
-	ServerAddr string     `db:"server_addr"` // VPN server address connected to
+	SessionID    string              `db:"session_id"`    // Unique session identifier (UUID)
+	ProfileID    string              `db:"profile_id"`    // VPN profile that was connected
+	ProviderType app.VPNProviderType `db:"provider_type"` // VPN provider (openvpn, tailscale, wireguard)
+	StartTime    time.Time           `db:"start_time"`    // When the session started
+	EndTime      *time.Time          `db:"end_time"`      // When the session ended (nil if active)
+	Interface    string              `db:"interface"`     // VPN interface used
+	ServerAddr   string              `db:"server_addr"`   // VPN server address connected to
 }
 
 // SessionSummary represents aggregated session data with calculated totals.
 // Used for displaying session history and statistics.
 type SessionSummary struct {
-	SessionID     string        `db:"session_id"`
-	ProfileID     string        `db:"profile_id"`
-	StartTime     time.Time     `db:"start_time"`
-	EndTime       time.Time     `db:"end_time"`
-	TotalBytesIn  uint64        `db:"total_bytes_in"`
-	TotalBytesOut uint64        `db:"total_bytes_out"`
-	Duration      time.Duration // Calculated: EndTime - StartTime
+	SessionID     string              `db:"session_id"`
+	ProfileID     string              `db:"profile_id"`
+	ProviderType  app.VPNProviderType `db:"provider_type"` // VPN provider (openvpn, tailscale, wireguard)
+	StartTime     time.Time           `db:"start_time"`
+	EndTime       time.Time           `db:"end_time"`
+	TotalBytesIn  uint64              `db:"total_bytes_in"`
+	TotalBytesOut uint64              `db:"total_bytes_out"`
+	Duration      time.Duration       // Calculated: EndTime - StartTime
 }
 
 // =============================================================================

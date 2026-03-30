@@ -547,7 +547,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 		}
 
 		if status.Connected {
-			// Disconnect
+			// Disconnect - stop stats collection first
+			tp.mainWindow.app.vpnManager.StopStatsCollection()
+
 			if err := tp.provider.Disconnect(ctx, nil); err != nil {
 				glib.IdleAdd(func() {
 					tp.connectBtn.SetSensitive(true)
@@ -580,6 +582,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 				if tray := tp.mainWindow.app.GetTray(); tray != nil {
 					tray.SetConnected("Tailscale")
 				}
+				// Start stats collection for Tailscale
+				// Tailscale interface is "tailscale0", get server info from status
+				tp.startStatsCollection()
 				tp.updateStatus()
 			})
 		}
@@ -1341,6 +1346,49 @@ func (tp *TailscalePanel) showExitNodeAliasDialog(nodeID, hostName, currentAlias
 
 	dialog.SetChild(toolbarView)
 	dialog.Present(&tp.mainWindow.window.Widget)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATS COLLECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// startStatsCollection begins traffic statistics collection for Tailscale.
+// Called after a successful connection. Uses "tailscale0" interface.
+func (tp *TailscalePanel) startStatsCollection() {
+	// Get current status for hostname/exit node info
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	status, err := tp.provider.Status(ctx)
+	if err != nil {
+		app.LogWarn("tailscale-panel", "Failed to get status for stats: %v", err)
+		return
+	}
+
+	// Build profile ID and server address
+	profileID := "tailscale"
+	if status.ConnectionInfo != nil && status.ConnectionInfo.Hostname != "" {
+		profileID = fmt.Sprintf("tailscale-%s", status.ConnectionInfo.Hostname)
+	}
+
+	// Server address: use exit node if active, otherwise "tailscale-direct"
+	serverAddr := "tailscale-direct"
+	if status.ConnectionInfo != nil && status.ConnectionInfo.ExitNode != "" {
+		serverAddr = fmt.Sprintf("exit:%s", status.ConnectionInfo.ExitNode)
+	}
+
+	// Start stats collection with Tailscale provider type
+	// Tailscale uses "tailscale0" interface
+	sessionID := tp.mainWindow.app.vpnManager.StartStatsCollection(
+		profileID,
+		app.ProviderTailscale,
+		"tailscale0",
+		serverAddr,
+	)
+
+	if sessionID != "" {
+		app.LogDebug("tailscale-panel", "Stats collection started: session=%s", sessionID)
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
