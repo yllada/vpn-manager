@@ -76,6 +76,11 @@ type TailscaleConfig struct {
 	AdvertiseTags []string `yaml:"advertise_tags,omitempty"`
 	// OperatorUser is the local user allowed to operate Tailscale.
 	OperatorUser string `yaml:"operator_user,omitempty"`
+
+	// ── Exit Node Aliases ──
+	// ExitNodeAliases maps NodeID → user-defined alias for exit nodes.
+	// NodeID is stable across machine renames; alias displays as title in UI.
+	ExitNodeAliases map[string]string `yaml:"exit_node_aliases,omitempty"`
 }
 
 // Config represents the application configuration.
@@ -261,6 +266,31 @@ func (tc *TailscaleConfig) GetServerNames() []string {
 		names = append(names, srv.Name)
 	}
 	return names
+}
+
+// GetExitNodeAlias returns the user-defined alias for a node, or empty string if none.
+func (tc *TailscaleConfig) GetExitNodeAlias(nodeID string) string {
+	if tc.ExitNodeAliases == nil {
+		return ""
+	}
+	return tc.ExitNodeAliases[nodeID]
+}
+
+// SetExitNodeAlias sets a user-defined alias for an exit node.
+// If alias is empty, the alias is cleared (deleted from map).
+func (tc *TailscaleConfig) SetExitNodeAlias(nodeID, alias string) {
+	if alias == "" {
+		// Clear alias
+		if tc.ExitNodeAliases != nil {
+			delete(tc.ExitNodeAliases, nodeID)
+		}
+		return
+	}
+	// Set alias - initialize map if needed
+	if tc.ExitNodeAliases == nil {
+		tc.ExitNodeAliases = make(map[string]string)
+	}
+	tc.ExitNodeAliases[nodeID] = alias
 }
 
 // Save saves the configuration to the file

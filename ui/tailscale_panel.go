@@ -217,7 +217,7 @@ func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
 // This provides better UX by separating actionable exit nodes from informational device list.
 func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
-	mainBox.SetMarginTop(12)
+	mainBox.SetMarginTop(18)
 	mainBox.SetMarginStart(12)
 	mainBox.SetMarginEnd(12)
 	mainBox.SetMarginBottom(12)
@@ -228,8 +228,8 @@ func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	scrolled.SetMaxContentHeight(400)
 	scrolled.SetVExpand(true)
 
-	// Content box inside scrolled window
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	// Content box inside scrolled window - increased spacing between groups
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 24)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// EXIT NODES SECTION
@@ -754,10 +754,11 @@ func (tp *TailscalePanel) updatePeers() {
 
 // updateExitNodesSection updates the Exit Nodes group with given peers.
 func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStatus) {
-	// Build signature for exit nodes
+	// Build signature for exit nodes (includes alias so changes trigger rebuild)
 	var sigParts []string
 	for _, peer := range exitNodes {
-		sigParts = append(sigParts, fmt.Sprintf("%s:%v:%v", peer.ID, peer.Online, peer.ExitNode))
+		alias := tp.mainWindow.app.GetConfig().Tailscale.GetExitNodeAlias(peer.ID)
+		sigParts = append(sigParts, fmt.Sprintf("%s:%v:%v:%s", peer.ID, peer.Online, peer.ExitNode, alias))
 	}
 	sort.Strings(sigParts)
 	newSig := strings.Join(sigParts, "|")
@@ -877,14 +878,28 @@ func (tp *TailscalePanel) clearAllPeers() {
 
 // createExitNodeRow creates an AdwExpanderRow for an exit node peer.
 // Shows prominent action buttons and gateway status.
+// If user has set an alias, shows alias as title and HostName in subtitle.
 func (tp *TailscalePanel) createExitNodeRow(peer *tailscale.PeerStatus) *adw.ExpanderRow {
 	row := adw.NewExpanderRow()
-	row.SetTitle(peer.HostName)
 	row.SetExpanded(false)
 	row.SetShowEnableSwitch(false)
 
-	// Build subtitle: status only (no "Exit Node" badge - section title makes it clear)
+	// Check for user-defined alias
+	alias := tp.mainWindow.app.GetConfig().Tailscale.GetExitNodeAlias(peer.ID)
+
+	// Build subtitle parts
 	var subtitleParts []string
+
+	// If alias exists: title = alias, subtitle includes HostName
+	// If no alias: title = HostName, subtitle has status only
+	if alias != "" {
+		row.SetTitle(alias)
+		subtitleParts = append(subtitleParts, peer.HostName)
+	} else {
+		row.SetTitle(peer.HostName)
+	}
+
+	// Add status to subtitle
 	if peer.Online {
 		subtitleParts = append(subtitleParts, "Online")
 	} else {
@@ -911,7 +926,25 @@ func (tp *TailscalePanel) createExitNodeRow(peer *tailscale.PeerStatus) *adw.Exp
 	statusIcon.SetPixelSize(16)
 	row.AddPrefix(statusIcon)
 
-	// Suffix: Action button
+	// Suffix container for buttons
+	suffixBox := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	suffixBox.SetVAlign(gtk.AlignCenter)
+
+	// Edit alias button (pencil icon) - always visible
+	editBtn := gtk.NewButton()
+	editBtn.SetIconName("document-edit-symbolic")
+	editBtn.SetTooltipText("Set custom name")
+	editBtn.AddCSSClass("flat")
+	editBtn.AddCSSClass("circular")
+	peerID := peer.ID
+	peerHostName := peer.HostName
+	currentAlias := alias
+	editBtn.ConnectClicked(func() {
+		tp.showExitNodeAliasDialog(peerID, peerHostName, currentAlias)
+	})
+	suffixBox.Append(editBtn)
+
+	// Action button (use/stop)
 	if peer.ExitNode {
 		// Active - show stop button
 		stopBtn := gtk.NewButton()
@@ -920,21 +953,19 @@ func (tp *TailscalePanel) createExitNodeRow(peer *tailscale.PeerStatus) *adw.Exp
 		stopBtn.AddCSSClass("flat")
 		stopBtn.AddCSSClass("circular")
 		stopBtn.AddCSSClass("destructive-action")
-		stopBtn.SetVAlign(gtk.AlignCenter)
 		peerHostname := peer.HostName
 		stopBtn.ConnectClicked(func() {
 			tp.setExitNodeFromPeer("", peerHostname, false)
 		})
-		row.AddSuffix(stopBtn)
+		suffixBox.Append(stopBtn)
 	} else if peer.Online {
 		// Available - show use button
 		useBtn := gtk.NewButton()
-		useBtn.SetIconName("go-next-symbolic")
-		useBtn.SetTooltipText("Use as exit node")
+		useBtn.SetIconName("network-vpn-symbolic")
+		useBtn.SetTooltipText("Route traffic through this node")
 		useBtn.AddCSSClass("flat")
 		useBtn.AddCSSClass("circular")
 		useBtn.AddCSSClass("suggested-action")
-		useBtn.SetVAlign(gtk.AlignCenter)
 		peerIdentifier := peer.DNSName
 		if peerIdentifier == "" {
 			peerIdentifier = peer.HostName
@@ -943,8 +974,10 @@ func (tp *TailscalePanel) createExitNodeRow(peer *tailscale.PeerStatus) *adw.Exp
 		useBtn.ConnectClicked(func() {
 			tp.setExitNodeFromPeer(peerIdentifier, peerName, true)
 		})
-		row.AddSuffix(useBtn)
+		suffixBox.Append(useBtn)
 	}
+
+	row.AddSuffix(suffixBox)
 
 	// Expanded content
 	tp.addPeerDetailsToRow(row, peer)
@@ -960,24 +993,45 @@ func (tp *TailscalePanel) createDeviceRow(peer *tailscale.PeerStatus) *adw.Expan
 	row.SetExpanded(false)
 	row.SetShowEnableSwitch(false)
 
-	// Simple subtitle: just online/offline
+	// Subtitle: OS + online/offline status
+	var subtitleParts []string
+	if peer.OS != "" {
+		subtitleParts = append(subtitleParts, peer.OS)
+	}
 	if peer.Online {
-		row.SetSubtitle("Online")
+		subtitleParts = append(subtitleParts, "Online")
 	} else {
-		row.SetSubtitle("Offline")
+		subtitleParts = append(subtitleParts, "Offline")
+	}
+	row.SetSubtitle(strings.Join(subtitleParts, " • "))
+
+	// Prefix: Device type icon based on OS
+	deviceIcon := gtk.NewImage()
+	deviceIcon.SetPixelSize(16)
+
+	switch strings.ToLower(peer.OS) {
+	case "android":
+		deviceIcon.SetFromIconName("phone-symbolic")
+	case "ios":
+		deviceIcon.SetFromIconName("phone-symbolic")
+	case "linux":
+		deviceIcon.SetFromIconName("computer-symbolic")
+	case "windows":
+		deviceIcon.SetFromIconName("computer-symbolic")
+	case "macos":
+		deviceIcon.SetFromIconName("computer-symbolic")
+	default:
+		deviceIcon.SetFromIconName("network-workgroup-symbolic")
 	}
 
-	// Prefix: Status icon
-	statusIcon := gtk.NewImage()
+	// Apply color based on online status
 	if peer.Online {
-		statusIcon.SetFromIconName("emblem-ok-symbolic")
-		statusIcon.AddCSSClass("success")
+		deviceIcon.AddCSSClass("success")
 	} else {
-		statusIcon.SetFromIconName("emblem-disabled-symbolic")
-		statusIcon.AddCSSClass("dim-label")
+		deviceIcon.AddCSSClass("dim-label")
 	}
-	statusIcon.SetPixelSize(16)
-	row.AddPrefix(statusIcon)
+
+	row.AddPrefix(deviceIcon)
 
 	// Expanded content
 	tp.addPeerDetailsToRow(row, peer)
@@ -1082,6 +1136,84 @@ func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, e
 			tp.updateStatus()
 		})
 	})
+}
+
+// showExitNodeAliasDialog shows a dialog for setting a custom alias for an exit node.
+// Uses AdwDialog pattern following trust_rules_dialog.go for consistency.
+func (tp *TailscalePanel) showExitNodeAliasDialog(nodeID, hostName, currentAlias string) {
+	dialog := adw.NewDialog()
+	dialog.SetTitle("Set Exit Node Alias")
+	dialog.SetContentWidth(400)
+
+	// Create toolbar view with header
+	toolbarView := adw.NewToolbarView()
+
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
+
+	// Cancel button in header
+	cancelBtn := gtk.NewButton()
+	cancelBtn.SetLabel("Cancel")
+	cancelBtn.ConnectClicked(func() {
+		dialog.Close()
+	})
+	headerBar.PackStart(cancelBtn)
+
+	// Save button in header
+	saveBtn := gtk.NewButton()
+	saveBtn.SetLabel("Save")
+	saveBtn.AddCSSClass("suggested-action")
+	headerBar.PackEnd(saveBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Create form content using AdwPreferencesPage
+	prefsPage := adw.NewPreferencesPage()
+
+	// Form group
+	formGroup := adw.NewPreferencesGroup()
+	formGroup.SetDescription(fmt.Sprintf("Original name: %s", hostName))
+
+	// Alias Entry Row
+	aliasRow := adw.NewEntryRow()
+	aliasRow.SetTitle("Custom Name")
+	if currentAlias != "" {
+		aliasRow.SetText(currentAlias)
+	}
+	formGroup.Add(aliasRow)
+
+	prefsPage.Add(formGroup)
+	toolbarView.SetContent(prefsPage)
+
+	// Connect save button
+	saveBtn.ConnectClicked(func() {
+		alias := strings.TrimSpace(aliasRow.Text())
+
+		// Set or clear the alias
+		tp.mainWindow.app.GetConfig().Tailscale.SetExitNodeAlias(nodeID, alias)
+
+		// Save config to disk
+		if err := tp.mainWindow.app.GetConfig().Save(); err != nil {
+			tp.mainWindow.ShowToast("Failed to save: "+err.Error(), 5)
+			return
+		}
+
+		dialog.Close()
+
+		// Force UI refresh
+		tp.lastExitNodesSig = ""
+		tp.updateStatus()
+
+		if alias != "" {
+			tp.mainWindow.ShowToast(fmt.Sprintf("Alias set: %s", alias), 2)
+		} else {
+			tp.mainWindow.ShowToast("Alias cleared", 2)
+		}
+	})
+
+	dialog.SetChild(toolbarView)
+	dialog.Present(&tp.mainWindow.window.Widget)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
