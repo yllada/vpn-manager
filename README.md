@@ -40,6 +40,10 @@ Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you c
 - **System tray** — Quick access without opening the app
 - **Network Trust Rules** — Auto-manage VPN based on network trust (connect on untrusted, disconnect on trusted)
 
+<p align="center">
+  <img src="assets/screen/tailscale.png" alt="Tailscale Integration" width="600">
+</p>
+
 ### Security Features
 
 VPN Manager provides enterprise-grade security that matches ProtonVPN and NordVPN:
@@ -61,6 +65,10 @@ VPN Manager provides enterprise-grade security that matches ProtonVPN and NordVP
 - **Weekly traffic charts** — Bar chart visualization of usage patterns
 - **Session history** — Detailed metrics with 90-day SQLite-based retention
 - **Pure Go implementation** — No CGO required (modernc.org/sqlite)
+
+<p align="center">
+  <img src="assets/screen/statiscs.png" alt="Traffic Statistics Dashboard" width="600">
+</p>
 
 ## Network Trust Rules
 
