@@ -12,6 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.13.0] - 2026-03-30
+
+### Added
+- **Multi-Provider Statistics** — Traffic stats now track all VPN providers
+  - Sessions tagged with provider type (OpenVPN, Tailscale, WireGuard)
+  - Provider-specific icons in stats panel UI
+  - Automatic stats collection for Tailscale connections
+- **Tailscale Exit Node Aliasing** — Set custom names for exit nodes
+  - Alias persisted in config, shown in UI
+  - Edit button in exit node popover
+- **Tailscale Tray Sync** — Tray indicator updates on external state changes
+  - Detects CLI connects/disconnects and updates icon
+
+### Changed
+- **Tailscale Exit Node UX** — Replaced scrollable list with compact popover selector
+  - "Change" button opens popover with all exit nodes
+  - "Suggest Best" option uses Tailscale's built-in suggestion
+  - Cleaner main panel showing only active exit node
+- **Tailscale Device Separation** — Exit nodes and regular devices now in separate sections
+  - Exit Nodes section with gateway controls
+  - Devices section for other tailnet members
+
+### Technical
+- SQLite migration adds `provider_type` column (idempotent, safe for existing DBs)
+- Stats Collector and Manager APIs updated to accept provider type parameter
+- Interface detection: `tun0` (OpenVPN), `tailscale0` (Tailscale), `wg0` (WireGuard)
+
 ## [1.12.1] - 2026-03-29
 
 ### Fixed
@@ -304,7 +331,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.12.1...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/yllada/vpn-manager/compare/v1.12.1...v1.13.0
 [1.12.1]: https://github.com/yllada/vpn-manager/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/yllada/vpn-manager/compare/v1.11.2...v1.12.0
 [1.11.2]: https://github.com/yllada/vpn-manager/compare/v1.11.1...v1.11.2
