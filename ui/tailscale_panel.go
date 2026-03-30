@@ -15,6 +15,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
 
@@ -36,17 +37,25 @@ type TailscalePanel struct {
 	loginBtn   *gtk.Button
 	logoutBtn  *gtk.Button
 
-	// Peers list (AdwPreferencesGroup with AdwExpanderRows)
-	peersGroup     *adw.PreferencesGroup
-	emptyPeersPage *adw.StatusPage
+	// Exit Nodes section (separate from devices for better UX)
+	exitNodesGroup    *adw.PreferencesGroup
+	exitNodesEmptyRow *adw.ActionRow
+	suggestBtn        *gtk.Button
+	exitNodeRows      map[string]*adw.ExpanderRow
+	lastExitNodesSig  string
+
+	// Devices section (non-exit-node peers)
+	devicesGroup    *adw.PreferencesGroup
+	devicesEmptyRow *adw.ActionRow
+	deviceRows      map[string]*adw.ExpanderRow
+	lastDevicesSig  string
+
+	// Track connection state for tray updates (avoid spamming)
+	lastConnectedState bool
 
 	// Update ticker
 	stopUpdates     chan struct{}
 	stopUpdatesOnce sync.Once
-
-	// Peers cache to avoid unnecessary rebuilds (prevents scroll jump)
-	lastPeersSignature string
-	peerRows           map[string]*adw.ExpanderRow
 
 	// Empty state views for when Tailscale is not available
 	notInstalledView  *NotInstalledView // For StateNotInstalled
@@ -60,10 +69,11 @@ type TailscalePanel struct {
 // Accepts nil provider if Tailscale binary is not found — panel will show NotInstalledView.
 func NewTailscalePanel(mainWindow *MainWindow, provider *tailscale.Provider) *TailscalePanel {
 	tp := &TailscalePanel{
-		mainWindow:  mainWindow,
-		provider:    provider,
-		stopUpdates: make(chan struct{}),
-		peerRows:    make(map[string]*adw.ExpanderRow),
+		mainWindow:   mainWindow,
+		provider:     provider,
+		stopUpdates:  make(chan struct{}),
+		exitNodeRows: make(map[string]*adw.ExpanderRow),
+		deviceRows:   make(map[string]*adw.ExpanderRow),
 	}
 
 	tp.createLayout()
@@ -203,7 +213,8 @@ func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
 	return listBox
 }
 
-// createPeersSection creates the peers list section using AdwPreferencesGroup.
+// createPeersSection creates the peers list section with separate Exit Nodes and Devices groups.
+// This provides better UX by separating actionable exit nodes from informational device list.
 func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	mainBox := gtk.NewBox(gtk.OrientationVertical, 0)
 	mainBox.SetMarginTop(12)
@@ -211,28 +222,62 @@ func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	mainBox.SetMarginEnd(12)
 	mainBox.SetMarginBottom(12)
 
-	// Scrolled window for the peers
+	// Scrolled window for both sections
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetMinContentHeight(150)
-	scrolled.SetMaxContentHeight(350)
+	scrolled.SetMaxContentHeight(400)
 	scrolled.SetVExpand(true)
 
-	// Content box inside scrolled window to hold both group and empty state
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	// Content box inside scrolled window
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
 
-	// AdwPreferencesGroup for peers
-	tp.peersGroup = adw.NewPreferencesGroup()
-	tp.peersGroup.SetTitle("Devices")
-	tp.peersGroup.SetDescription("Devices on your tailnet")
-	contentBox.Append(tp.peersGroup)
+	// ═══════════════════════════════════════════════════════════════════════
+	// EXIT NODES SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+	tp.exitNodesGroup = adw.NewPreferencesGroup()
+	tp.exitNodesGroup.SetTitle("Exit Nodes")
+	tp.exitNodesGroup.SetDescription("Route traffic through these gateways")
 
-	// Empty state page (sibling of peersGroup, not child)
-	tp.emptyPeersPage = adw.NewStatusPage()
-	tp.emptyPeersPage.SetIconName("network-workgroup-symbolic")
-	tp.emptyPeersPage.SetTitle("No Devices Found")
-	tp.emptyPeersPage.SetDescription("Connect other devices to your tailnet to see them here")
-	tp.emptyPeersPage.SetVisible(false)
-	contentBox.Append(tp.emptyPeersPage)
+	// Header suffix: Suggest Best button
+	tp.suggestBtn = gtk.NewButton()
+	tp.suggestBtn.SetIconName("starred-symbolic")
+	tp.suggestBtn.SetTooltipText("Use suggested exit node")
+	tp.suggestBtn.AddCSSClass("flat")
+	tp.suggestBtn.ConnectClicked(tp.onSuggestExitNodeClicked)
+	tp.exitNodesGroup.SetHeaderSuffix(tp.suggestBtn)
+
+	// Empty state row for exit nodes (hidden by default)
+	tp.exitNodesEmptyRow = adw.NewActionRow()
+	tp.exitNodesEmptyRow.SetTitle("No Exit Nodes")
+	tp.exitNodesEmptyRow.SetSubtitle("No devices in your tailnet are configured as exit nodes")
+	emptyExitIcon := gtk.NewImage()
+	emptyExitIcon.SetFromIconName("network-offline-symbolic")
+	emptyExitIcon.SetPixelSize(16)
+	tp.exitNodesEmptyRow.AddPrefix(emptyExitIcon)
+	tp.exitNodesEmptyRow.SetVisible(false)
+	tp.exitNodesGroup.Add(tp.exitNodesEmptyRow)
+
+	contentBox.Append(tp.exitNodesGroup)
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// DEVICES SECTION
+	// ═══════════════════════════════════════════════════════════════════════
+	tp.devicesGroup = adw.NewPreferencesGroup()
+	tp.devicesGroup.SetTitle("Devices")
+	tp.devicesGroup.SetDescription("Other devices on your tailnet")
+
+	// Empty state row for devices (hidden by default)
+	tp.devicesEmptyRow = adw.NewActionRow()
+	tp.devicesEmptyRow.SetTitle("No Devices")
+	tp.devicesEmptyRow.SetSubtitle("Connect other devices to your tailnet")
+	emptyDevIcon := gtk.NewImage()
+	emptyDevIcon.SetFromIconName("computer-symbolic")
+	emptyDevIcon.SetPixelSize(16)
+	tp.devicesEmptyRow.AddPrefix(emptyDevIcon)
+	tp.devicesEmptyRow.SetVisible(false)
+	tp.devicesGroup.Add(tp.devicesEmptyRow)
+
+	contentBox.Append(tp.devicesGroup)
 
 	scrolled.SetChild(contentBox)
 	mainBox.Append(scrolled)
@@ -283,6 +328,8 @@ func (tp *TailscalePanel) onConnectClicked() {
 				tp.connectBtn.SetSensitive(true)
 				tp.mainWindow.SetStatus("Tailscale disconnected")
 				NotifyDisconnected("Tailscale")
+				// Update tray indicator only if no other VPNs active
+				tp.updateTrayIfNoOtherConnections()
 				tp.updateStatus()
 			})
 		} else {
@@ -298,6 +345,10 @@ func (tp *TailscalePanel) onConnectClicked() {
 				tp.connectBtn.SetSensitive(true)
 				tp.mainWindow.SetStatus("Tailscale connected")
 				NotifyConnected("Tailscale")
+				// Update tray indicator
+				if tray := tp.mainWindow.app.GetTray(); tray != nil {
+					tray.SetConnected("Tailscale")
+				}
 				tp.updateStatus()
 			})
 		}
@@ -443,6 +494,57 @@ func (tp *TailscalePanel) showOperatorSetupDialog() {
 	dialog.Present(tp.mainWindow.window)
 }
 
+// onSuggestExitNodeClicked handles the "Suggest Best" button click.
+// Uses Tailscale's built-in exit node suggestion based on network conditions.
+func (tp *TailscalePanel) onSuggestExitNodeClicked() {
+	tp.suggestBtn.SetSensitive(false)
+	tp.mainWindow.SetStatus("Finding best exit node...")
+
+	app.SafeGoWithName("tailscale-suggest-exit-node", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// First verify Tailscale is connected
+		status, err := tp.provider.Status(ctx)
+		if err != nil {
+			glib.IdleAdd(func() {
+				tp.suggestBtn.SetSensitive(true)
+				tp.mainWindow.showError("Suggest Error", fmt.Sprintf("Could not check Tailscale status: %v", err))
+			})
+			return
+		}
+
+		if !status.Connected {
+			glib.IdleAdd(func() {
+				tp.suggestBtn.SetSensitive(true)
+				tp.mainWindow.SetStatus("Connect to Tailscale first to use exit nodes")
+			})
+			return
+		}
+
+		suggested, err := tp.provider.GetSuggestedExitNode(ctx)
+
+		glib.IdleAdd(func() {
+			tp.suggestBtn.SetSensitive(true)
+
+			if err != nil {
+				app.LogError("tailscale-panel", "suggest exit node failed: %v", err)
+				tp.mainWindow.showError("Suggest Error", fmt.Sprintf("Could not get suggested exit node: %v", err))
+				return
+			}
+
+			if suggested == nil || suggested.Name == "" {
+				tp.mainWindow.SetStatus("No exit node suggestions available")
+				return
+			}
+
+			// Apply the suggested exit node
+			tp.mainWindow.SetStatus(fmt.Sprintf("Connecting to suggested exit node: %s", suggested.Name))
+			tp.setExitNodeFromPeer(suggested.Name, suggested.Name, true)
+		})
+	})
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // AVAILABILITY STATE MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
@@ -532,6 +634,10 @@ func (tp *TailscalePanel) updateStatus() {
 	// Build status parts for subtitle
 	var statusParts []string
 
+	// Track if connection state changed for tray update
+	connectionStateChanged := status.Connected != tp.lastConnectedState
+	tp.lastConnectedState = status.Connected
+
 	// Update status display
 	if status.Connected {
 		statusParts = append(statusParts, "Connected")
@@ -541,6 +647,13 @@ func (tp *TailscalePanel) updateStatus() {
 		tp.connectBtn.AddCSSClass("destructive-action")
 		tp.loginBtn.SetVisible(false)
 		tp.logoutBtn.SetVisible(true)
+
+		// Update tray if state changed (handles external connects like CLI)
+		if connectionStateChanged {
+			if tray := tp.mainWindow.app.GetTray(); tray != nil {
+				tray.SetConnected("Tailscale")
+			}
+		}
 	} else {
 		switch status.BackendState {
 		case "NeedsLogin":
@@ -561,6 +674,11 @@ func (tp *TailscalePanel) updateStatus() {
 		tp.connectBtn.SetTooltipText("Connect")
 		tp.connectBtn.RemoveCSSClass("destructive-action")
 		tp.connectBtn.AddCSSClass("connect-button")
+
+		// Update tray if state changed AND no other VPN connections active
+		if connectionStateChanged {
+			tp.updateTrayIfNoOtherConnections()
+		}
 	}
 
 	// Update connection info
@@ -603,74 +721,169 @@ func (tp *TailscalePanel) updateStatus() {
 // PEERS LIST
 // ═══════════════════════════════════════════════════════════════════════════
 
-// updatePeers updates the peers list using AdwPreferencesGroup.
-// Uses a signature-based cache to avoid rebuilding when peers haven't changed.
+// updatePeers updates both Exit Nodes and Devices sections.
+// Separates peers into exit nodes (ExitNodeOption=true) and regular devices.
+// Uses signature-based cache to avoid rebuilding when peers haven't changed.
 func (tp *TailscalePanel) updatePeers() {
 	ctx := context.Background()
 	tsStatus, err := tp.provider.GetTailscaleStatus(ctx)
 	if err != nil || tsStatus == nil || len(tsStatus.Peer) == 0 {
-		if tp.lastPeersSignature != "empty" {
-			tp.lastPeersSignature = "empty"
-			// Clear all existing peer rows from the group
-			for _, row := range tp.peerRows {
-				tp.peersGroup.Remove(row)
-			}
-			tp.peerRows = make(map[string]*adw.ExpanderRow)
-			tp.updateEmptyPeersState(true)
-		}
+		tp.clearAllPeers()
 		return
 	}
 
-	// Build signature from peer states to detect changes
-	var sigParts []string
-	for peerID, peer := range tsStatus.Peer {
-		sigParts = append(sigParts, fmt.Sprintf("%s:%v:%v", peerID, peer.Online, peer.ExitNode))
-	}
-	sort.Strings(sigParts)
-	newSignature := strings.Join(sigParts, "|")
-
-	// Skip rebuild if peers haven't changed
-	if newSignature == tp.lastPeersSignature {
-		return
-	}
-	tp.lastPeersSignature = newSignature
-
-	// Clear all existing peer rows
-	for _, row := range tp.peerRows {
-		tp.peersGroup.Remove(row)
-	}
-	tp.peerRows = make(map[string]*adw.ExpanderRow)
-
-	// Add peer rows
+	// Separate peers into exit nodes and regular devices
+	var exitNodes, devices []*tailscale.PeerStatus
 	for peerID, peer := range tsStatus.Peer {
 		if peer.ID == "" {
 			peer.ID = peerID
 		}
-		row := tp.createPeerRow(peer)
-		tp.peerRows[peerID] = row
-		tp.peersGroup.Add(row)
+		if peer.ExitNodeOption {
+			exitNodes = append(exitNodes, peer)
+		} else {
+			devices = append(devices, peer)
+		}
 	}
 
-	// Show peers group, hide empty state
-	tp.updateEmptyPeersState(false)
+	// Update Exit Nodes section
+	tp.updateExitNodesSection(exitNodes)
+
+	// Update Devices section
+	tp.updateDevicesSection(devices)
 }
 
-// updateEmptyPeersState toggles visibility between peersGroup and emptyPeersPage.
-func (tp *TailscalePanel) updateEmptyPeersState(isEmpty bool) {
-	tp.peersGroup.SetVisible(!isEmpty)
-	tp.emptyPeersPage.SetVisible(isEmpty)
+// updateExitNodesSection updates the Exit Nodes group with given peers.
+func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStatus) {
+	// Build signature for exit nodes
+	var sigParts []string
+	for _, peer := range exitNodes {
+		sigParts = append(sigParts, fmt.Sprintf("%s:%v:%v", peer.ID, peer.Online, peer.ExitNode))
+	}
+	sort.Strings(sigParts)
+	newSig := strings.Join(sigParts, "|")
+
+	// Skip rebuild if unchanged
+	if newSig == tp.lastExitNodesSig {
+		return
+	}
+	tp.lastExitNodesSig = newSig
+
+	// Clear existing exit node rows
+	for _, row := range tp.exitNodeRows {
+		tp.exitNodesGroup.Remove(row)
+	}
+	tp.exitNodeRows = make(map[string]*adw.ExpanderRow)
+
+	// Handle empty state
+	if len(exitNodes) == 0 {
+		tp.exitNodesEmptyRow.SetVisible(true)
+		tp.suggestBtn.SetSensitive(false)
+		return
+	}
+
+	tp.exitNodesEmptyRow.SetVisible(false)
+	tp.suggestBtn.SetSensitive(true)
+
+	// Sort: active first, then online, then offline
+	sort.Slice(exitNodes, func(i, j int) bool {
+		if exitNodes[i].ExitNode != exitNodes[j].ExitNode {
+			return exitNodes[i].ExitNode // Active first
+		}
+		if exitNodes[i].Online != exitNodes[j].Online {
+			return exitNodes[i].Online // Online before offline
+		}
+		return exitNodes[i].HostName < exitNodes[j].HostName
+	})
+
+	// Add exit node rows
+	for _, peer := range exitNodes {
+		row := tp.createExitNodeRow(peer)
+		tp.exitNodeRows[peer.ID] = row
+		tp.exitNodesGroup.Add(row)
+	}
 }
 
-// createPeerRow creates an AdwExpanderRow for a peer.
-// Collapsed: Shows hostname, online status, gateway controls
-// Expanded: Shows IP addresses, OS, DNSName, and detailed info
-func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.ExpanderRow {
+// updateDevicesSection updates the Devices group with given peers.
+func (tp *TailscalePanel) updateDevicesSection(devices []*tailscale.PeerStatus) {
+	// Build signature for devices
+	var sigParts []string
+	for _, peer := range devices {
+		sigParts = append(sigParts, fmt.Sprintf("%s:%v", peer.ID, peer.Online))
+	}
+	sort.Strings(sigParts)
+	newSig := strings.Join(sigParts, "|")
+
+	// Skip rebuild if unchanged
+	if newSig == tp.lastDevicesSig {
+		return
+	}
+	tp.lastDevicesSig = newSig
+
+	// Clear existing device rows
+	for _, row := range tp.deviceRows {
+		tp.devicesGroup.Remove(row)
+	}
+	tp.deviceRows = make(map[string]*adw.ExpanderRow)
+
+	// Handle empty state
+	if len(devices) == 0 {
+		tp.devicesEmptyRow.SetVisible(true)
+		return
+	}
+
+	tp.devicesEmptyRow.SetVisible(false)
+
+	// Sort: online first, then alphabetical
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Online != devices[j].Online {
+			return devices[i].Online
+		}
+		return devices[i].HostName < devices[j].HostName
+	})
+
+	// Add device rows
+	for _, peer := range devices {
+		row := tp.createDeviceRow(peer)
+		tp.deviceRows[peer.ID] = row
+		tp.devicesGroup.Add(row)
+	}
+}
+
+// clearAllPeers clears both Exit Nodes and Devices sections.
+func (tp *TailscalePanel) clearAllPeers() {
+	// Only clear if we have data
+	if tp.lastExitNodesSig == "empty" && tp.lastDevicesSig == "empty" {
+		return
+	}
+
+	tp.lastExitNodesSig = "empty"
+	tp.lastDevicesSig = "empty"
+
+	// Clear exit nodes
+	for _, row := range tp.exitNodeRows {
+		tp.exitNodesGroup.Remove(row)
+	}
+	tp.exitNodeRows = make(map[string]*adw.ExpanderRow)
+	tp.exitNodesEmptyRow.SetVisible(true)
+	tp.suggestBtn.SetSensitive(false)
+
+	// Clear devices
+	for _, row := range tp.deviceRows {
+		tp.devicesGroup.Remove(row)
+	}
+	tp.deviceRows = make(map[string]*adw.ExpanderRow)
+	tp.devicesEmptyRow.SetVisible(true)
+}
+
+// createExitNodeRow creates an AdwExpanderRow for an exit node peer.
+// Shows prominent action buttons and gateway status.
+func (tp *TailscalePanel) createExitNodeRow(peer *tailscale.PeerStatus) *adw.ExpanderRow {
 	row := adw.NewExpanderRow()
 	row.SetTitle(peer.HostName)
 	row.SetExpanded(false)
 	row.SetShowEnableSwitch(false)
 
-	// Build subtitle with status
+	// Build subtitle: status only (no "Exit Node" badge - section title makes it clear)
 	var subtitleParts []string
 	if peer.Online {
 		subtitleParts = append(subtitleParts, "Online")
@@ -678,15 +891,17 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.Expande
 		subtitleParts = append(subtitleParts, "Offline")
 	}
 	if peer.ExitNode {
-		subtitleParts = append(subtitleParts, "Gateway Active")
-	} else if peer.ExitNodeOption {
-		subtitleParts = append(subtitleParts, "Exit Node")
+		subtitleParts = append(subtitleParts, "Active")
 	}
 	row.SetSubtitle(strings.Join(subtitleParts, " • "))
 
-	// Prefix: Online status icon
+	// Prefix: Status icon with clear visual distinction
 	statusIcon := gtk.NewImage()
-	if peer.Online {
+	if peer.ExitNode {
+		// Active exit node - use VPN icon with accent color
+		statusIcon.SetFromIconName("network-vpn-symbolic")
+		statusIcon.AddCSSClass("accent")
+	} else if peer.Online {
 		statusIcon.SetFromIconName("emblem-ok-symbolic")
 		statusIcon.AddCSSClass("success")
 	} else {
@@ -696,12 +911,12 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.Expande
 	statusIcon.SetPixelSize(16)
 	row.AddPrefix(statusIcon)
 
-	// Suffix: Exit node controls
+	// Suffix: Action button
 	if peer.ExitNode {
-		// This peer IS currently the active gateway - show stop button
+		// Active - show stop button
 		stopBtn := gtk.NewButton()
 		stopBtn.SetIconName("process-stop-symbolic")
-		stopBtn.SetTooltipText("Stop using as gateway")
+		stopBtn.SetTooltipText("Stop using this exit node")
 		stopBtn.AddCSSClass("flat")
 		stopBtn.AddCSSClass("circular")
 		stopBtn.AddCSSClass("destructive-action")
@@ -711,17 +926,15 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.Expande
 			tp.setExitNodeFromPeer("", peerHostname, false)
 		})
 		row.AddSuffix(stopBtn)
-	} else if peer.ExitNodeOption && peer.Online {
-		// This peer CAN be used as gateway
+	} else if peer.Online {
+		// Available - show use button
 		useBtn := gtk.NewButton()
 		useBtn.SetIconName("go-next-symbolic")
-		useBtn.SetTooltipText("Use as gateway")
+		useBtn.SetTooltipText("Use as exit node")
 		useBtn.AddCSSClass("flat")
 		useBtn.AddCSSClass("circular")
 		useBtn.AddCSSClass("suggested-action")
 		useBtn.SetVAlign(gtk.AlignCenter)
-
-		// Use DNSName (or HostName fallback) - NOT the internal ID
 		peerIdentifier := peer.DNSName
 		if peerIdentifier == "" {
 			peerIdentifier = peer.HostName
@@ -733,8 +946,47 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.Expande
 		row.AddSuffix(useBtn)
 	}
 
-	// Expanded content: detailed peer info
+	// Expanded content
+	tp.addPeerDetailsToRow(row, peer)
 
+	return row
+}
+
+// createDeviceRow creates an AdwExpanderRow for a regular device (non-exit-node).
+// Simpler than exit node row - no action buttons needed.
+func (tp *TailscalePanel) createDeviceRow(peer *tailscale.PeerStatus) *adw.ExpanderRow {
+	row := adw.NewExpanderRow()
+	row.SetTitle(peer.HostName)
+	row.SetExpanded(false)
+	row.SetShowEnableSwitch(false)
+
+	// Simple subtitle: just online/offline
+	if peer.Online {
+		row.SetSubtitle("Online")
+	} else {
+		row.SetSubtitle("Offline")
+	}
+
+	// Prefix: Status icon
+	statusIcon := gtk.NewImage()
+	if peer.Online {
+		statusIcon.SetFromIconName("emblem-ok-symbolic")
+		statusIcon.AddCSSClass("success")
+	} else {
+		statusIcon.SetFromIconName("emblem-disabled-symbolic")
+		statusIcon.AddCSSClass("dim-label")
+	}
+	statusIcon.SetPixelSize(16)
+	row.AddPrefix(statusIcon)
+
+	// Expanded content
+	tp.addPeerDetailsToRow(row, peer)
+
+	return row
+}
+
+// addPeerDetailsToRow adds expanded detail rows (IP, OS, DNS) to a peer row.
+func (tp *TailscalePanel) addPeerDetailsToRow(row *adw.ExpanderRow, peer *tailscale.PeerStatus) {
 	// IP Address row
 	if len(peer.TailscaleIPs) > 0 {
 		ipRow := adw.NewActionRow()
@@ -770,26 +1022,27 @@ func (tp *TailscalePanel) createPeerRow(peer *tailscale.PeerStatus) *adw.Expande
 		dnsRow.AddPrefix(dnsIcon)
 		row.AddRow(dnsRow)
 	}
+}
 
-	// Exit Node capability row
-	if peer.ExitNodeOption {
-		exitRow := adw.NewActionRow()
-		exitRow.SetTitle("Exit Node")
-		if peer.ExitNode {
-			exitRow.SetSubtitle("Currently Active")
-		} else if peer.Online {
-			exitRow.SetSubtitle("Available")
-		} else {
-			exitRow.SetSubtitle("Offline")
-		}
-		exitIcon := gtk.NewImage()
-		exitIcon.SetFromIconName("network-vpn-symbolic")
-		exitIcon.SetPixelSize(16)
-		exitRow.AddPrefix(exitIcon)
-		row.AddRow(exitRow)
+// updateTrayIfNoOtherConnections sets tray to disconnected only if no other VPN is active.
+// This prevents showing "disconnected" when OpenVPN/WireGuard are still connected.
+func (tp *TailscalePanel) updateTrayIfNoOtherConnections() {
+	tray := tp.mainWindow.app.GetTray()
+	if tray == nil {
+		return
 	}
 
-	return row
+	// Check if any OpenVPN/WireGuard connections are active
+	connections := tp.mainWindow.app.vpnManager.ListConnections()
+	for _, conn := range connections {
+		if conn.GetStatus() == vpn.StatusConnected {
+			// Another VPN is connected, don't change tray
+			return
+		}
+	}
+
+	// No other connections active, set tray to disconnected
+	tray.SetDisconnected()
 }
 
 // setExitNodeFromPeer sets or clears the exit node from the peers list.
@@ -823,6 +1076,9 @@ func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, e
 				tp.mainWindow.SetStatus("Gateway disabled - direct connection")
 				NotifyDisconnected("Gateway")
 			}
+			// Force rebuild of exit nodes section by clearing signature cache
+			// This ensures the stop/use buttons update immediately after changing exit node
+			tp.lastExitNodesSig = ""
 			tp.updateStatus()
 		})
 	})
