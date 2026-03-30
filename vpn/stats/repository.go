@@ -17,6 +17,15 @@ import (
 // SQLite timestamp format (without Go's monotonic clock suffix)
 const sqliteTimestampFormat = "2006-01-02 15:04:05"
 
+// timestampFormats lists all timestamp formats we may encounter when reading from SQLite.
+// The modernc.org/sqlite driver returns ISO 8601 format, but we write SQLite format.
+var timestampFormats = []string{
+	"2006-01-02 15:04:05",  // SQLite format (what we write)
+	"2006-01-02T15:04:05Z", // ISO 8601 with Z (what modernc returns)
+	"2006-01-02T15:04:05",  // ISO 8601 without Z
+	time.RFC3339,           // Full RFC 3339
+}
+
 // formatTimestamp formats a time.Time for SQLite storage.
 // This strips Go's monotonic clock suffix which breaks SQLite date() functions.
 func formatTimestamp(t time.Time) string {
@@ -24,13 +33,19 @@ func formatTimestamp(t time.Time) string {
 }
 
 // parseTimestamp parses a SQLite timestamp string back to time.Time.
-// Returns zero time if the string is empty or invalid.
+// Supports multiple formats because modernc.org/sqlite returns ISO 8601 format
+// even though we store in SQLite format.
+// Returns zero time if the string is empty or doesn't match any known format.
 func parseTimestamp(s string) time.Time {
 	if s == "" {
 		return time.Time{}
 	}
-	t, _ := time.ParseInLocation(sqliteTimestampFormat, s, time.Local)
-	return t
+	for _, format := range timestampFormats {
+		if t, err := time.ParseInLocation(format, s, time.Local); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // parseNullableTimestamp parses a nullable SQLite timestamp string.

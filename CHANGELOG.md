@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.12.1] - 2026-03-29
+
+### Fixed
+- **Statistics**: "Today" section now shows correct daily usage (was showing zeros due to UTC/local timezone mismatch in date comparison)
+- **Statistics**: Recent Sessions now display correct timestamps and durations (was showing "Jan 1, 00:00" due to timestamp format mismatch with modernc.org/sqlite driver)
+
 ## [1.12.0] - 2026-03-29
 
 ### Added
@@ -298,7 +304,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.12.1...HEAD
+[1.12.1]: https://github.com/yllada/vpn-manager/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/yllada/vpn-manager/compare/v1.11.2...v1.12.0
 [1.11.2]: https://github.com/yllada/vpn-manager/compare/v1.11.1...v1.11.2
 [1.11.1]: https://github.com/yllada/vpn-manager/compare/v1.11.0...v1.11.1

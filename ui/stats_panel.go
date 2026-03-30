@@ -608,9 +608,10 @@ func (sp *StatsPanel) updateTodaySummary() {
 	var todayDuration time.Duration
 
 	// Check if we have today's data
-	today := time.Now().Truncate(24 * time.Hour)
+	// Use string comparison to avoid UTC vs local timezone issues with Truncate()
+	todayStr := time.Now().Format("2006-01-02")
 	for _, s := range summaries {
-		if s.Date.Truncate(24 * time.Hour).Equal(today) {
+		if s.Date.Format("2006-01-02") == todayStr {
 			todayDL = s.TotalBytesIn
 			todayUL = s.TotalBytesOut
 			todaySessions = s.SessionCount
