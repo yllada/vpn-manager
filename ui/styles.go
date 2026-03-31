@@ -165,6 +165,30 @@ levelbar.horizontal trough block.full {
     font-size: 0.8em;
     font-weight: 600;
 }
+
+/* Provider badge pills for session history */
+.provider-badge {
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 0.75em;
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+.provider-badge.openvpn {
+    background-color: alpha(@accent_color, 0.2);
+    color: @accent_color;
+}
+
+.provider-badge.tailscale {
+    background-color: alpha(@success_color, 0.2);
+    color: @success_color;
+}
+
+.provider-badge.wireguard {
+    background-color: alpha(@warning_color, 0.2);
+    color: @warning_color;
+}
 `
 
 // LoadStyles loads the custom CSS styles for the application.

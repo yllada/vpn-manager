@@ -727,6 +727,13 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 	providerIcon := createRowIcon(getProviderIcon(session.ProviderType))
 	row.AddPrefix(providerIcon)
 
+	// Add provider badge as suffix (visible in collapsed state)
+	providerBadge := gtk.NewLabel(getProviderDisplayName(session.ProviderType))
+	providerBadge.AddCSSClass("provider-badge")
+	providerBadge.AddCSSClass(getProviderBadgeClass(session.ProviderType))
+	providerBadge.SetVAlign(gtk.AlignCenter)
+	row.AddSuffix(providerBadge)
+
 	// Add profile ID as detail row
 	profileRow := adw.NewActionRow()
 	profileRow.SetTitle("Profile")
@@ -785,6 +792,20 @@ func getProviderDisplayName(providerType app.VPNProviderType) string {
 		return "WireGuard"
 	default:
 		return string(providerType)
+	}
+}
+
+// getProviderBadgeClass returns the CSS class for a provider badge.
+func getProviderBadgeClass(providerType app.VPNProviderType) string {
+	switch providerType {
+	case app.ProviderOpenVPN:
+		return "openvpn"
+	case app.ProviderTailscale:
+		return "tailscale"
+	case app.ProviderWireGuard:
+		return "wireguard"
+	default:
+		return "openvpn"
 	}
 }
 
