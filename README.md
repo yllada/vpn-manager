@@ -63,7 +63,8 @@ VPN Manager provides enterprise-grade security that matches ProtonVPN and NordVP
 - **Real-time quality indicators** — Latency, jitter, and bandwidth monitoring
 - **Live bandwidth graph** — Cairo-rendered real-time visualization
 - **Weekly traffic charts** — Bar chart visualization of usage patterns
-- **Session history** — Detailed metrics with 90-day SQLite-based retention
+- **Session history** — Detailed metrics with provider badges and 90-day SQLite-based retention
+- **Multi-provider tracking** — Stats for OpenVPN, Tailscale, and WireGuard sessions
 - **Pure Go implementation** — No CGO required (modernc.org/sqlite)
 
 <p align="center">

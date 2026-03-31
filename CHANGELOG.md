@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.13.1] - 2026-03-30
+
+### Added
+- **Statistics**: Provider badge in session history cards — Shows OpenVPN/Tailscale/WireGuard label with color-coded styling for quick identification
+
 ## [1.13.0] - 2026-03-30
 
 ### Added
