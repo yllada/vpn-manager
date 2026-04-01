@@ -18,6 +18,7 @@
   <img src="https://img.shields.io/github/v/release/yllada/vpn-manager?label=version&color=blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Linux-orange.svg" alt="Platform">
+  <img src="https://img.shields.io/github/downloads/yllada/vpn-manager/total" alt="Downloads">
 </p>
 
 <p align="center">

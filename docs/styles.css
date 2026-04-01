@@ -1,0 +1,736 @@
+/**
+ * VPN Manager Landing Page Styles
+ * 
+ * Structure:
+ * 1. Base & Reset
+ * 2. Scrollbar
+ * 3. Animated Backgrounds
+ * 4. Gradient Text
+ * 5. Glass Morphism
+ * 6. Gradient Border Cards
+ * 7. Glow Effects
+ * 8. Buttons
+ * 9. Icon Animations
+ * 10. Scroll Reveal
+ * 11. Installation Tabs
+ * 12. FAQ Accordion
+ * 13. Theme Toggle
+ * 14. Code Blocks
+ * 15. Screenshot Showcase
+ * 16. Feature Cards Grid
+ * 17. Reduced Motion
+ * 18. Noise Overlay
+ * 19. Floating CTA
+ * 20. Typing Cursor
+ * 21. Comparison Table
+ * 22. Header Scroll Effect
+ * 23. How It Works Connector
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ===== 1. BASE & RESET ===== */
+html {
+  scroll-behavior: smooth;
+}
+
+*:focus-visible {
+  outline: 2px solid #3584e4;
+  outline-offset: 2px;
+}
+
+/* ===== 2. SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 5px;
+  border: 2px solid #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 5px;
+  border: 2px solid #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ===== 3. ANIMATED BACKGROUNDS ===== */
+
+/* Mesh Gradient Blobs */
+.mesh-gradient {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.6;
+  mix-blend-mode: screen;
+}
+
+.dark .blob {
+  opacity: 0.4;
+  mix-blend-mode: screen;
+}
+
+.blob-1 {
+  width: 600px;
+  height: 600px;
+  background: linear-gradient(135deg, #3584e4 0%, #1c71d8 100%);
+  top: -200px;
+  left: -100px;
+  animation: blob 7s infinite;
+}
+
+.blob-2 {
+  width: 500px;
+  height: 500px;
+  background: linear-gradient(135deg, #62a0ea 0%, #3584e4 100%);
+  top: 50%;
+  right: -150px;
+  animation: blob 7s infinite 2s;
+}
+
+.blob-3 {
+  width: 400px;
+  height: 400px;
+  background: linear-gradient(135deg, #1c71d8 0%, #0d47a1 100%);
+  bottom: -100px;
+  left: 30%;
+  animation: blob 10s infinite 4s;
+}
+
+/* Grid overlay with glow */
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(53, 132, 228, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 132, 228, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: gridPulse 4s ease-in-out infinite;
+}
+
+.dark .grid-overlay {
+  background-image: 
+    linear-gradient(rgba(53, 132, 228, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 132, 228, 0.05) 1px, transparent 1px);
+}
+
+/* Traveling glow effect on grid */
+.grid-glow {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(53, 132, 228, 0.3) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Floating security icons */
+.floating-icons {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.floating-icon {
+  position: absolute;
+  opacity: 0.05;
+  animation: securityFloat 20s linear infinite;
+}
+
+.dark .floating-icon {
+  opacity: 0.03;
+}
+
+.floating-icon:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 25s; }
+.floating-icon:nth-child(2) { left: 25%; animation-delay: 5s; animation-duration: 20s; }
+.floating-icon:nth-child(3) { left: 40%; animation-delay: 10s; animation-duration: 30s; }
+.floating-icon:nth-child(4) { left: 55%; animation-delay: 3s; animation-duration: 22s; }
+.floating-icon:nth-child(5) { left: 70%; animation-delay: 8s; animation-duration: 28s; }
+.floating-icon:nth-child(6) { left: 85%; animation-delay: 12s; animation-duration: 24s; }
+
+/* ===== 4. GRADIENT TEXT ===== */
+.gradient-text {
+  background: linear-gradient(135deg, #3584e4 0%, #1c71d8 50%, #62a0ea 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 8s ease-in-out infinite;
+}
+
+/* ===== 5. GLASS MORPHISM ===== */
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.dark .glass {
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(203, 213, 225, 0.5);
+}
+
+.dark .glass-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+/* ===== 6. GRADIENT BORDER CARDS ===== */
+.gradient-border {
+  position: relative;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(203, 213, 225, 0.5);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .gradient-border {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #3584e4, #1c71d8, #62a0ea, #3584e4);
+  background-size: 300% 300%;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  animation: gradientShift 4s ease-in-out infinite;
+}
+
+.gradient-border:hover::before {
+  opacity: 1;
+}
+
+.gradient-border:hover {
+  border-color: transparent;
+  transform: translateY(-5px);
+  box-shadow: 0 20px 40px rgba(53, 132, 228, 0.2);
+}
+
+.dark .gradient-border:hover {
+  box-shadow: 0 20px 40px rgba(53, 132, 228, 0.15);
+}
+
+/* ===== 7. GLOW EFFECTS ===== */
+.glow-hover {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glow-hover:hover {
+  box-shadow: 
+    0 0 20px rgba(53, 132, 228, 0.3),
+    0 0 40px rgba(53, 132, 228, 0.2),
+    0 0 60px rgba(53, 132, 228, 0.1);
+}
+
+/* ===== 8. BUTTONS ===== */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+}
+
+.btn-primary:hover::before {
+  transform: translateX(100%);
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 15px 30px rgba(53, 132, 228, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(-1px) scale(1);
+}
+
+.btn-secondary {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-secondary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+.dark .btn-secondary:hover {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+/* ===== 9. ICON ANIMATIONS ===== */
+.icon-bounce:hover svg {
+  animation: bounceSubtle 0.6s ease-in-out;
+}
+
+.icon-rotate:hover svg {
+  transform: rotate(15deg);
+  transition: transform 0.3s ease;
+}
+
+.icon-scale:hover svg {
+  transform: scale(1.2);
+  transition: transform 0.3s ease;
+}
+
+/* ===== 10. SCROLL REVEAL ===== */
+.reveal {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-left {
+  opacity: 0;
+  transform: translateX(-40px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reveal-left.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.reveal-right {
+  opacity: 0;
+  transform: translateX(40px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reveal-right.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reveal-scale.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Staggered children */
+.stagger-children > * {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stagger-children.visible > *:nth-child(1) { transition-delay: 0.1s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(2) { transition-delay: 0.2s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(3) { transition-delay: 0.3s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(4) { transition-delay: 0.4s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(5) { transition-delay: 0.5s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(6) { transition-delay: 0.6s; opacity: 1; transform: translateY(0); }
+
+/* ===== 11. INSTALLATION TABS ===== */
+.tab-panel {
+  display: none;
+}
+
+#tab-apt:checked ~ #panel-apt,
+#tab-ubuntu:checked ~ #panel-ubuntu,
+#tab-fedora:checked ~ #panel-fedora,
+#tab-arch:checked ~ #panel-arch,
+#tab-source:checked ~ #panel-source {
+  display: block;
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* Active tab styles */
+#tab-apt:checked ~ div label[for="tab-apt"],
+#tab-ubuntu:checked ~ div label[for="tab-ubuntu"],
+#tab-fedora:checked ~ div label[for="tab-fedora"],
+#tab-arch:checked ~ div label[for="tab-arch"],
+#tab-source:checked ~ div label[for="tab-source"] {
+  background-color: #3584e4;
+  color: white;
+  transform: scale(1.05);
+}
+
+/* ===== 12. FAQ ACCORDION ===== */
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+details summary::marker {
+  display: none;
+  content: '';
+}
+
+details[open] > summary {
+  border-bottom: 1px solid rgba(203, 213, 225, 0.3);
+}
+
+.dark details[open] > summary {
+  border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+}
+
+details[open] > div {
+  animation: faqSlideDown 0.3s ease-out;
+}
+
+@keyframes faqSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== 13. THEME TOGGLE ===== */
+.theme-toggle {
+  position: relative;
+  width: 56px;
+  height: 28px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  cursor: pointer;
+  transition: all 0.4s ease;
+  overflow: hidden;
+}
+
+.dark .theme-toggle {
+  background: linear-gradient(135deg, #1e293b, #334155);
+}
+
+.theme-toggle-circle {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark .theme-toggle-circle {
+  transform: translateX(28px);
+  background: #0f172a;
+}
+
+.theme-toggle-icon {
+  width: 14px;
+  height: 14px;
+  transition: all 0.4s ease;
+}
+
+.sun-icon {
+  color: #f59e0b;
+}
+
+.dark .sun-icon {
+  opacity: 0;
+  transform: rotate(180deg) scale(0);
+}
+
+.moon-icon {
+  position: absolute;
+  color: #fbbf24;
+  opacity: 0;
+  transform: rotate(-180deg) scale(0);
+}
+
+.dark .moon-icon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+/* ===== 13. CODE BLOCKS ===== */
+.code-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.code-block::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(53, 132, 228, 0.1), transparent);
+  animation: shimmer 3s infinite;
+}
+
+/* ===== 14. SCREENSHOT SHOWCASE ===== */
+.screenshot-container {
+  position: relative;
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+.screenshot-container:hover .screenshot-image {
+  transform: rotateY(-2deg) rotateX(2deg) scale(1.02);
+}
+
+/* Screenshot carousel tabs */
+.screenshot-tab {
+  background: rgba(255, 255, 255, 0.6);
+  color: #64748b;
+  border: 1px solid rgba(203, 213, 225, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dark .screenshot-tab {
+  background: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+  border: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+.screenshot-tab:hover {
+  background: rgba(53, 132, 228, 0.1);
+  color: #3584e4;
+  border-color: rgba(53, 132, 228, 0.3);
+}
+
+.screenshot-tab.active {
+  background: linear-gradient(135deg, #3584e4 0%, #1c71d8 100%);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(53, 132, 228, 0.4);
+  transform: scale(1.05);
+}
+
+.dark .screenshot-tab.active {
+  box-shadow: 0 4px 12px rgba(53, 132, 228, 0.3);
+}
+
+/* Screenshot images */
+.screenshot-img {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+}
+
+.screenshot-img.active {
+  opacity: 1;
+  visibility: visible;
+  position: relative;
+}
+
+/* Ensure container has height from the active image */
+.screenshot-image {
+  position: relative;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Progress indicator for auto-rotation */
+.screenshot-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #3584e4, #62a0ea);
+  border-radius: 0 0 0 1rem;
+  transition: width 0.1s linear;
+}
+
+/* Pause on hover indicator */
+.screenshot-container:hover .screenshot-progress {
+  opacity: 0.5;
+}
+
+/* ===== 15. FEATURE CARDS GRID ===== */
+.feature-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .feature-cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 1fr;
+  }
+  
+  .feature-cards-grid > .feature-column {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 1.5rem;
+  }
+  
+  .feature-cards-grid .cards-container {
+    display: grid;
+    grid-template-rows: repeat(4, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* ===== 16. REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  .reveal, .reveal-left, .reveal-right, .reveal-scale {
+    opacity: 1;
+    transform: none;
+  }
+  
+  .stagger-children > * {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ===== 17. NOISE OVERLAY ===== */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* ===== 18. FLOATING CTA ===== */
+#floating-cta.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+#floating-cta a {
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(53, 132, 228, 0.4), 0 10px 25px rgba(53, 132, 228, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(53, 132, 228, 0), 0 10px 25px rgba(53, 132, 228, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(53, 132, 228, 0), 0 10px 25px rgba(53, 132, 228, 0.4);
+  }
+}
+
+/* ===== 19. TYPING CURSOR ===== */
+#typing-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ===== 20. COMPARISON TABLE ===== */
+#comparison table {
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 1rem;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(203, 213, 225, 0.5);
+}
+
+.dark #comparison table {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+#comparison th:first-child,
+#comparison td:first-child {
+  text-align: left;
+}
+
+#comparison tr:last-child td {
+  border-bottom: none;
+}
+
+/* ===== 21. HEADER SCROLL EFFECT ===== */
+header.scrolled {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.dark header.scrolled {
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* ===== 22. HOW IT WORKS CONNECTOR ANIMATION ===== */
+#how-it-works .stagger-children.visible [aria-hidden="true"] {
+  animation: connectorGrow 0.5s ease-out forwards;
+  animation-delay: 0.3s;
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+@keyframes connectorGrow {
+  to {
+    transform: scaleX(1);
+  }
+}
