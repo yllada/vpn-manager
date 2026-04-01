@@ -1,0 +1,14 @@
+Origin: VPN Manager
+Label: VPN Manager
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: VPN Manager APT Repository
+Date: Wed, 01 Apr 2026 13:38:49 +0000
+MD5Sum:
+ 05331d00c798c0cc0477f99bccbed7d5 749 main/binary-amd64/Packages
+ 445090b68b36cb7bd4aa1ee9447f63ca 521 main/binary-amd64/Packages.gz
+SHA256:
+ d350d2db995f74a66a8fad9225c60c34e6f45c6aad4de37d0186ecb3745200f0 749 main/binary-amd64/Packages
+ b1d2b3939caa68bf5c9d2452dbf57a3a42e2ebe6e4573ba2953fb3efc9631a53 521 main/binary-amd64/Packages.gz

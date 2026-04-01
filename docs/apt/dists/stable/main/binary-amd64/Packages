@@ -1,0 +1,20 @@
+Package: vpn-manager
+Version: 1.13.2
+Architecture: amd64
+Maintainer: VPN Manager Team <yadian.llada@gmail.com>
+Installed-Size: 45120
+Depends: openvpn | openvpn3, libgtk-4-1, libadwaita-1-0
+Recommends: polkit-1
+Filename: pool/main/v/vpn-manager/vpn-manager_1.13.2_amd64.deb
+Size: 8432242
+MD5sum: 8de0702f997d6dbf2c67391cd628de5a
+SHA1: 141d9cfb3223e7ab53243857d47a84c30754d7e1
+SHA256: 7cc04e07d71c3164bacb42879f9b26b2752468474131fd2440b7b003390d600b
+Section: net
+Priority: optional
+Homepage: https://github.com/yllada/vpn-manager
+Description: Modern GTK4 VPN Manager for Linux
+ VPN Manager is a modern OpenVPN client with GTK4 interface.
+ Features profile management, secure credential storage,
+ system tray integration, and split tunneling support.
+

@@ -1,0 +1,34 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: VPN Manager
+Label: VPN Manager
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: VPN Manager APT Repository
+Date: Wed, 01 Apr 2026 13:38:49 +0000
+MD5Sum:
+ 05331d00c798c0cc0477f99bccbed7d5 749 main/binary-amd64/Packages
+ 445090b68b36cb7bd4aa1ee9447f63ca 521 main/binary-amd64/Packages.gz
+SHA256:
+ d350d2db995f74a66a8fad9225c60c34e6f45c6aad4de37d0186ecb3745200f0 749 main/binary-amd64/Packages
+ b1d2b3939caa68bf5c9d2452dbf57a3a42e2ebe6e4573ba2953fb3efc9631a53 521 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQJIBAEBCgAyFiEE51vJNQ7JGuzER8O8uF25DN4jUW0FAmnNH+kUHGFwdEB2cG4t
+bWFuYWdlci5kZXYACgkQuF25DN4jUW2p3A/9EFluOz9Q5saeWYBkLeZ7Q8yqbnkd
+feWRpGccL9Aw+UP5viY3e7s5Xy44XB+amfSQ2xVxipZuJddYXyVi+qmBi16mcQCe
+3Nl9xnaPErZ2mlXGjsHpGaSdJhjkcmiszYmKRP2l+8cqNlUucZfPXDPIS20kArVx
+WT6I1yCesopPUiSdegnvWvIJwgqqbBGabWpeqBzbF3X4/4nLdKPwp4mc13rWCwdM
+n0R0kaiXc174uZjrPrLNn93XM5kVrV1rRs8otM2/jzxtDNMUc4CnX5eJohgR0iMO
+uNxa2OtLZnftDvSVKW+EeNiMA0Us78HUsdrrYMsH+zG1UE8QILbG6ij8rJgeiuVZ
+cuyx9p0v4KPeHFUxYjUikCmowqHtbK+KjOTdThnwkUEUGNDv/OhWnSmlDjCt/l0H
+rwyXbZ9MwmdpqLxSk1rimxOkDusImRDQDXYrA12BhPVrkgQfdOfNkrN7XBrpfLOB
+W7ta38G0fF3AqbKv/m/ObVWj4586+g6cAiGOomALiLvvA5cSUPbxlmIkLkCkBVcv
+y/VIL4em9hlom2Dah2MWQ/qmuayMSxuVO2D54QpdSY2wAeV8pWQ88fvLC8Y50+Za
+5TR9APPCYhxomLBHz9X4bcirVLRoa8Yxbp0sQrkTrxx2iStb0C1cXDf09DG2A1NB
+oW1hiP10fLXSbVQ=
+=tR1M
+-----END PGP SIGNATURE-----
