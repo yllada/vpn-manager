@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.13.2] - 2026-04-01
+
+### Fixed
+- **System Tray**: Disconnect button now properly disconnects Tailscale and WireGuard connections, not just OpenVPN profiles
+
 ## [1.13.1] - 2026-03-30
 
 ### Added
