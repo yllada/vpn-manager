@@ -155,6 +155,7 @@ jobs:
           echo "artifact_name=release-${{ env.VERSION }}" >> "$GITHUB_OUTPUT"
           echo "tarball=${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz" >> "$GITHUB_OUTPUT"
           echo "deb=${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" >> "$GITHUB_OUTPUT"
+          echo "rpm=${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -176,6 +177,7 @@ jobs:
             pkg-config
             gcc
             dpkg-dev
+            rpm
           version: ${{ env.APT_CACHE_VERSION }}
 
       - name: Download and verify Go dependencies
@@ -305,12 +307,25 @@ jobs:
           echo "📦 DEB package:"
           ls -la dist/*.deb
 
+      - name: Build RPM package
+        run: |
+          chmod +x scripts/build-rpm.sh
+          # Pass pre-built binary to avoid recompilation
+          ./scripts/build-rpm.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}"
+          
+          # Move RPM to dist directory for consistency
+          mv "${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm" dist/ 2>/dev/null || \
+            mv *.rpm dist/ 2>/dev/null || true
+          
+          echo "📦 RPM package:"
+          ls -la dist/*.rpm
+
       - name: Generate checksums
         run: |
           cd dist
           
           echo "📋 Generating SHA256 checksums..."
-          sha256sum *.tar.gz *.deb > checksums-sha256.txt
+          sha256sum *.tar.gz *.deb *.rpm > checksums-sha256.txt
           
           echo "Checksums:"
           cat checksums-sha256.txt
@@ -322,6 +337,7 @@ jobs:
           EXPECTED_FILES=(
             "dist/${{ steps.names.outputs.tarball }}"
             "dist/${{ steps.names.outputs.deb }}"
+            "dist/${{ steps.names.outputs.rpm }}"
             "dist/checksums-sha256.txt"
           )
           
@@ -342,6 +358,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.deb
+            dist/*.rpm
             dist/checksums-sha256.txt
           retention-days: 30
           if-no-files-found: error
@@ -455,7 +472,13 @@ jobs:
             echo "sudo dpkg -i ${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb"
             echo '```'
             echo ""
-            echo "### Tarball"
+            echo "### RPM Package (Fedora/RHEL)"
+            echo '```bash'
+            echo "wget https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm"
+            echo "sudo dnf install ./${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm"
+            echo '```'
+            echo ""
+            echo "### Tarball (Arch/Other)"
             echo '```bash'
             echo "wget https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz"
             echo "tar -xzf ${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz"
@@ -488,6 +511,7 @@ jobs:
           files: |
             artifacts/*.tar.gz
             artifacts/*.deb
+            artifacts/*.rpm
             artifacts/checksums-sha256.txt
           fail_on_unmatched_files: true
           generate_release_notes: false
@@ -504,6 +528,7 @@ jobs:
           echo "### Artifacts" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`${{ env.APP_NAME }}-${{ env.VERSION }}-linux-amd64.tar.gz\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`checksums-sha256.txt\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/v${{ env.VERSION }})" >> "$GITHUB_STEP_SUMMARY"
