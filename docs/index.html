@@ -6,7 +6,7 @@
   <meta name="description" content="VPN Manager - Enterprise-grade security, community-first freedom. Simple VPN client for Linux with GUI supporting OpenVPN, WireGuard and Tailscale.">
   <meta name="keywords" content="VPN, Linux, OpenVPN, WireGuard, Tailscale, GNOME, GTK4, security, privacy">
   <meta name="author" content="Yadian Llada Lopez">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#0f172a" id="theme-color-meta">
   
   <!-- Open Graph -->
   <meta property="og:title" content="VPN Manager - Enterprise-grade VPN for Linux">
@@ -23,11 +23,13 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
           colors: {
             gnome: '#3584e4',
             'gnome-dark': '#1c71d8',
+            'gnome-light': '#62a0ea',
             slate: {
               50: '#f8fafc',
               100: '#f1f5f9',
@@ -47,9 +49,23 @@
             mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
           },
           animation: {
-            'fade-in': 'fadeIn 0.5s ease-out',
-            'slide-up': 'slideUp 0.6s ease-out',
-            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'fade-in': 'fadeIn 0.6s ease-out forwards',
+            'slide-up': 'slideUp 0.6s ease-out forwards',
+            'slide-down': 'slideDown 0.4s ease-out forwards',
+            'scale-in': 'scaleIn 0.5s ease-out forwards',
+            'float': 'float 6s ease-in-out infinite',
+            'float-delayed': 'float 6s ease-in-out 2s infinite',
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'pulse-slower': 'pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'glow-pulse': 'glowPulse 3s ease-in-out infinite',
+            'gradient-shift': 'gradientShift 8s ease-in-out infinite',
+            'blob': 'blob 7s infinite',
+            'blob-delayed': 'blob 7s infinite 2s',
+            'blob-slow': 'blob 10s infinite 4s',
+            'grid-pulse': 'gridPulse 4s ease-in-out infinite',
+            'security-float': 'securityFloat 20s linear infinite',
+            'shimmer': 'shimmer 2s linear infinite',
+            'bounce-subtle': 'bounceSubtle 2s ease-in-out infinite',
           },
           keyframes: {
             fadeIn: {
@@ -57,8 +73,52 @@
               '100%': { opacity: '1' },
             },
             slideUp: {
-              '0%': { opacity: '0', transform: 'translateY(20px)' },
+              '0%': { opacity: '0', transform: 'translateY(40px)' },
               '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            slideDown: {
+              '0%': { opacity: '0', transform: 'translateY(-20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            scaleIn: {
+              '0%': { opacity: '0', transform: 'scale(0.9)' },
+              '100%': { opacity: '1', transform: 'scale(1)' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px) rotate(0deg)' },
+              '50%': { transform: 'translateY(-20px) rotate(2deg)' },
+            },
+            glowPulse: {
+              '0%, 100%': { opacity: '0.4', transform: 'scale(1)' },
+              '50%': { opacity: '0.8', transform: 'scale(1.1)' },
+            },
+            gradientShift: {
+              '0%, 100%': { backgroundPosition: '0% 50%' },
+              '50%': { backgroundPosition: '100% 50%' },
+            },
+            blob: {
+              '0%': { transform: 'translate(0px, 0px) scale(1)' },
+              '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+              '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+              '100%': { transform: 'translate(0px, 0px) scale(1)' },
+            },
+            gridPulse: {
+              '0%, 100%': { opacity: '0.1' },
+              '50%': { opacity: '0.3' },
+            },
+            securityFloat: {
+              '0%': { transform: 'translateY(100vh) rotate(0deg)', opacity: '0' },
+              '10%': { opacity: '0.1' },
+              '90%': { opacity: '0.1' },
+              '100%': { transform: 'translateY(-100vh) rotate(360deg)', opacity: '0' },
+            },
+            shimmer: {
+              '0%': { backgroundPosition: '-200% 0' },
+              '100%': { backgroundPosition: '200% 0' },
+            },
+            bounceSubtle: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-5px)' },
             },
           },
         },
@@ -66,11 +126,22 @@
     }
   </script>
   
+  <!-- Theme initialization (prevent flash) -->
+  <script>
+    (function() {
+      const stored = localStorage.getItem('vpn-manager-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const isDark = stored === 'dark' || (!stored && prefersDark);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+  
   <style>
-    /* Custom styles for CSS-only interactions */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
     
-    /* Smooth scrolling */
+    /* ===== BASE STYLES ===== */
     html {
       scroll-behavior: smooth;
     }
@@ -81,120 +152,552 @@
       outline-offset: 2px;
     }
     
-    /* Custom scrollbar for dark theme */
+    /* Custom scrollbar */
     ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
     }
     
-    ::-webkit-scrollbar-track {
+    .dark ::-webkit-scrollbar-track {
       background: #1e293b;
     }
     
-    ::-webkit-scrollbar-thumb {
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    
+    .dark ::-webkit-scrollbar-thumb {
       background: #475569;
-      border-radius: 4px;
+      border-radius: 5px;
+      border: 2px solid #1e293b;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 5px;
+      border: 2px solid #f1f5f9;
     }
     
     ::-webkit-scrollbar-thumb:hover {
       background: #64748b;
     }
     
-    /* Code block styling */
-    pre code {
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    /* ===== ANIMATED BACKGROUNDS ===== */
+    
+    /* Mesh Gradient Blobs */
+    .mesh-gradient {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
     }
     
-    /* Gradient text */
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.6;
+      mix-blend-mode: screen;
+    }
+    
+    .dark .blob {
+      opacity: 0.4;
+      mix-blend-mode: screen;
+    }
+    
+    .blob-1 {
+      width: 600px;
+      height: 600px;
+      background: linear-gradient(135deg, #3584e4 0%, #1c71d8 100%);
+      top: -200px;
+      left: -100px;
+      animation: blob 7s infinite;
+    }
+    
+    .blob-2 {
+      width: 500px;
+      height: 500px;
+      background: linear-gradient(135deg, #62a0ea 0%, #3584e4 100%);
+      top: 50%;
+      right: -150px;
+      animation: blob 7s infinite 2s;
+    }
+    
+    .blob-3 {
+      width: 400px;
+      height: 400px;
+      background: linear-gradient(135deg, #1c71d8 0%, #0d47a1 100%);
+      bottom: -100px;
+      left: 30%;
+      animation: blob 10s infinite 4s;
+    }
+    
+    /* Grid overlay with glow */
+    .grid-overlay {
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(53, 132, 228, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(53, 132, 228, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: gridPulse 4s ease-in-out infinite;
+    }
+    
+    .dark .grid-overlay {
+      background-image: 
+        linear-gradient(rgba(53, 132, 228, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(53, 132, 228, 0.05) 1px, transparent 1px);
+    }
+    
+    /* Traveling glow effect on grid */
+    .grid-glow {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      background: radial-gradient(circle, rgba(53, 132, 228, 0.3) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    /* Floating security icons */
+    .floating-icons {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    
+    .floating-icon {
+      position: absolute;
+      opacity: 0.05;
+      animation: securityFloat 20s linear infinite;
+    }
+    
+    .dark .floating-icon {
+      opacity: 0.03;
+    }
+    
+    .floating-icon:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 25s; }
+    .floating-icon:nth-child(2) { left: 25%; animation-delay: 5s; animation-duration: 20s; }
+    .floating-icon:nth-child(3) { left: 40%; animation-delay: 10s; animation-duration: 30s; }
+    .floating-icon:nth-child(4) { left: 55%; animation-delay: 3s; animation-duration: 22s; }
+    .floating-icon:nth-child(5) { left: 70%; animation-delay: 8s; animation-duration: 28s; }
+    .floating-icon:nth-child(6) { left: 85%; animation-delay: 12s; animation-duration: 24s; }
+    
+    /* ===== GRADIENT TEXT ===== */
     .gradient-text {
-      background: linear-gradient(135deg, #3584e4 0%, #1c71d8 50%, #3584e4 100%);
+      background: linear-gradient(135deg, #3584e4 0%, #1c71d8 50%, #62a0ea 100%);
+      background-size: 200% 200%;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+      animation: gradientShift 8s ease-in-out infinite;
     }
     
-    /* Glass effect */
+    /* ===== GLASS MORPHISM ===== */
     .glass {
-      background: rgba(30, 41, 59, 0.7);
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    
+    .dark .glass {
+      background: rgba(30, 41, 59, 0.8);
+    }
+    
+    .glass-card {
+      background: rgba(255, 255, 255, 0.6);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(203, 213, 225, 0.5);
     }
     
-    /* Animated gradient border */
+    .dark .glass-card {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+    }
+    
+    /* ===== ANIMATED GRADIENT BORDER ===== */
     .gradient-border {
       position: relative;
-      background: linear-gradient(135deg, rgba(53, 132, 228, 0.2), rgba(28, 113, 216, 0.1));
-      border: 1px solid rgba(53, 132, 228, 0.3);
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(203, 213, 225, 0.5);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .dark .gradient-border {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(71, 85, 105, 0.5);
     }
     
     .gradient-border::before {
       content: '';
       position: absolute;
-      inset: 0;
+      inset: -2px;
       border-radius: inherit;
-      padding: 1px;
-      background: linear-gradient(135deg, #3584e4, #1c71d8);
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
+      background: linear-gradient(135deg, #3584e4, #1c71d8, #62a0ea, #3584e4);
+      background-size: 300% 300%;
+      z-index: -1;
       opacity: 0;
-      transition: opacity 0.3s ease;
+      transition: opacity 0.4s ease;
+      animation: gradientShift 4s ease-in-out infinite;
     }
     
     .gradient-border:hover::before {
       opacity: 1;
     }
     
-    /* Subtle glow on hover */
-    .glow-hover:hover {
-      box-shadow: 0 0 30px rgba(53, 132, 228, 0.3);
+    .gradient-border:hover {
+      border-color: transparent;
+      transform: translateY(-5px);
+      box-shadow: 0 20px 40px rgba(53, 132, 228, 0.2);
     }
     
-    /* Tab system styles */
+    .dark .gradient-border:hover {
+      box-shadow: 0 20px 40px rgba(53, 132, 228, 0.15);
+    }
+    
+    /* ===== GLOW EFFECTS ===== */
+    .glow-hover {
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .glow-hover:hover {
+      box-shadow: 
+        0 0 20px rgba(53, 132, 228, 0.3),
+        0 0 40px rgba(53, 132, 228, 0.2),
+        0 0 60px rgba(53, 132, 228, 0.1);
+    }
+    
+    /* ===== BUTTON STYLES ===== */
+    .btn-primary {
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.5s ease;
+    }
+    
+    .btn-primary:hover::before {
+      transform: translateX(100%);
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 15px 30px rgba(53, 132, 228, 0.4);
+    }
+    
+    .btn-primary:active {
+      transform: translateY(-1px) scale(1);
+    }
+    
+    .btn-secondary {
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .btn-secondary:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    .dark .btn-secondary:hover {
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* ===== ICON ANIMATIONS ===== */
+    .icon-bounce:hover svg {
+      animation: bounceSubtle 0.6s ease-in-out;
+    }
+    
+    .icon-rotate:hover svg {
+      transform: rotate(15deg);
+      transition: transform 0.3s ease;
+    }
+    
+    .icon-scale:hover svg {
+      transform: scale(1.2);
+      transition: transform 0.3s ease;
+    }
+    
+    /* ===== SCROLL REVEAL ===== */
+    .reveal {
+      opacity: 0;
+      transform: translateY(40px);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    
+    .reveal-left {
+      opacity: 0;
+      transform: translateX(-40px);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .reveal-left.visible {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    
+    .reveal-right {
+      opacity: 0;
+      transform: translateX(40px);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .reveal-right.visible {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    
+    .reveal-scale {
+      opacity: 0;
+      transform: scale(0.9);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .reveal-scale.visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+    
+    /* Staggered children */
+    .stagger-children > * {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .stagger-children.visible > *:nth-child(1) { transition-delay: 0.1s; opacity: 1; transform: translateY(0); }
+    .stagger-children.visible > *:nth-child(2) { transition-delay: 0.2s; opacity: 1; transform: translateY(0); }
+    .stagger-children.visible > *:nth-child(3) { transition-delay: 0.3s; opacity: 1; transform: translateY(0); }
+    .stagger-children.visible > *:nth-child(4) { transition-delay: 0.4s; opacity: 1; transform: translateY(0); }
+    .stagger-children.visible > *:nth-child(5) { transition-delay: 0.5s; opacity: 1; transform: translateY(0); }
+    .stagger-children.visible > *:nth-child(6) { transition-delay: 0.6s; opacity: 1; transform: translateY(0); }
+    
+    /* ===== TAB STYLES ===== */
     .tab-panel {
       display: none;
     }
     
-    /* Show active panel based on checked radio */
     #tab-ubuntu:checked ~ #panel-ubuntu,
     #tab-fedora:checked ~ #panel-fedora,
     #tab-arch:checked ~ #panel-arch,
     #tab-source:checked ~ #panel-source {
       display: block;
+      animation: fadeIn 0.4s ease-out;
     }
     
-    /* Active tab label styling */
+    /* Tab indicator */
+    .tab-label {
+      position: relative;
+    }
+    
+    .tab-label::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 50%;
+      width: 0;
+      height: 2px;
+      background: linear-gradient(90deg, #3584e4, #62a0ea);
+      transition: all 0.3s ease;
+      transform: translateX(-50%);
+      border-radius: 1px;
+    }
+    
+    #tab-ubuntu:checked ~ div label[for="tab-ubuntu"]::after,
+    #tab-fedora:checked ~ div label[for="tab-fedora"]::after,
+    #tab-arch:checked ~ div label[for="tab-arch"]::after,
+    #tab-source:checked ~ div label[for="tab-source"]::after {
+      width: 80%;
+    }
+    
     #tab-ubuntu:checked ~ div label[for="tab-ubuntu"],
     #tab-fedora:checked ~ div label[for="tab-fedora"],
     #tab-arch:checked ~ div label[for="tab-arch"],
     #tab-source:checked ~ div label[for="tab-source"] {
       background-color: #3584e4;
       color: white;
+      transform: scale(1.05);
+    }
+    
+    /* ===== THEME TOGGLE ===== */
+    .theme-toggle {
+      position: relative;
+      width: 56px;
+      height: 28px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      cursor: pointer;
+      transition: all 0.4s ease;
+      overflow: hidden;
+    }
+    
+    .dark .theme-toggle {
+      background: linear-gradient(135deg, #1e293b, #334155);
+    }
+    
+    .theme-toggle-circle {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .dark .theme-toggle-circle {
+      transform: translateX(28px);
+      background: #0f172a;
+    }
+    
+    .theme-toggle-icon {
+      width: 14px;
+      height: 14px;
+      transition: all 0.4s ease;
+    }
+    
+    .sun-icon {
+      color: #f59e0b;
+    }
+    
+    .dark .sun-icon {
+      opacity: 0;
+      transform: rotate(180deg) scale(0);
+    }
+    
+    .moon-icon {
+      position: absolute;
+      color: #fbbf24;
+      opacity: 0;
+      transform: rotate(-180deg) scale(0);
+    }
+    
+    .dark .moon-icon {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+    
+    /* ===== CODE BLOCK ===== */
+    .code-block {
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .code-block::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(53, 132, 228, 0.1), transparent);
+      animation: shimmer 3s infinite;
+    }
+    
+    /* ===== SCREENSHOT SHOWCASE ===== */
+    .screenshot-container {
+      position: relative;
+      transform-style: preserve-3d;
+      perspective: 1000px;
+    }
+    
+    .screenshot-container:hover .screenshot-image {
+      transform: rotateY(-2deg) rotateX(2deg) scale(1.02);
+    }
+    
+    .screenshot-image {
+      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    /* ===== REDUCED MOTION ===== */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      
+      .reveal, .reveal-left, .reveal-right, .reveal-scale {
+        opacity: 1;
+        transform: none;
+      }
+      
+      .stagger-children > * {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    
+    /* ===== NOISE TEXTURE OVERLAY ===== */
+    .noise-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.02;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
     }
   </style>
 </head>
 
-<body class="bg-slate-900 text-slate-50 antialiased">
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-50 antialiased transition-colors duration-300">
+  <!-- Noise texture overlay -->
+  <div class="noise-overlay" aria-hidden="true"></div>
+  
   <!-- Skip to content link for accessibility -->
   <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-gnome focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:font-medium">
     Skip to main content
   </a>
 
   <!-- Header/Navigation -->
-  <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-slate-700/50">
+  <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-slate-200 dark:border-slate-700/50 transition-colors duration-300">
     <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" aria-label="Main navigation">
       <a href="#" class="flex items-center gap-3 group" aria-label="VPN Manager Home">
-        <img src="assets/vpn-manager.svg" alt="" class="w-10 h-10 transition-transform group-hover:scale-110" aria-hidden="true">
-        <span class="font-bold text-xl hidden sm:block">VPN Manager</span>
+        <img src="assets/vpn-manager.svg" alt="" class="w-10 h-10 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6" aria-hidden="true">
+        <span class="font-bold text-xl hidden sm:block bg-gradient-to-r from-gnome to-gnome-dark bg-clip-text text-transparent">VPN Manager</span>
       </a>
       
       <div class="flex items-center gap-4">
-        <a href="#features" class="text-slate-400 hover:text-slate-50 transition-colors text-sm font-medium hidden sm:block">Features</a>
-        <a href="#install" class="text-slate-400 hover:text-slate-50 transition-colors text-sm font-medium hidden sm:block">Install</a>
-        <a href="#community" class="text-slate-400 hover:text-slate-50 transition-colors text-sm font-medium hidden sm:block">Community</a>
-        <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-slate-400 hover:text-slate-50 transition-colors" aria-label="View on GitHub">
-          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <a href="#features" class="text-slate-600 dark:text-slate-400 hover:text-gnome dark:hover:text-gnome transition-colors text-sm font-medium hidden sm:block">Features</a>
+        <a href="#install" class="text-slate-600 dark:text-slate-400 hover:text-gnome dark:hover:text-gnome transition-colors text-sm font-medium hidden sm:block">Install</a>
+        <a href="#community" class="text-slate-600 dark:text-slate-400 hover:text-gnome dark:hover:text-gnome transition-colors text-sm font-medium hidden sm:block">Community</a>
+        
+        <!-- Theme Toggle -->
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" role="switch" aria-checked="false">
+          <div class="theme-toggle-circle">
+            <svg class="theme-toggle-icon sun-icon" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+            </svg>
+            <svg class="theme-toggle-icon moon-icon" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+            </svg>
+          </div>
+        </button>
+        
+        <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-gnome dark:hover:text-gnome transition-colors icon-scale" aria-label="View on GitHub">
+          <svg class="w-5 h-5 transition-transform" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/>
           </svg>
           <span class="hidden sm:inline text-sm font-medium">GitHub</span>
@@ -206,54 +709,85 @@
   <main id="main-content">
     <!-- Hero Section -->
     <section class="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden" aria-labelledby="hero-heading">
-      <!-- Background gradient -->
-      <div class="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800" aria-hidden="true"></div>
-      <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gnome/10 via-transparent to-transparent" aria-hidden="true"></div>
+      <!-- Animated Mesh Gradient Background -->
+      <div class="mesh-gradient" aria-hidden="true">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+      </div>
       
-      <!-- Decorative grid -->
-      <div class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSA2MCAwIEwgMCAwIDAgNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzMzNDE1NSIgc3Ryb2tlLXdpZHRoPSIxIiBvcGFjaXR5PSIwLjMiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-20" aria-hidden="true"></div>
+      <!-- Grid overlay -->
+      <div class="grid-overlay" aria-hidden="true"></div>
+      
+      <!-- Floating security icons -->
+      <div class="floating-icons" aria-hidden="true">
+        <svg class="floating-icon w-12 h-12" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+        </svg>
+        <svg class="floating-icon w-10 h-10" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+        </svg>
+        <svg class="floating-icon w-14 h-14" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+        </svg>
+        <svg class="floating-icon w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 17a2 2 0 002-2 2 2 0 00-2-2 2 2 0 00-2 2 2 2 0 002 2m6-9a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V10a2 2 0 012-2h1V6a5 5 0 1110 0v2h1m-6-5a3 3 0 00-3 3v2h6V6a3 3 0 00-3-3z"/>
+        </svg>
+        <svg class="floating-icon w-11 h-11" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm6 9.09c0 4-2.55 7.7-6 8.83-3.45-1.13-6-4.82-6-8.83v-4.7l6-2.25 6 2.25v4.7z"/>
+        </svg>
+        <svg class="floating-icon w-9 h-9" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+        </svg>
+      </div>
+      
+      <!-- Radial gradient overlay -->
+      <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gnome/5 via-transparent to-transparent dark:from-gnome/10" aria-hidden="true"></div>
       
       <div class="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-20">
-        <div class="text-center animate-fade-in">
-          <!-- Logo -->
-          <div class="mb-8 flex justify-center">
-            <div class="relative">
+        <div class="text-center">
+          <!-- Logo with float animation -->
+          <div class="mb-8 flex justify-center animate-fade-in">
+            <div class="relative animate-float">
               <img src="assets/vpn-manager.svg" alt="VPN Manager Logo" class="w-24 h-24 sm:w-32 sm:h-32 drop-shadow-2xl">
-              <div class="absolute inset-0 bg-gnome/20 blur-3xl rounded-full" aria-hidden="true"></div>
+              <div class="absolute inset-0 bg-gnome/30 blur-3xl rounded-full animate-glow-pulse" aria-hidden="true"></div>
             </div>
           </div>
           
           <!-- Version badge -->
-          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-sm mb-6">
-            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse" aria-hidden="true"></span>
-            <span id="version-badge" class="text-slate-300">Loading...</span>
-            <span class="text-slate-500">•</span>
-            <span class="text-slate-400">Stable Release</span>
+          <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-card text-sm mb-6 animate-slide-down" style="animation-delay: 0.2s">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            <span id="version-badge" class="text-slate-600 dark:text-slate-300 font-medium">Loading...</span>
+            <span class="text-slate-400">•</span>
+            <span class="text-slate-500 dark:text-slate-400">Stable Release</span>
           </div>
           
           <!-- Heading -->
-          <h1 id="hero-heading" class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6">
-            <span class="block text-slate-50">VPN Manager</span>
+          <h1 id="hero-heading" class="text-4xl sm:text-5xl lg:text-7xl font-black tracking-tight mb-6 animate-slide-up" style="animation-delay: 0.3s">
+            <span class="block text-slate-900 dark:text-slate-50">VPN Manager</span>
             <span class="block gradient-text mt-2">for Linux</span>
           </h1>
           
           <!-- Tagline -->
-          <p class="text-xl sm:text-2xl text-slate-300 font-medium mb-4 max-w-2xl mx-auto">
+          <p class="text-xl sm:text-2xl text-slate-600 dark:text-slate-300 font-medium mb-4 max-w-2xl mx-auto animate-slide-up" style="animation-delay: 0.4s">
             Enterprise-grade security. Community-first freedom.
           </p>
-          <p class="text-lg text-slate-400 mb-10 max-w-xl mx-auto">
+          <p class="text-lg text-slate-500 dark:text-slate-400 mb-10 max-w-xl mx-auto animate-slide-up" style="animation-delay: 0.5s">
             Simple VPN client with GUI — OpenVPN, WireGuard & Tailscale in one beautiful app.
           </p>
           
           <!-- CTA Buttons -->
-          <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-            <a href="https://github.com/yllada/vpn-manager/releases" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-gnome hover:bg-gnome-dark text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-gnome/25 hover:shadow-gnome/40 hover:scale-105 focus:ring-2 focus:ring-gnome focus:ring-offset-2 focus:ring-offset-slate-900">
+          <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16 animate-slide-up" style="animation-delay: 0.6s">
+            <a href="https://github.com/yllada/vpn-manager/releases" target="_blank" rel="noopener noreferrer" class="btn-primary w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-gnome to-gnome-dark text-white font-semibold rounded-xl shadow-lg shadow-gnome/30 focus:ring-2 focus:ring-gnome focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-slate-900">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
               </svg>
               Download Latest
             </a>
-            <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-slate-800 hover:bg-slate-700 text-slate-50 font-semibold rounded-xl border border-slate-700 transition-all duration-200 hover:scale-105 focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-900">
+            <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="btn-secondary w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 font-semibold rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-slate-900">
               <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/>
               </svg>
@@ -262,78 +796,84 @@
           </div>
           
           <!-- Screenshot showcase -->
-          <div class="relative max-w-4xl mx-auto">
-            <div class="absolute -inset-4 bg-gradient-to-r from-gnome/20 via-gnome/10 to-gnome/20 blur-3xl opacity-50" aria-hidden="true"></div>
-            <div class="relative rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl shadow-black/50">
+          <div class="screenshot-container relative max-w-4xl mx-auto animate-scale-in" style="animation-delay: 0.7s">
+            <div class="absolute -inset-4 bg-gradient-to-r from-gnome/30 via-gnome-dark/20 to-gnome-light/30 blur-3xl opacity-60 animate-pulse-slower" aria-hidden="true"></div>
+            <div class="screenshot-image relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700/50 shadow-2xl shadow-slate-900/20 dark:shadow-black/50">
               <img src="assets/screenshot-stats.png" alt="VPN Manager Statistics Dashboard showing real-time bandwidth graph, session history with provider badges, and weekly traffic charts" class="w-full h-auto" loading="eager">
             </div>
           </div>
         </div>
         
         <!-- Differentiator cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-16 animate-slide-up" style="animation-delay: 0.2s">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-16 stagger-children" id="hero-cards">
           <!-- Traffic Stats -->
-          <div class="gradient-border rounded-xl p-6 glow-hover transition-all duration-300">
-            <div class="w-12 h-12 rounded-lg bg-gnome/20 flex items-center justify-center mb-4" aria-hidden="true">
+          <div class="gradient-border rounded-xl p-6 glow-hover group">
+            <div class="w-12 h-12 rounded-lg bg-gnome/10 dark:bg-gnome/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300" aria-hidden="true">
               <svg class="w-6 h-6 text-gnome" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
               </svg>
             </div>
             <h3 class="font-semibold text-lg mb-2">Traffic Statistics</h3>
-            <p class="text-slate-400 text-sm">Real-time bandwidth graphs, session history, and weekly traffic charts. Unique to VPN Manager.</p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm">Real-time bandwidth graphs, session history, and weekly traffic charts. Unique to VPN Manager.</p>
           </div>
           
           <!-- Kill Switch -->
-          <div class="gradient-border rounded-xl p-6 glow-hover transition-all duration-300">
-            <div class="w-12 h-12 rounded-lg bg-gnome/20 flex items-center justify-center mb-4" aria-hidden="true">
+          <div class="gradient-border rounded-xl p-6 glow-hover group">
+            <div class="w-12 h-12 rounded-lg bg-gnome/10 dark:bg-gnome/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300" aria-hidden="true">
               <svg class="w-6 h-6 text-gnome" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
               </svg>
             </div>
             <h3 class="font-semibold text-lg mb-2">Enterprise Kill Switch</h3>
-            <p class="text-slate-400 text-sm">Boot-persistent protection with crash recovery. LAN access toggle and captive portal pause mode.</p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm">Boot-persistent protection with crash recovery. LAN access toggle and captive portal pause mode.</p>
           </div>
           
           <!-- GNOME UI -->
-          <div class="gradient-border rounded-xl p-6 glow-hover transition-all duration-300">
-            <div class="w-12 h-12 rounded-lg bg-gnome/20 flex items-center justify-center mb-4" aria-hidden="true">
+          <div class="gradient-border rounded-xl p-6 glow-hover group">
+            <div class="w-12 h-12 rounded-lg bg-gnome/10 dark:bg-gnome/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300" aria-hidden="true">
               <svg class="w-6 h-6 text-gnome" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
               </svg>
             </div>
             <h3 class="font-semibold text-lg mb-2">Native GNOME UI</h3>
-            <p class="text-slate-400 text-sm">GTK4 + libadwaita for a beautiful, responsive experience. Follows GNOME HIG guidelines.</p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm">GTK4 + libadwaita for a beautiful, responsive experience. Follows GNOME HIG guidelines.</p>
           </div>
           
           <!-- Multi-protocol -->
-          <div class="gradient-border rounded-xl p-6 glow-hover transition-all duration-300">
-            <div class="w-12 h-12 rounded-lg bg-gnome/20 flex items-center justify-center mb-4" aria-hidden="true">
+          <div class="gradient-border rounded-xl p-6 glow-hover group">
+            <div class="w-12 h-12 rounded-lg bg-gnome/10 dark:bg-gnome/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300" aria-hidden="true">
               <svg class="w-6 h-6 text-gnome" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
               </svg>
             </div>
             <h3 class="font-semibold text-lg mb-2">Multi-Protocol</h3>
-            <p class="text-slate-400 text-sm">OpenVPN, WireGuard, and Tailscale support. GUI, CLI, and TUI interfaces included.</p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm">OpenVPN, WireGuard, and Tailscale support. GUI, CLI, and TUI interfaces included.</p>
           </div>
         </div>
+      </div>
+      
+      <!-- Scroll indicator -->
+      <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce-subtle">
+        <svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+        </svg>
       </div>
     </section>
 
     <!-- Features Section -->
-    <section id="features" class="relative py-20 sm:py-32" aria-labelledby="features-heading">
-      <div class="absolute inset-0 bg-slate-800/50" aria-hidden="true"></div>
+    <section id="features" class="relative py-20 sm:py-32 bg-slate-100/50 dark:bg-slate-800/30 transition-colors duration-300" aria-labelledby="features-heading">
       <div class="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <!-- Section header -->
-        <div class="text-center mb-16">
-          <span class="inline-block px-3 py-1 text-sm font-medium text-gnome bg-gnome/10 rounded-full mb-4">Features</span>
-          <h2 id="features-heading" class="text-3xl sm:text-4xl font-bold mb-4">Everything you need for secure connections</h2>
-          <p class="text-slate-400 max-w-2xl mx-auto">Enterprise features without the enterprise complexity. Built for Linux users who value both security and simplicity.</p>
+        <div class="text-center mb-16 reveal">
+          <span class="inline-block px-4 py-1.5 text-sm font-semibold text-gnome bg-gnome/10 rounded-full mb-4">Features</span>
+          <h2 id="features-heading" class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">Everything you need for secure connections</h2>
+          <p class="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto text-lg">Enterprise features without the enterprise complexity. Built for Linux users who value both security and simplicity.</p>
         </div>
         
         <!-- Feature grid -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
           <!-- Security Features Column -->
-          <div class="space-y-6">
+          <div class="space-y-6 reveal-left">
             <h3 class="text-xl font-semibold text-gnome flex items-center gap-2">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
@@ -342,30 +882,42 @@
             </h3>
             
             <div class="space-y-4">
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Kill Switch</h4>
-                <p class="text-sm text-slate-400">Boot-persistent protection with state persistence and crash recovery. Blocks all traffic if VPN fails.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Kill Switch
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Boot-persistent protection with state persistence and crash recovery. Blocks all traffic if VPN fails.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">DNS Leak Protection</h4>
-                <p class="text-sm text-slate-400">systemd-resolved strict mode with firewall fallback ensures your DNS queries stay private.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  DNS Leak Protection
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">systemd-resolved strict mode with firewall fallback ensures your DNS queries stay private.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">IPv6 Leak Protection</h4>
-                <p class="text-sm text-slate-400">Extended sysctl parameters and nftables inet rules prevent IPv6 traffic leaks.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  IPv6 Leak Protection
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Extended sysctl parameters and nftables inet rules prevent IPv6 traffic leaks.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Evil Twin Detection</h4>
-                <p class="text-sm text-slate-400">Warns if a known network appears with a different access point. Protects against spoofing attacks.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Evil Twin Detection
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Warns if a known network appears with a different access point. Protects against spoofing attacks.</p>
               </article>
             </div>
           </div>
           
           <!-- UX Features Column -->
-          <div class="space-y-6">
+          <div class="space-y-6 reveal">
             <h3 class="text-xl font-semibold text-gnome flex items-center gap-2">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
@@ -374,30 +926,42 @@
             </h3>
             
             <div class="space-y-4">
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Network Trust Rules</h4>
-                <p class="text-sm text-slate-400">Auto-manage VPN based on network trust. Connect on untrusted WiFi, disconnect at home.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Network Trust Rules
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Auto-manage VPN based on network trust. Connect on untrusted WiFi, disconnect at home.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Auto-Reconnect</h4>
-                <p class="text-sm text-slate-400">Automatic connection restoration when network drops. Never lose your VPN protection.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Auto-Reconnect
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Automatic connection restoration when network drops. Never lose your VPN protection.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">System Tray</h4>
-                <p class="text-sm text-slate-400">Quick access without opening the app. Right-click for instant trust/untrust actions.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  System Tray
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Quick access without opening the app. Right-click for instant trust/untrust actions.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Split Tunneling</h4>
-                <p class="text-sm text-slate-400">Choose what traffic goes through VPN. Run specific apps outside the tunnel.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Split Tunneling
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Choose what traffic goes through VPN. Run specific apps outside the tunnel.</p>
               </article>
             </div>
           </div>
           
           <!-- Interface Features Column -->
-          <div class="space-y-6">
+          <div class="space-y-6 reveal-right">
             <h3 class="text-xl font-semibold text-gnome flex items-center gap-2">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
@@ -406,24 +970,36 @@
             </h3>
             
             <div class="space-y-4">
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Graphical UI (GUI)</h4>
-                <p class="text-sm text-slate-400">Modern GTK4 + libadwaita interface. Dark/light theme support, responsive design.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Graphical UI (GUI)
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Modern GTK4 + libadwaita interface. Dark/light theme support, responsive design.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Command Line (CLI)</h4>
-                <p class="text-sm text-slate-400">Full control from terminal. JSON output for scripting. Perfect for automation.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Command Line (CLI)
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Full control from terminal. JSON output for scripting. Perfect for automation.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Terminal UI (TUI)</h4>
-                <p class="text-sm text-slate-400">Rich dashboard with bandwidth sparklines, health gauge, and fuzzy profile search.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Terminal UI (TUI)
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Rich dashboard with bandwidth sparklines, health gauge, and fuzzy profile search.</p>
               </article>
               
-              <article class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-                <h4 class="font-medium mb-1">Drag & Drop Import</h4>
-                <p class="text-sm text-slate-400">Import .ovpn files easily. Credentials stored securely in system keyring.</p>
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full"></span>
+                  Drag & Drop Import
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Import .ovpn files easily. Credentials stored securely in system keyring.</p>
               </article>
             </div>
           </div>
@@ -432,18 +1008,18 @@
     </section>
 
     <!-- Installation Section -->
-    <section id="install" class="py-20 sm:py-32" aria-labelledby="install-heading">
+    <section id="install" class="py-20 sm:py-32 transition-colors duration-300" aria-labelledby="install-heading">
       <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <!-- Section header -->
-        <div class="text-center mb-16">
-          <span class="inline-block px-3 py-1 text-sm font-medium text-gnome bg-gnome/10 rounded-full mb-4">Installation</span>
-          <h2 id="install-heading" class="text-3xl sm:text-4xl font-bold mb-4">Get started in minutes</h2>
-          <p class="text-slate-400 max-w-2xl mx-auto">Choose your distribution and follow the simple installation steps.</p>
+        <div class="text-center mb-16 reveal">
+          <span class="inline-block px-4 py-1.5 text-sm font-semibold text-gnome bg-gnome/10 rounded-full mb-4">Installation</span>
+          <h2 id="install-heading" class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">Get started in minutes</h2>
+          <p class="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto text-lg">Choose your distribution and follow the simple installation steps.</p>
         </div>
         
         <!-- CSS-only tabs -->
-        <div class="max-w-3xl mx-auto">
-          <!-- Tab inputs (hidden) - MUST be before all elements that use peer-checked -->
+        <div class="max-w-3xl mx-auto reveal-scale">
+          <!-- Tab inputs (hidden) -->
           <input type="radio" id="tab-ubuntu" name="install-tabs" class="hidden peer/ubuntu" checked>
           <input type="radio" id="tab-fedora" name="install-tabs" class="hidden peer/fedora">
           <input type="radio" id="tab-arch" name="install-tabs" class="hidden peer/arch">
@@ -451,143 +1027,155 @@
           
           <!-- Tab labels -->
           <div class="flex flex-wrap justify-center gap-2 mb-8" role="tablist" aria-label="Installation methods">
-            <label for="tab-ubuntu" class="tab-label cursor-pointer px-4 py-2 rounded-lg font-medium text-sm transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200" role="tab" tabindex="0">
+            <label for="tab-ubuntu" class="tab-label cursor-pointer px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 hover:scale-105" role="tab" tabindex="0">
               Ubuntu / Debian
             </label>
-            <label for="tab-fedora" class="tab-label cursor-pointer px-4 py-2 rounded-lg font-medium text-sm transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200" role="tab" tabindex="0">
+            <label for="tab-fedora" class="tab-label cursor-pointer px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 hover:scale-105" role="tab" tabindex="0">
               Fedora
             </label>
-            <label for="tab-arch" class="tab-label cursor-pointer px-4 py-2 rounded-lg font-medium text-sm transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200" role="tab" tabindex="0">
+            <label for="tab-arch" class="tab-label cursor-pointer px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 hover:scale-105" role="tab" tabindex="0">
               Arch Linux
             </label>
-            <label for="tab-source" class="tab-label cursor-pointer px-4 py-2 rounded-lg font-medium text-sm transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200" role="tab" tabindex="0">
+            <label for="tab-source" class="tab-label cursor-pointer px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 hover:scale-105" role="tab" tabindex="0">
               Build from Source
             </label>
           </div>
           
-          <!-- Tab panels - Using CSS :has() for modern browsers -->
+          <!-- Tab panels -->
           <!-- Ubuntu panel -->
           <div id="panel-ubuntu" class="tab-panel" role="tabpanel" aria-labelledby="tab-ubuntu">
-            <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div class="flex items-center justify-between px-4 py-3 bg-slate-900/50 border-b border-slate-700">
-                <span class="text-sm text-slate-400">Ubuntu / Debian — .deb Package</span>
+            <div class="code-block bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-lg">
+              <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                <span class="text-sm text-slate-500 dark:text-slate-400 font-medium">Ubuntu / Debian — .deb Package</span>
                 <div class="flex items-center gap-3">
-                  <button onclick="copyInstallCommand('panel-ubuntu')" class="copy-btn text-slate-400 hover:text-gnome transition-colors" title="Copy to clipboard">
+                  <button onclick="copyInstallCommand('panel-ubuntu')" class="copy-btn text-slate-400 hover:text-gnome transition-colors p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg" title="Copy to clipboard">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                   </button>
                   <div class="flex gap-1.5">
-                    <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
                   </div>
                 </div>
               </div>
-              <pre class="p-4 overflow-x-auto"><code class="text-sm text-slate-300" data-install-cmd><span class="text-slate-500"># Loading install command...</span></code></pre>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Loading install command...</span></code></pre>
             </div>
-            <p class="text-sm text-slate-500 mt-3 text-center">
+            <p class="text-sm text-slate-500 mt-4 text-center">
               Supported: Ubuntu 24.04+, Debian 12+
             </p>
           </div>
           
           <!-- Fedora panel -->
           <div id="panel-fedora" class="tab-panel" role="tabpanel" aria-labelledby="tab-fedora">
-            <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div class="flex items-center justify-between px-4 py-3 bg-slate-900/50 border-b border-slate-700">
-                <span class="text-sm text-slate-400">Fedora / RHEL — .rpm Package</span>
+            <div class="code-block bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-lg">
+              <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                <span class="text-sm text-slate-500 dark:text-slate-400 font-medium">Fedora / RHEL — .rpm Package</span>
                 <div class="flex items-center gap-3">
-                  <button onclick="copyInstallCommand('panel-fedora')" class="copy-btn text-slate-400 hover:text-gnome transition-colors" title="Copy to clipboard">
+                  <button onclick="copyInstallCommand('panel-fedora')" class="copy-btn text-slate-400 hover:text-gnome transition-colors p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg" title="Copy to clipboard">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                   </button>
                   <div class="flex gap-1.5">
-                    <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
                   </div>
                 </div>
               </div>
-              <pre class="p-4 overflow-x-auto"><code class="text-sm text-slate-300" data-install-cmd><span class="text-slate-500"># Loading install command...</span></code></pre>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Loading install command...</span></code></pre>
             </div>
-            <p class="text-sm text-slate-500 mt-3 text-center">
+            <p class="text-sm text-slate-500 mt-4 text-center">
               Supported: Fedora 40+, RHEL 9+
             </p>
           </div>
           
           <!-- Arch panel -->
           <div id="panel-arch" class="tab-panel" role="tabpanel" aria-labelledby="tab-arch">
-            <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div class="flex items-center justify-between px-4 py-3 bg-slate-900/50 border-b border-slate-700">
-                <span class="text-sm text-slate-400">Arch Linux — Tarball Install</span>
+            <div class="code-block bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-lg">
+              <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                <span class="text-sm text-slate-500 dark:text-slate-400 font-medium">Arch Linux — Tarball Install</span>
                 <div class="flex items-center gap-3">
-                  <button onclick="copyInstallCommand('panel-arch')" class="copy-btn text-slate-400 hover:text-gnome transition-colors" title="Copy to clipboard">
+                  <button onclick="copyInstallCommand('panel-arch')" class="copy-btn text-slate-400 hover:text-gnome transition-colors p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg" title="Copy to clipboard">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                   </button>
                   <div class="flex gap-1.5">
-                    <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
                   </div>
                 </div>
               </div>
-              <pre class="p-4 overflow-x-auto"><code class="text-sm text-slate-300" data-install-cmd><span class="text-slate-500"># Loading install command...</span></code></pre>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Loading install command...</span></code></pre>
             </div>
-            <p class="text-sm text-slate-500 mt-3 text-center">
-              Requires: <code class="text-slate-400">sudo pacman -S gtk4 libadwaita</code>
+            <p class="text-sm text-slate-500 mt-4 text-center">
+              Requires: <code class="text-gnome bg-gnome/10 px-2 py-0.5 rounded">sudo pacman -S gtk4 libadwaita</code>
             </p>
           </div>
           
           <!-- Source panel -->
           <div id="panel-source" class="tab-panel" role="tabpanel" aria-labelledby="tab-source">
-            <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div class="flex items-center justify-between px-4 py-3 bg-slate-900/50 border-b border-slate-700">
-                <span class="text-sm text-slate-400">Build from Source (Any distro)</span>
+            <div class="code-block bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-lg">
+              <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                <span class="text-sm text-slate-500 dark:text-slate-400 font-medium">Build from Source (Any distro)</span>
                 <div class="flex items-center gap-3">
-                  <button onclick="copyInstallCommand('panel-source')" class="copy-btn text-slate-400 hover:text-gnome transition-colors" title="Copy to clipboard">
+                  <button onclick="copyInstallCommand('panel-source')" class="copy-btn text-slate-400 hover:text-gnome transition-colors p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg" title="Copy to clipboard">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                   </button>
                   <div class="flex gap-1.5">
-                    <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
-                    <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
                   </div>
                 </div>
               </div>
-              <pre class="p-4 overflow-x-auto"><code class="text-sm text-slate-300" data-install-cmd><span class="text-slate-500"># Requirements: Go 1.21+, GTK4 4.14+, libadwaita 1.5+</span>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Requirements: Go 1.21+, GTK4 4.14+, libadwaita 1.5+</span>
 
-<span class="text-slate-500"># Clone and build</span>
+<span class="text-slate-400 dark:text-slate-500"># Clone and build</span>
 <span class="text-gnome">git</span> clone https://github.com/yllada/vpn-manager.git
 <span class="text-gnome">cd</span> vpn-manager
 <span class="text-gnome">go</span> build -o vpn-manager .
 
-<span class="text-slate-500"># Install system-wide (optional)</span>
+<span class="text-slate-400 dark:text-slate-500"># Install system-wide (optional)</span>
 <span class="text-gnome">sudo</span> cp vpn-manager /usr/local/bin/
 <span class="text-gnome">sudo</span> cp assets/vpn-manager.desktop /usr/share/applications/
 
-<span class="text-slate-500"># Run</span>
+<span class="text-slate-400 dark:text-slate-500"># Run</span>
 ./vpn-manager</code></pre>
             </div>
           </div>
           
           <!-- Requirements note -->
-          <div class="mt-8 p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
-            <h3 class="font-medium mb-2 flex items-center gap-2">
-              <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <div class="mt-8 p-5 glass-card rounded-xl reveal">
+            <h3 class="font-semibold mb-3 flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
               </svg>
               Requirements
             </h3>
-            <ul class="text-sm text-slate-400 space-y-1">
-              <li>• GTK4 4.14+ and libadwaita 1.5+</li>
-              <li>• Go 1.21+ (for building from source)</li>
-              <li>• OpenVPN, WireGuard, or Tailscale installed</li>
-              <li>• Linux: Ubuntu 24.04+, Fedora 40+, or Arch</li>
+            <ul class="text-sm text-slate-500 dark:text-slate-400 space-y-2">
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-gnome rounded-full"></span>
+                GTK4 4.14+ and libadwaita 1.5+
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-gnome rounded-full"></span>
+                Go 1.21+ (for building from source)
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-gnome rounded-full"></span>
+                OpenVPN, WireGuard, or Tailscale installed
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-gnome rounded-full"></span>
+                Linux: Ubuntu 24.04+, Fedora 40+, or Arch
+              </li>
             </ul>
           </div>
         </div>
@@ -595,56 +1183,56 @@
     </section>
 
     <!-- Community Section -->
-    <section id="community" class="py-20 sm:py-32 bg-slate-800/30" aria-labelledby="community-heading">
+    <section id="community" class="py-20 sm:py-32 bg-slate-100/50 dark:bg-slate-800/30 transition-colors duration-300" aria-labelledby="community-heading">
       <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <!-- Section header -->
-        <div class="text-center mb-16">
-          <span class="inline-block px-3 py-1 text-sm font-medium text-gnome bg-gnome/10 rounded-full mb-4">Community</span>
-          <h2 id="community-heading" class="text-3xl sm:text-4xl font-bold mb-4">Open source, community driven</h2>
-          <p class="text-slate-400 max-w-2xl mx-auto">VPN Manager is free, open source, and built with love for the Linux community. Join us!</p>
+        <div class="text-center mb-16 reveal">
+          <span class="inline-block px-4 py-1.5 text-sm font-semibold text-gnome bg-gnome/10 rounded-full mb-4">Community</span>
+          <h2 id="community-heading" class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">Open source, community driven</h2>
+          <p class="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto text-lg">VPN Manager is free, open source, and built with love for the Linux community. Join us!</p>
         </div>
         
         <!-- Community cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto stagger-children" id="community-cards">
           <!-- Star -->
-          <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="group gradient-border rounded-xl p-6 text-center glow-hover transition-all duration-300 hover:scale-105">
-            <div class="w-14 h-14 rounded-full bg-yellow-500/20 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg class="w-7 h-7 text-yellow-500" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="group gradient-border rounded-2xl p-8 text-center glow-hover">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center mx-auto mb-5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-lg shadow-yellow-500/30">
+              <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
               </svg>
             </div>
-            <h3 class="font-semibold text-lg mb-2">Star on GitHub</h3>
-            <p class="text-slate-400 text-sm">Show your support and help others discover VPN Manager</p>
+            <h3 class="font-bold text-xl mb-2">Star on GitHub</h3>
+            <p class="text-slate-500 dark:text-slate-400">Show your support and help others discover VPN Manager</p>
           </a>
           
           <!-- Fork -->
-          <a href="https://github.com/yllada/vpn-manager/fork" target="_blank" rel="noopener noreferrer" class="group gradient-border rounded-xl p-6 text-center glow-hover transition-all duration-300 hover:scale-105">
-            <div class="w-14 h-14 rounded-full bg-gnome/20 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg class="w-7 h-7 text-gnome" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <a href="https://github.com/yllada/vpn-manager/fork" target="_blank" rel="noopener noreferrer" class="group gradient-border rounded-2xl p-8 text-center glow-hover">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-gnome to-gnome-dark flex items-center justify-center mx-auto mb-5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-lg shadow-gnome/30">
+              <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
               </svg>
             </div>
-            <h3 class="font-semibold text-lg mb-2">Fork & Contribute</h3>
-            <p class="text-slate-400 text-sm">Submit PRs, fix bugs, or add new features</p>
+            <h3 class="font-bold text-xl mb-2">Fork & Contribute</h3>
+            <p class="text-slate-500 dark:text-slate-400">Submit PRs, fix bugs, or add new features</p>
           </a>
           
           <!-- Issues -->
-          <a href="https://github.com/yllada/vpn-manager/issues" target="_blank" rel="noopener noreferrer" class="group gradient-border rounded-xl p-6 text-center glow-hover transition-all duration-300 hover:scale-105">
-            <div class="w-14 h-14 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <svg class="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <a href="https://github.com/yllada/vpn-manager/issues" target="_blank" rel="noopener noreferrer" class="group gradient-border rounded-2xl p-8 text-center glow-hover">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center mx-auto mb-5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-lg shadow-red-500/30">
+              <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
               </svg>
             </div>
-            <h3 class="font-semibold text-lg mb-2">Report Issues</h3>
-            <p class="text-slate-400 text-sm">Found a bug? Let us know and we'll fix it</p>
+            <h3 class="font-bold text-xl mb-2">Report Issues</h3>
+            <p class="text-slate-500 dark:text-slate-400">Found a bug? Let us know and we'll fix it</p>
           </a>
         </div>
         
         <!-- Sponsor section -->
-        <div class="mt-12 text-center">
-          <p class="text-slate-400 mb-4">Want to support development?</p>
-          <a href="https://github.com/sponsors/yllada" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-6 py-3 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 font-medium rounded-lg border border-pink-500/30 transition-all duration-200 hover:scale-105">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <div class="mt-16 text-center reveal">
+          <p class="text-slate-500 dark:text-slate-400 mb-5 text-lg">Want to support development?</p>
+          <a href="https://github.com/sponsors/yllada" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-pink-500/30 group">
+            <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
             </svg>
             Sponsor on GitHub
@@ -655,30 +1243,30 @@
   </main>
 
   <!-- Footer -->
-  <footer class="border-t border-slate-800 py-12" role="contentinfo">
+  <footer class="border-t border-slate-200 dark:border-slate-800 py-12 transition-colors duration-300" role="contentinfo">
     <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex flex-col md:flex-row items-center justify-between gap-6">
         <!-- Logo and copyright -->
         <div class="flex items-center gap-4">
-          <img src="assets/vpn-manager.svg" alt="" class="w-8 h-8" aria-hidden="true">
+          <img src="assets/vpn-manager.svg" alt="" class="w-10 h-10" aria-hidden="true">
           <div>
-            <p class="font-semibold">VPN Manager</p>
-            <p class="text-sm text-slate-400">Made by <a href="https://github.com/yllada" target="_blank" rel="noopener noreferrer" class="text-gnome hover:underline">Yadian Llada Lopez</a></p>
+            <p class="font-bold text-lg">VPN Manager</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Made by <a href="https://github.com/yllada" target="_blank" rel="noopener noreferrer" class="text-gnome hover:underline font-medium">Yadian Llada Lopez</a></p>
           </div>
         </div>
         
         <!-- Links -->
         <nav class="flex flex-wrap items-center justify-center gap-6 text-sm" aria-label="Footer navigation">
-          <a href="https://github.com/yllada/vpn-manager/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-slate-200 transition-colors">MIT License</a>
-          <a href="https://github.com/yllada/vpn-manager/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-slate-200 transition-colors">Contributing</a>
-          <a href="https://github.com/yllada/vpn-manager/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-slate-200 transition-colors">Code of Conduct</a>
-          <a href="https://github.com/yllada/vpn-manager/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-slate-200 transition-colors">Security</a>
-          <a href="https://github.com/yllada/vpn-manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-slate-200 transition-colors">Changelog</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">MIT License</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Contributing</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Code of Conduct</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Security</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Changelog</a>
         </nav>
         
         <!-- Social -->
         <div class="flex items-center gap-4">
-          <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-slate-200 transition-colors" aria-label="GitHub">
+          <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-all duration-300 hover:scale-110" aria-label="GitHub">
             <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
               <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/>
             </svg>
@@ -687,15 +1275,88 @@
       </div>
       
       <!-- Bottom text -->
-      <div class="mt-8 pt-8 border-t border-slate-800 text-center">
-        <p class="text-sm text-slate-500">
-          Made with care for the Linux community
+      <div class="mt-8 pt-8 border-t border-slate-200 dark:border-slate-800 text-center">
+        <p class="text-sm text-slate-500 dark:text-slate-500 flex items-center justify-center gap-2">
+          Made with 
+          <svg class="w-4 h-4 text-red-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+          for the Linux community
         </p>
       </div>
     </div>
   </footer>
-  <!-- Copy to clipboard function -->
+
+  <!-- Scripts -->
   <script>
+    // ===== THEME TOGGLE =====
+    (function() {
+      const toggle = document.getElementById('theme-toggle');
+      const html = document.documentElement;
+      const metaThemeColor = document.getElementById('theme-color-meta');
+      
+      function setTheme(isDark) {
+        if (isDark) {
+          html.classList.add('dark');
+          metaThemeColor.content = '#0f172a';
+          toggle.setAttribute('aria-checked', 'true');
+        } else {
+          html.classList.remove('dark');
+          metaThemeColor.content = '#f8fafc';
+          toggle.setAttribute('aria-checked', 'false');
+        }
+        localStorage.setItem('vpn-manager-theme', isDark ? 'dark' : 'light');
+      }
+      
+      toggle.addEventListener('click', () => {
+        const isDark = !html.classList.contains('dark');
+        setTheme(isDark);
+      });
+      
+      // Handle keyboard
+      toggle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle.click();
+        }
+      });
+      
+      // Listen for system theme changes
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('vpn-manager-theme')) {
+          setTheme(e.matches);
+        }
+      });
+      
+      // Set initial aria-checked state
+      toggle.setAttribute('aria-checked', html.classList.contains('dark') ? 'true' : 'false');
+    })();
+    
+    // ===== SCROLL REVEAL =====
+    (function() {
+      const observerOptions = {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0.1
+      };
+      
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            // Optionally unobserve after revealing
+            // observer.unobserve(entry.target);
+          }
+        });
+      }, observerOptions);
+      
+      // Observe all reveal elements
+      document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale, .stagger-children').forEach(el => {
+        observer.observe(el);
+      });
+    })();
+    
+    // ===== COPY INSTALL COMMAND =====
     function copyInstallCommand(panelId) {
       const panel = document.getElementById(panelId);
       if (!panel) return;
@@ -703,42 +1364,32 @@
       const codeBlock = panel.querySelector('[data-install-cmd]');
       if (!codeBlock) return;
       
-      // Get plain text (strip HTML tags)
       const text = codeBlock.innerText;
       
-      // Copy to clipboard
       navigator.clipboard.writeText(text).then(() => {
-        // Find the copy button and show feedback
         const btn = panel.querySelector('.copy-btn');
         if (btn) {
           const originalSvg = btn.innerHTML;
-          btn.innerHTML = `<svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          btn.innerHTML = `<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
           </svg>`;
-          btn.classList.add('text-green-400');
           
-          // Reset after 2 seconds
           setTimeout(() => {
             btn.innerHTML = originalSvg;
-            btn.classList.remove('text-green-400');
           }, 2000);
         }
       }).catch(err => {
         console.error('Failed to copy:', err);
       });
     }
-  </script>
-  
-  <!-- Dynamic version and download script -->
-  <script>
+    
+    // ===== DYNAMIC VERSION & INSTALL COMMANDS =====
     (function() {
       const REPO = 'yllada/vpn-manager';
       const CACHE_KEY = 'vpn-manager-release';
-      const CACHE_TTL = 3600000; // 1 hour in ms
+      const CACHE_TTL = 3600000;
 
-      // Get cached release or fetch from API
       async function getLatestRelease() {
-        // Check cache first
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
           const { data, timestamp } = JSON.parse(cached);
@@ -747,13 +1398,11 @@
           }
         }
 
-        // Fetch from GitHub API
         try {
           const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
           if (!response.ok) throw new Error('API error');
           const data = await response.json();
           
-          // Cache the result
           localStorage.setItem(CACHE_KEY, JSON.stringify({
             data: {
               tag_name: data.tag_name,
@@ -773,37 +1422,31 @@
         }
       }
 
-      // Find specific asset by pattern
       function findAsset(assets, pattern) {
         return assets.find(a => a.name.includes(pattern));
       }
 
-      // Generate install commands for each distro
       function generateCommands(assets, version) {
-        const versionNum = version.replace('v', '');
-        const baseUrl = `https://github.com/${REPO}/releases/download/${version}`;
-        
-        // Find assets
         const debAsset = findAsset(assets, '.deb');
         const rpmAsset = findAsset(assets, '.rpm');
         const tarAsset = findAsset(assets, '.tar.gz');
         
         return {
           ubuntu: debAsset 
-            ? `<span class="text-slate-500"># Download and install VPN Manager ${version}</span>
+            ? `<span class="text-slate-400 dark:text-slate-500"># Download and install VPN Manager ${version}</span>
 <span class="text-gnome">wget</span> ${debAsset.browser_download_url}
 <span class="text-gnome">sudo</span> dpkg -i ${debAsset.name}
 
-<span class="text-slate-500"># Run</span>
+<span class="text-slate-400 dark:text-slate-500"># Run</span>
 vpn-manager`
             : generateTarballCommand(tarAsset, version),
             
           fedora: rpmAsset
-            ? `<span class="text-slate-500"># Download and install VPN Manager ${version}</span>
+            ? `<span class="text-slate-400 dark:text-slate-500"># Download and install VPN Manager ${version}</span>
 <span class="text-gnome">wget</span> ${rpmAsset.browser_download_url}
 <span class="text-gnome">sudo</span> dnf install ./${rpmAsset.name}
 
-<span class="text-slate-500"># Run</span>
+<span class="text-slate-400 dark:text-slate-500"># Run</span>
 vpn-manager`
             : generateTarballCommand(tarAsset, version),
             
@@ -812,31 +1455,27 @@ vpn-manager`
       }
       
       function generateTarballCommand(tarAsset, version) {
-        if (!tarAsset) return '<span class="text-slate-500"># No release available, build from source</span>';
-        return `<span class="text-slate-500"># Download and install VPN Manager ${version}</span>
+        if (!tarAsset) return '<span class="text-slate-400 dark:text-slate-500"># No release available, build from source</span>';
+        return `<span class="text-slate-400 dark:text-slate-500"># Download and install VPN Manager ${version}</span>
 <span class="text-gnome">wget</span> ${tarAsset.browser_download_url}
 <span class="text-gnome">tar</span> xzf ${tarAsset.name}
 <span class="text-gnome">sudo</span> mv vpn-manager /usr/local/bin/
 
-<span class="text-slate-500"># Run</span>
+<span class="text-slate-400 dark:text-slate-500"># Run</span>
 vpn-manager`;
       }
 
-      // Update the page with release info
       async function updatePage() {
         const release = await getLatestRelease();
         
-        // Update version badge
         const versionBadge = document.getElementById('version-badge');
         if (versionBadge) {
           versionBadge.textContent = release ? release.tag_name : 'Latest';
         }
 
-        // Update install commands if we have release data
         if (release && release.assets.length > 0) {
           const commands = generateCommands(release.assets, release.tag_name);
           
-          // Update each distro panel
           const ubuntuPanel = document.querySelector('#panel-ubuntu [data-install-cmd]');
           const fedoraPanel = document.querySelector('#panel-fedora [data-install-cmd]');
           const archPanel = document.querySelector('#panel-arch [data-install-cmd]');
@@ -847,11 +1486,39 @@ vpn-manager`;
         }
       }
 
-      // Run when DOM is ready
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', updatePage);
       } else {
         updatePage();
+      }
+    })();
+    
+    // ===== PARALLAX MOUSE EFFECT ON BLOBS =====
+    (function() {
+      const blobs = document.querySelectorAll('.blob');
+      let mouseX = 0, mouseY = 0;
+      let currentX = 0, currentY = 0;
+      
+      document.addEventListener('mousemove', (e) => {
+        mouseX = (e.clientX / window.innerWidth - 0.5) * 30;
+        mouseY = (e.clientY / window.innerHeight - 0.5) * 30;
+      });
+      
+      function animate() {
+        currentX += (mouseX - currentX) * 0.05;
+        currentY += (mouseY - currentY) * 0.05;
+        
+        blobs.forEach((blob, i) => {
+          const factor = (i + 1) * 0.5;
+          blob.style.transform = `translate(${currentX * factor}px, ${currentY * factor}px)`;
+        });
+        
+        requestAnimationFrame(animate);
+      }
+      
+      // Only run parallax on desktop
+      if (window.matchMedia('(min-width: 768px)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        animate();
       }
     })();
   </script>
