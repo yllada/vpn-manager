@@ -571,11 +571,11 @@ jobs:
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           
-          # Trust the key
-          KEY_ID=$(gpg --list-keys --keyid-format LONG "VPN Manager APT Repository" | grep -oP '(?<=rsa4096/)[A-F0-9]+')
-          echo "${KEY_ID}:6:" | gpg --import-ownertrust
+          # Trust the key using fingerprint
+          FINGERPRINT=$(gpg --list-keys --with-colons "VPN Manager APT Repository" | grep fpr | head -1 | cut -d: -f10)
+          echo "${FINGERPRINT}:6:" | gpg --import-ownertrust
           
-          echo "✅ GPG key imported and trusted"
+          echo "✅ GPG key imported and trusted (fingerprint: $FINGERPRINT)"
 
       - name: Update APT repository
         run: |
