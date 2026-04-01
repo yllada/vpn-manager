@@ -176,8 +176,10 @@ EOF
 echo "📦 Building RPM package..."
 cd "${BUILD_DIR}"
 
+# Use --nodeps to skip BuildRequires check (we're cross-building on Ubuntu, not Fedora)
 rpmbuild --define "_topdir ${BUILD_DIR}" \
          --define "_rpmdir ${BUILD_DIR}/RPMS" \
+         --nodeps \
          -bb "SPECS/${PKG_NAME}.spec"
 
 # Find and move the built RPM
