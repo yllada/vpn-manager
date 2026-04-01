@@ -178,6 +178,7 @@ jobs:
             gcc
             dpkg-dev
             rpm
+            desktop-file-utils
           version: ${{ env.APT_CACHE_VERSION }}
 
       - name: Download and verify Go dependencies
