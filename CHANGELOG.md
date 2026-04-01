@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.13.3] - 2026-04-01
+
+### Fixed
+- **APT Repository**: Fixed .deb packages not being included in the APT pool (gitignore issue)
+- **CI**: APT repo now triggers GitHub Pages deployment automatically after release
+
 ## [1.13.2] - 2026-04-01
 
 ### Fixed
