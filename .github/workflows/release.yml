@@ -602,11 +602,23 @@ jobs:
           
           if git diff --staged --quiet; then
             echo "No changes to APT repository"
+            echo "apt_updated=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore(apt): update repository for v${{ env.VERSION }}"
             git push
             echo "✅ APT repository updated and pushed"
+            echo "apt_updated=true" >> "$GITHUB_OUTPUT"
           fi
+        id: commit
+
+      - name: Trigger GitHub Pages deployment
+        if: steps.commit.outputs.apt_updated == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🚀 Triggering GitHub Pages deployment..."
+          gh workflow run pages.yml --ref main
+          echo "✅ Pages deployment triggered"
 
       - name: APT Repository summary
         run: |
