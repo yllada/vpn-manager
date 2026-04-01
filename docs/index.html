@@ -494,6 +494,7 @@
       display: none;
     }
     
+    #tab-apt:checked ~ #panel-apt,
     #tab-ubuntu:checked ~ #panel-ubuntu,
     #tab-fedora:checked ~ #panel-fedora,
     #tab-arch:checked ~ #panel-arch,
@@ -520,6 +521,7 @@
       border-radius: 1px;
     }
     
+    #tab-apt:checked ~ div label[for="tab-apt"]::after,
     #tab-ubuntu:checked ~ div label[for="tab-ubuntu"]::after,
     #tab-fedora:checked ~ div label[for="tab-fedora"]::after,
     #tab-arch:checked ~ div label[for="tab-arch"]::after,
@@ -527,6 +529,7 @@
       width: 80%;
     }
     
+    #tab-apt:checked ~ div label[for="tab-apt"],
     #tab-ubuntu:checked ~ div label[for="tab-ubuntu"],
     #tab-fedora:checked ~ div label[for="tab-fedora"],
     #tab-arch:checked ~ div label[for="tab-arch"],
@@ -1020,13 +1023,17 @@
         <!-- CSS-only tabs -->
         <div class="max-w-3xl mx-auto reveal-scale">
           <!-- Tab inputs (hidden) -->
-          <input type="radio" id="tab-ubuntu" name="install-tabs" class="hidden peer/ubuntu" checked>
+          <input type="radio" id="tab-apt" name="install-tabs" class="hidden peer/apt" checked>
+          <input type="radio" id="tab-ubuntu" name="install-tabs" class="hidden peer/ubuntu">
           <input type="radio" id="tab-fedora" name="install-tabs" class="hidden peer/fedora">
           <input type="radio" id="tab-arch" name="install-tabs" class="hidden peer/arch">
           <input type="radio" id="tab-source" name="install-tabs" class="hidden peer/source">
           
           <!-- Tab labels -->
           <div class="flex flex-wrap justify-center gap-2 mb-8" role="tablist" aria-label="Installation methods">
+            <label for="tab-apt" class="tab-label cursor-pointer px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 hover:scale-105" role="tab" tabindex="0">
+              🔄 APT Repo <span class="text-xs text-gnome ml-1">(Recommended)</span>
+            </label>
             <label for="tab-ubuntu" class="tab-label cursor-pointer px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 hover:scale-105" role="tab" tabindex="0">
               Ubuntu / Debian
             </label>
@@ -1042,6 +1049,39 @@
           </div>
           
           <!-- Tab panels -->
+          <!-- APT Repository panel (recommended) -->
+          <div id="panel-apt" class="tab-panel" role="tabpanel" aria-labelledby="tab-apt">
+            <div class="code-block bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-lg">
+              <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                <span class="text-sm text-slate-500 dark:text-slate-400 font-medium">APT Repository — Auto Updates via apt upgrade</span>
+                <div class="flex items-center gap-3">
+                  <button onclick="copyInstallCommand('panel-apt')" class="copy-btn text-slate-400 hover:text-gnome transition-colors p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg" title="Copy to clipboard">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                  </button>
+                  <div class="flex gap-1.5">
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                  </div>
+                </div>
+              </div>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Add VPN Manager APT repository (one-time setup)</span>
+<span class="text-gnome">curl</span> -fsSL https://yllada.github.io/vpn-manager/apt/gpg.key | <span class="text-gnome">sudo</span> gpg --dearmor -o /usr/share/keyrings/vpn-manager.gpg
+<span class="text-gnome">echo</span> <span class="text-amber-600 dark:text-amber-400">"deb [signed-by=/usr/share/keyrings/vpn-manager.gpg] https://yllada.github.io/vpn-manager/apt stable main"</span> | <span class="text-gnome">sudo</span> tee /etc/apt/sources.list.d/vpn-manager.list
+
+<span class="text-slate-400 dark:text-slate-500"># Install VPN Manager</span>
+<span class="text-gnome">sudo</span> apt update && <span class="text-gnome">sudo</span> apt install vpn-manager
+
+<span class="text-slate-400 dark:text-slate-500"># Future updates: just run apt upgrade!</span>
+<span class="text-gnome">sudo</span> apt update && <span class="text-gnome">sudo</span> apt upgrade</code></pre>
+            </div>
+            <p class="text-sm text-slate-500 mt-4 text-center">
+              ✨ Automatic updates with <code class="text-gnome bg-gnome/10 px-2 py-0.5 rounded">apt upgrade</code> — Ubuntu 24.04+, Debian 12+
+            </p>
+          </div>
+          
           <!-- Ubuntu panel -->
           <div id="panel-ubuntu" class="tab-panel" role="tabpanel" aria-labelledby="tab-ubuntu">
             <div class="code-block bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-lg">

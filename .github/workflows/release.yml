@@ -534,6 +534,95 @@ jobs:
           echo "[View Release](https://github.com/${{ github.repository }}/releases/tag/v${{ env.VERSION }})" >> "$GITHUB_STEP_SUMMARY"
 
   # =============================================================================
+  # Update APT Repository for automatic updates via apt upgrade
+  # =============================================================================
+  update-apt-repo:
+    name: Update APT Repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate, build, release]
+    if: ${{ github.event.inputs.dry_run != 'true' && needs.validate.outputs.is_prerelease != 'true' }}
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: artifacts
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev gpg
+
+      - name: Import GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          
+          # Trust the key
+          KEY_ID=$(gpg --list-keys --keyid-format LONG "VPN Manager APT Repository" | grep -oP '(?<=rsa4096/)[A-F0-9]+')
+          echo "${KEY_ID}:6:" | gpg --import-ownertrust
+          
+          echo "✅ GPG key imported and trusted"
+
+      - name: Update APT repository
+        run: |
+          chmod +x scripts/update-apt-repo.sh
+          
+          # Find the .deb file
+          DEB_FILE=$(find artifacts -name "*.deb" | head -1)
+          
+          if [[ -z "$DEB_FILE" ]]; then
+            echo "::error::No .deb file found in artifacts"
+            exit 1
+          fi
+          
+          echo "📦 Updating APT repo with: $DEB_FILE"
+          ./scripts/update-apt-repo.sh "$DEB_FILE"
+
+      - name: Commit and push APT repository changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add docs/apt/
+          
+          if git diff --staged --quiet; then
+            echo "No changes to APT repository"
+          else
+            git commit -m "chore(apt): update repository for v${{ env.VERSION }}"
+            git push
+            echo "✅ APT repository updated and pushed"
+          fi
+
+      - name: APT Repository summary
+        run: |
+          echo "## 📦 APT Repository Updated" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Version **v${{ env.VERSION }}** is now available via apt!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Installation" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "# Add repository (one-time setup)" >> "$GITHUB_STEP_SUMMARY"
+          echo "curl -fsSL https://yllada.github.io/vpn-manager/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/vpn-manager.gpg" >> "$GITHUB_STEP_SUMMARY"
+          echo 'echo "deb [signed-by=/usr/share/keyrings/vpn-manager.gpg] https://yllada.github.io/vpn-manager/apt stable main" | sudo tee /etc/apt/sources.list.d/vpn-manager.list' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "# Install/Update" >> "$GITHUB_STEP_SUMMARY"
+          echo "sudo apt update && sudo apt install vpn-manager" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # =============================================================================
   # Post-Release Verification (optional)
   # =============================================================================
   verify:
