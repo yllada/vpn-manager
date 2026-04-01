@@ -42,8 +42,9 @@ coverage.html
 *.crt
 !configs/*.example
 !configs/config.yaml.example
-# APT repository public key (safe to commit)
+# APT repository files (safe to commit)
 !docs/apt/gpg.key
+!docs/apt/pool/**/*.deb
 
 # =============================================================================
 # Sistema operativo
