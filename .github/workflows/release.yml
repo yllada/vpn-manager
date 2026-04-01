@@ -545,6 +545,7 @@ jobs:
     if: ${{ github.event.inputs.dry_run != 'true' && needs.validate.outputs.is_prerelease != 'true' }}
     permissions:
       contents: write
+      actions: write  # Required to trigger Pages workflow
     env:
       VERSION: ${{ needs.validate.outputs.version }}
     steps:
