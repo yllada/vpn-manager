@@ -35,7 +35,7 @@ env:
   GO_VERSION: '1.26.1'
   APP_NAME: 'vpn-manager'
   # Cache keys for reproducibility
-  APT_CACHE_VERSION: 'v1'
+  APT_CACHE_VERSION: 'v2'
 
 # Minimal permissions at workflow level - jobs override as needed
 permissions:
