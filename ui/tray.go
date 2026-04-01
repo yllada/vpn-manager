@@ -10,6 +10,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -295,11 +296,13 @@ func (t *TrayIndicator) stopUptimeCounter() {
 	})
 }
 
-// disconnectCurrent disconnects the active VPN connection.
+// disconnectCurrent disconnects ALL active VPN connections (OpenVPN, Tailscale, WireGuard).
 func (t *TrayIndicator) disconnectCurrent() {
-	profiles := t.app.vpnManager.ProfileManager().List()
 	allDisconnected := true
+	ctx := context.Background()
 
+	// 1. Disconnect OpenVPN profiles (managed via ProfileManager)
+	profiles := t.app.vpnManager.ProfileManager().List()
 	for _, profile := range profiles {
 		if conn, exists := t.app.vpnManager.GetConnection(profile.ID); exists {
 			status := conn.GetStatus()
@@ -308,7 +311,6 @@ func (t *TrayIndicator) disconnectCurrent() {
 				if err := t.app.vpnManager.Disconnect(profileID); err != nil {
 					app.LogError("tray", "Disconnect failed for %s: %v", profile.Name, err)
 					allDisconnected = false
-					// Don't update UI to disconnected - the VPN is still running!
 					continue
 				}
 
@@ -317,6 +319,46 @@ func (t *TrayIndicator) disconnectCurrent() {
 					if t.app.window != nil && t.app.window.openvpnPanel != nil {
 						t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusDisconnected)
 						t.app.window.openvpnPanel.UpdateStatus(false, "")
+					}
+				})
+			}
+		}
+	}
+
+	// 2. Disconnect Tailscale (uses its own provider, not ProfileManager)
+	if provider, ok := t.app.vpnManager.GetProvider(app.ProviderTailscale); ok {
+		status, err := provider.Status(ctx)
+		if err == nil && status.Connected {
+			if err := provider.Disconnect(ctx, nil); err != nil {
+				app.LogError("tray", "Tailscale disconnect failed: %v", err)
+				allDisconnected = false
+			} else {
+				app.LogInfo("tray", "Tailscale disconnected from tray")
+				NotifyDisconnected("Tailscale")
+				// Update Tailscale panel UI
+				glib.IdleAdd(func() {
+					if t.app.window != nil && t.app.window.tailscalePanel != nil {
+						t.app.window.tailscalePanel.updateStatus()
+					}
+				})
+			}
+		}
+	}
+
+	// 3. Disconnect WireGuard (uses its own provider, not ProfileManager)
+	if provider, ok := t.app.vpnManager.GetProvider(app.ProviderWireGuard); ok {
+		status, err := provider.Status(ctx)
+		if err == nil && status.Connected {
+			if err := provider.Disconnect(ctx, nil); err != nil {
+				app.LogError("tray", "WireGuard disconnect failed: %v", err)
+				allDisconnected = false
+			} else {
+				app.LogInfo("tray", "WireGuard disconnected from tray")
+				NotifyDisconnected("WireGuard")
+				// Update WireGuard panel UI
+				glib.IdleAdd(func() {
+					if t.app.window != nil && t.app.window.wireguardPanel != nil {
+						t.app.window.wireguardPanel.RefreshStatus()
 					}
 				})
 			}
