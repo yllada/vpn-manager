@@ -129,26 +129,34 @@ func (m *Manager) Disconnect(profileID string) error {
 			}
 		} else {
 			// Classic OpenVPN: the process runs as root via pkexec
-			// Combine all kill commands into a single pkexec call to avoid multiple password prompts
-			var killScript string
+			var pkillErr, killallErr error
+
 			if configPath != "" {
+				// Try to kill the specific OpenVPN process by pattern
+				// Using direct pkill without shell wrapper for security
 				pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
-				// Try specific pattern first, then fallback to killall
-				killScript = fmt.Sprintf("pkill -f '%s' 2>/dev/null; killall -q openvpn 2>/dev/null; exit 0", pattern)
-			} else {
-				killScript = "killall -q openvpn 2>/dev/null; exit 0"
+				cmd := exec.Command("pkexec", "pkill", "-f", pattern)
+				pkillErr = cmd.Run()
+				if pkillErr != nil {
+					app.LogDebug("vpn", "pkill pattern failed: %v", pkillErr)
+				}
 			}
-			cmd := exec.Command("pkexec", "sh", "-c", killScript)
-			if err := cmd.Run(); err != nil {
+
+			// Fallback: kill all openvpn processes
+			// This ensures cleanup even if the pattern match failed
+			cmd := exec.Command("pkexec", "killall", "-q", "openvpn")
+			killallErr = cmd.Run()
+			if killallErr != nil {
 				// Check if user cancelled the auth dialog
-				if exitErr, ok := err.(*exec.ExitError); ok {
+				if exitErr, ok := killallErr.(*exec.ExitError); ok {
 					exitCode := exitErr.ExitCode()
 					if exitCode == 126 || exitCode == 127 {
 						app.LogWarn("vpn", "Authentication cancelled by user during disconnect")
 						return app.NewVPNError(app.ErrCodeAuthFailed, "disconnect cancelled by user")
 					}
 				}
-				app.LogDebug("vpn", "kill openvpn failed: %v", err)
+				// killall returns error if no process found, which is OK
+				app.LogDebug("vpn", "killall openvpn: %v", killallErr)
 			}
 
 			// Also kill the parent pkexec process (no pkexec needed - we own this process)

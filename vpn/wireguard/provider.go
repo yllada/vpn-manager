@@ -479,6 +479,7 @@ func (p *Provider) LoadProfiles() ([]*Profile, error) {
 }
 
 // ImportProfile imports a WireGuard configuration file.
+// SECURITY: Sanitizes the filename to prevent path traversal and shell injection.
 func (p *Provider) ImportProfile(configPath string) (*Profile, error) {
 	// Validate the config first
 	profile, err := LoadProfile(configPath)
@@ -486,8 +487,17 @@ func (p *Provider) ImportProfile(configPath string) (*Profile, error) {
 		return nil, fmt.Errorf("invalid WireGuard config: %w", err)
 	}
 
-	// Copy to profile directory
-	destPath := filepath.Join(p.profileDir, filepath.Base(configPath))
+	// SECURITY: Sanitize the filename for safe use with wg-quick
+	// wg-quick uses the filename (without .conf) as the interface name
+	// Interface names must be <= 15 chars and contain only alphanumeric, hyphen, underscore
+	originalName := filepath.Base(configPath)
+	safeName := sanitizeWireGuardFilename(originalName)
+	if safeName == "" {
+		return nil, fmt.Errorf("invalid config filename: cannot be sanitized to a valid interface name")
+	}
+
+	// Copy to profile directory with sanitized name
+	destPath := filepath.Join(p.profileDir, safeName)
 
 	// Check if profile already exists
 	if _, err := os.Stat(destPath); err == nil {
@@ -505,11 +515,44 @@ func (p *Provider) ImportProfile(configPath string) (*Profile, error) {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// Update profile path
+	// Update profile path and interface name with sanitized values
 	profile.ConfigPath = destPath
+	profile.InterfaceName = strings.TrimSuffix(safeName, ".conf")
 
-	app.LogDebug("wireguard", "Imported profile %s", profile.Name())
+	app.LogDebug("wireguard", "Imported profile %s (sanitized: %s)", profile.Name(), safeName)
 	return profile, nil
+}
+
+// sanitizeWireGuardFilename sanitizes a filename for safe use with wg-quick.
+// Returns empty string if the filename cannot be made safe.
+func sanitizeWireGuardFilename(filename string) string {
+	// Remove extension if present
+	name := strings.TrimSuffix(filename, ".conf")
+	if name == "" {
+		return ""
+	}
+
+	// Build sanitized name: only allow alphanumeric, hyphen, underscore
+	var sanitized strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			sanitized.WriteRune(r)
+		}
+		// Skip other characters
+	}
+
+	result := sanitized.String()
+	if result == "" {
+		return ""
+	}
+
+	// Linux interface names have a 15 character limit
+	// Reserve some space, limit to 12 chars
+	if len(result) > 12 {
+		result = result[:12]
+	}
+
+	return result + ".conf"
 }
 
 // DeleteProfile removes a WireGuard profile.
