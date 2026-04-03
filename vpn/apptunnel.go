@@ -632,7 +632,11 @@ func isValidInterfaceName(name string) bool {
 		return false
 	}
 	for _, c := range name {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+		isLower := c >= 'a' && c <= 'z'
+		isUpper := c >= 'A' && c <= 'Z'
+		isDigit := c >= '0' && c <= '9'
+		isValid := isLower || isUpper || isDigit || c == '_' || c == '-'
+		if !isValid {
 			return false
 		}
 	}
@@ -645,22 +649,15 @@ func isValidIPAddress(ip string) bool {
 		return false
 	}
 	for _, c := range ip {
-		if !((c >= '0' && c <= '9') || c == '.' || c == ':' || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		isDigit := c >= '0' && c <= '9'
+		isHexLower := c >= 'a' && c <= 'f'
+		isHexUpper := c >= 'A' && c <= 'F'
+		isValid := isDigit || c == '.' || c == ':' || isHexLower || isHexUpper
+		if !isValid {
 			return false
 		}
 	}
 	return true
-}
-
-// runPrivileged runs a command with elevated privileges.
-func runPrivileged(name string, args ...string) error {
-	fullArgs := append([]string{name}, args...)
-	cmd := exec.Command("pkexec", fullArgs...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %v - %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-	return nil
 }
 
 // runPrivilegedScript runs a bash script with elevated privileges (single pkexec call).
