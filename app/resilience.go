@@ -131,13 +131,18 @@ func (cb *CircuitBreaker) Allow() error {
 		return ErrCircuitOpen
 
 	case CircuitHalfOpen:
-		// Allow limited concurrent requests
-		current := atomic.LoadInt32(&cb.halfOpenRequests)
-		if current >= int32(cb.config.MaxConcurrentHalfOpen) {
-			return ErrCircuitHalfOpen
+		// Atomically check-and-increment to prevent exceeding MaxConcurrentHalfOpen
+		maxAllowed := int32(cb.config.MaxConcurrentHalfOpen)
+		for {
+			current := atomic.LoadInt32(&cb.halfOpenRequests)
+			if current >= maxAllowed {
+				return ErrCircuitHalfOpen
+			}
+			if atomic.CompareAndSwapInt32(&cb.halfOpenRequests, current, current+1) {
+				return nil
+			}
+			// CAS failed, retry
 		}
-		atomic.AddInt32(&cb.halfOpenRequests, 1)
-		return nil
 	}
 
 	return nil

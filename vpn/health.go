@@ -265,8 +265,10 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 
 		// Trigger auto-reconnect if unhealthy
 		if health.State == HealthUnhealthy && hc.config.AutoReconnect {
+			// Capture profileID only - re-fetch connection/health inside goroutine under lock
+			pid := profileID
 			app.SafeGoWithName("health-auto-reconnect", func() {
-				hc.attemptReconnect(conn, health)
+				hc.attemptReconnect(pid)
 			})
 		}
 	}
@@ -289,31 +291,48 @@ func (hc *HealthChecker) testConnectivity() (time.Duration, error) {
 }
 
 // attemptReconnect attempts to reconnect a failed connection.
-func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHealth) {
+// Takes profileID and fetches connection/health inside under proper lock protection.
+func (hc *HealthChecker) attemptReconnect(profileID string) {
+	// Fetch connection and health under lock
+	hc.mu.Lock()
+	health, healthExists := hc.connectionHealth[profileID]
+	if !healthExists {
+		hc.mu.Unlock()
+		app.LogWarn("No health record found for profile %s during reconnect", profileID)
+		return
+	}
+
 	if hc.config.MaxReconnectAttempts > 0 && health.ReconnectAttempts >= hc.config.MaxReconnectAttempts {
-		app.LogError("Max reconnect attempts reached for %s", conn.Profile.Name)
+		hc.mu.Unlock()
+		app.LogError("Max reconnect attempts reached for profile %s", profileID)
 		if hc.onReconnectFailed != nil {
-			hc.onReconnectFailed(conn.Profile.ID, app.ErrConnectionFailed)
+			hc.onReconnectFailed(profileID, app.ErrConnectionFailed)
 		}
 		return
 	}
 
-	hc.mu.Lock()
 	health.ReconnectAttempts++
 	attempt := health.ReconnectAttempts
 	hc.mu.Unlock()
 
+	// Fetch connection from manager (outside health checker lock)
+	conn, exists := hc.manager.GetConnection(profileID)
+	if !exists {
+		app.LogWarn("Connection not found for profile %s during reconnect", profileID)
+		return
+	}
+
 	app.LogInfo("Attempting reconnect for %s (attempt %d)", conn.Profile.Name, attempt)
 
 	if hc.onReconnecting != nil {
-		hc.onReconnecting(conn.Profile.ID, attempt)
+		hc.onReconnecting(profileID, attempt)
 	}
 
 	// Wait before reconnecting
 	time.Sleep(hc.config.ReconnectDelay)
 
 	// Check if we should still reconnect (connection might have been manually disconnected)
-	currentConn, exists := hc.manager.GetConnection(conn.Profile.ID)
+	currentConn, exists := hc.manager.GetConnection(profileID)
 	if !exists || currentConn.Status == StatusDisconnected {
 		app.LogInfo("Connection was disconnected, skipping reconnect for %s", conn.Profile.Name)
 		return
@@ -336,7 +355,9 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 
 		// Reset reconnect attempts since user will manually reconnect
 		hc.mu.Lock()
-		health.ReconnectAttempts = 0
+		if h, ok := hc.connectionHealth[profileID]; ok {
+			h.ReconnectAttempts = 0
+		}
 		hc.mu.Unlock()
 
 		// Notify UI that OTP is required for reconnection
@@ -386,14 +407,17 @@ func (hc *HealthChecker) attemptReconnect(conn *Connection, health *ConnectionHe
 		app.LogError("Reconnect failed for %s: %v", profile.Name, err)
 
 		hc.mu.Lock()
-		if health.ReconnectAttempts < hc.config.MaxReconnectAttempts || hc.config.MaxReconnectAttempts == 0 {
+		currentHealth, ok := hc.connectionHealth[profileID]
+		canRetry := ok && (currentHealth.ReconnectAttempts < hc.config.MaxReconnectAttempts || hc.config.MaxReconnectAttempts == 0)
+		hc.mu.Unlock()
+
+		if canRetry {
 			// Schedule another attempt
-			hc.mu.Unlock()
+			pid := profileID
 			app.SafeGoWithName("health-reconnect-retry", func() {
-				hc.attemptReconnect(conn, health)
+				hc.attemptReconnect(pid)
 			})
 		} else {
-			hc.mu.Unlock()
 			if hc.onReconnectFailed != nil {
 				hc.onReconnectFailed(profile.ID, err)
 			}

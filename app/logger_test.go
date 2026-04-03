@@ -156,8 +156,10 @@ func TestLogRotation(t *testing.T) {
 		maxBackups:  2,
 	}
 
-	// Should trigger rotation
-	logger.rotateIfNeeded(logFile)
+	// Should trigger rotation - must hold lock when calling rotateIfNeededLocked
+	logger.mu.Lock()
+	logger.rotateIfNeededLocked(logFile)
+	logger.mu.Unlock()
 
 	// Check that original file was rotated
 	info, err := os.Stat(logFile)

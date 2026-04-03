@@ -84,6 +84,7 @@ type ShutdownManager struct {
 	timeout      time.Duration
 	cancelFunc   context.CancelFunc
 	shutdownOnce sync.Once
+	closeOnce    sync.Once // Ensures completedCh is closed only once
 
 	// Active goroutine tracking
 	wg        sync.WaitGroup
@@ -303,7 +304,7 @@ done:
 	}
 
 	sm.setPhase(PhaseCompleted)
-	close(sm.completedCh)
+	sm.closeOnce.Do(func() { close(sm.completedCh) })
 
 	LogInfo("Shutdown: Complete")
 	return errors.Combined()
@@ -318,13 +319,8 @@ func (sm *ShutdownManager) ForceShutdown() {
 		sm.cancelFunc()
 	}
 
-	// Safe close - check if already closed
-	select {
-	case <-sm.completedCh:
-		// Already closed, do nothing
-	default:
-		close(sm.completedCh)
-	}
+	// Use sync.Once to ensure channel is closed exactly once
+	sm.closeOnce.Do(func() { close(sm.completedCh) })
 }
 
 // InstallSignalHandlers sets up OS signal handlers for graceful shutdown.

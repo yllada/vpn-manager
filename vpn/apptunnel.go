@@ -177,11 +177,36 @@ func (at *AppTunnel) SetSplitDNS(enabled bool, vpnDNS []string, systemDNS string
 
 // Enable activates per-app tunneling for the given VPN interface.
 func (at *AppTunnel) Enable(vpnInterface, vpnGateway string) error {
+	// Security: validate inputs before using them in shell scripts
+	if !isValidInterfaceName(vpnInterface) {
+		return fmt.Errorf("invalid VPN interface name: %s", vpnInterface)
+	}
+	if !isValidIPAddress(vpnGateway) {
+		return fmt.Errorf("invalid VPN gateway address: %s", vpnGateway)
+	}
+
 	at.mu.Lock()
 	defer at.mu.Unlock()
 
 	if at.enabled {
 		return nil
+	}
+
+	// Validate cgroup path
+	if !isValidShellValue(at.cgroupPath) {
+		return fmt.Errorf("invalid cgroup path: %s", at.cgroupPath)
+	}
+
+	// Validate DNS servers if split DNS is enabled
+	if at.splitDNSEnabled {
+		for _, dns := range at.vpnDNS {
+			if !isValidIPAddress(dns) {
+				return fmt.Errorf("invalid VPN DNS address: %s", dns)
+			}
+		}
+		if at.systemDNS != "" && !isValidIPAddress(at.systemDNS) {
+			return fmt.Errorf("invalid system DNS address: %s", at.systemDNS)
+		}
 	}
 
 	at.vpnInterface = vpnInterface
@@ -459,7 +484,15 @@ func (at *AppTunnel) AddProcessToCgroup(pid int) error {
 	}
 
 	procsPath := cgroupPath + "/cgroup.procs"
-	return runPrivileged("sh", "-c", fmt.Sprintf("echo %d > %s", pid, procsPath))
+
+	// Security: validate path to prevent path traversal
+	if !isValidCgroupPath(procsPath) {
+		return fmt.Errorf("invalid cgroup path: %s", procsPath)
+	}
+
+	// Write directly instead of using shell to prevent command injection
+	pidStr := strconv.Itoa(pid) + "\n"
+	return os.WriteFile(procsPath, []byte(pidStr), 0644)
 }
 
 // ListInstalledApps returns a list of installed GUI applications.
@@ -554,6 +587,69 @@ func parseDesktopFile(path string) (AppConfig, error) {
 	}
 
 	return app, nil
+}
+
+// shellMetachars contains characters that can be used for shell injection
+var shellMetachars = []byte{'$', ';', '|', '&', '>', '<', '`', '\'', '"', '\n', '\r', '(', ')', '{', '}', '[', ']', '!', '*', '?', '~', '#'}
+
+// isValidCgroupPath validates that a cgroup path is safe and doesn't contain shell metacharacters
+func isValidCgroupPath(path string) bool {
+	// Must be absolute and under /sys/fs/cgroup
+	if !strings.HasPrefix(path, "/sys/fs/cgroup/") {
+		return false
+	}
+	// Check for shell metacharacters
+	for _, c := range shellMetachars {
+		if strings.ContainsRune(path, rune(c)) {
+			return false
+		}
+	}
+	// Check for path traversal
+	if strings.Contains(path, "..") {
+		return false
+	}
+	return true
+}
+
+// isValidShellValue validates that a value is safe to use in shell scripts
+// Returns false if the value contains shell metacharacters that could enable injection
+func isValidShellValue(value string) bool {
+	for _, c := range shellMetachars {
+		if strings.ContainsRune(value, rune(c)) {
+			return false
+		}
+	}
+	// Check for path traversal
+	if strings.Contains(value, "..") {
+		return false
+	}
+	return true
+}
+
+// isValidInterfaceName validates network interface names (alphanumeric, underscore, hyphen only)
+func isValidInterfaceName(name string) bool {
+	if name == "" || len(name) > 15 {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// isValidIPAddress validates IPv4/IPv6 addresses (digits, dots, colons only)
+func isValidIPAddress(ip string) bool {
+	if ip == "" {
+		return false
+	}
+	for _, c := range ip {
+		if !((c >= '0' && c <= '9') || c == '.' || c == ':' || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // runPrivileged runs a command with elevated privileges.

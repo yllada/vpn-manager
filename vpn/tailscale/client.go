@@ -7,10 +7,23 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/yllada/vpn-manager/app"
 )
+
+// pingTargetPattern matches valid ping/whois targets.
+// Allows alphanumeric, dots, hyphens, colons (IPv6), and underscores.
+var pingTargetPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:\-]*$`)
+
+// isValidPingTarget validates that a target string is safe for use in Ping/WhoIs commands.
+func isValidPingTarget(target string) bool {
+	if target == "" || len(target) > 253 {
+		return false
+	}
+	return pingTargetPattern.MatchString(target)
+}
 
 // Client wraps the tailscale CLI.
 type Client struct {
@@ -374,6 +387,11 @@ func (c *Client) NetCheck(ctx context.Context) (string, error) {
 
 // Ping pings a Tailscale peer.
 func (c *Client) Ping(ctx context.Context, target string, count int) (string, error) {
+	// Validate target to prevent command injection
+	if !isValidPingTarget(target) {
+		return "", fmt.Errorf("invalid ping target: %q", target)
+	}
+
 	args := []string{"ping", "--c", fmt.Sprintf("%d", count), target}
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
@@ -387,6 +405,11 @@ func (c *Client) Ping(ctx context.Context, target string, count int) (string, er
 
 // WhoIs returns information about a Tailscale node.
 func (c *Client) WhoIs(ctx context.Context, target string) (string, error) {
+	// Validate target to prevent command injection
+	if !isValidPingTarget(target) {
+		return "", fmt.Errorf("invalid whois target: %q", target)
+	}
+
 	cmd := exec.CommandContext(ctx, c.binaryPath, "whois", target)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

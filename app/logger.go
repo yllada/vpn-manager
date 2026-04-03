@@ -157,16 +157,17 @@ func (l *AppLogger) EnableFileLogging() error {
 		return fmt.Errorf("security error: log file is a symlink")
 	}
 
-	// Check if rotation is needed before opening
-	l.rotateIfNeeded(logPath)
+	// Acquire lock BEFORE rotation check to prevent race conditions
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Check if rotation is needed (now inside locked section)
+	l.rotateIfNeededLocked(logPath)
 
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return err
 	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	// Close previous file if exists
 	if l.logFile != nil {
@@ -180,8 +181,9 @@ func (l *AppLogger) EnableFileLogging() error {
 	return nil
 }
 
-// rotateIfNeeded checks if the log file needs rotation and performs it.
-func (l *AppLogger) rotateIfNeeded(logPath string) {
+// rotateIfNeededLocked checks if the log file needs rotation and performs it.
+// MUST be called with l.mu held.
+func (l *AppLogger) rotateIfNeededLocked(logPath string) {
 	info, err := os.Stat(logPath)
 	if err != nil {
 		return // File doesn't exist yet
@@ -191,20 +193,23 @@ func (l *AppLogger) rotateIfNeeded(logPath string) {
 		return // No rotation needed
 	}
 
-	l.rotate(logPath)
+	l.rotateLocked(logPath)
 }
 
-// rotate performs log rotation:
+// rotateLocked performs log rotation:
 // 1. Compress the current log file
 // 2. Remove old backups exceeding maxBackups
-func (l *AppLogger) rotate(logPath string) {
-	// Close current file if open
-	l.mu.Lock()
+// MUST be called with l.mu held. Temporarily releases lock for file operations.
+func (l *AppLogger) rotateLocked(logPath string) {
+	// Close current file if open (already holding lock)
 	if l.logFile != nil {
 		_ = l.logFile.Close()
 		l.logFile = nil
 	}
+
+	// Release lock for file operations (compression can be slow)
 	l.mu.Unlock()
+	defer l.mu.Lock()
 
 	// Create rotated filename with timestamp
 	timestamp := time.Now().Format("20060102-150405")
@@ -403,10 +408,18 @@ func CloseLogger() error {
 // CheckRotation checks if log rotation is needed and performs it.
 // Can be called periodically from long-running processes.
 func (l *AppLogger) CheckRotation() {
-	if l.filePath != "" {
-		l.rotateIfNeeded(l.filePath)
+	l.mu.Lock()
+	filePath := l.filePath
+	l.mu.Unlock()
+
+	if filePath != "" {
+		l.mu.Lock()
+		l.rotateIfNeededLocked(filePath)
+		needsReopen := l.logFile == nil
+		l.mu.Unlock()
+
 		// Reopen the log file after rotation
-		if l.logFile == nil {
+		if needsReopen {
 			_ = l.EnableFileLogging()
 		}
 	}

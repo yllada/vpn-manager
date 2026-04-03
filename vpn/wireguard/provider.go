@@ -39,6 +39,7 @@ type Connection struct {
 
 	mu       sync.RWMutex
 	stopChan chan struct{}
+	stopOnce sync.Once // Ensures stopChan is closed only once
 }
 
 // GetStats returns thread-safe access to connection statistics.
@@ -363,7 +364,10 @@ func (p *Provider) disconnectOne(conn *Connection) {
 	conn.Status = StatusDisconnecting
 	conn.mu.Unlock()
 
-	close(conn.stopChan)
+	// Use sync.Once to ensure channel is closed only once (prevents panic from double-close)
+	conn.stopOnce.Do(func() {
+		close(conn.stopChan)
+	})
 
 	// Use wg-quick down
 	var cmd *exec.Cmd

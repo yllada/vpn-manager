@@ -168,9 +168,15 @@ func (c *Client) loginWithPkexec(ctx context.Context, authKey string) (string, e
 		return url, nil
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
+		// Close pipes to unblock scanner goroutines (prevents goroutine leak)
+		_ = stdout.Close()
+		_ = stderr.Close()
 		return "", ctx.Err()
 	case <-time.After(30 * time.Second):
 		_ = cmd.Process.Kill()
+		// Close pipes to unblock scanner goroutines (prevents goroutine leak)
+		_ = stdout.Close()
+		_ = stderr.Close()
 		return "", fmt.Errorf("timeout waiting for auth URL")
 	}
 }

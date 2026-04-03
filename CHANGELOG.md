@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.14.0] - 2026-04-03
+
+### Security
+- **Critical**: Fixed command injection vulnerabilities in app tunneling (cgroup path, shell script execution)
+- **Critical**: Fixed command injection in Tailscale taildrop file transfers (filePath, target validation)
+- **Critical**: Fixed command injection in Tailscale ping/whois commands (target validation)
+- **Critical**: Fixed potential panic from double-close on shutdown channel
+- **Critical**: Fixed race condition in circuit breaker half-open state
+- **Critical**: Fixed data race in health check reconnection (pointer passed to goroutine without sync)
+- **Critical**: Fixed log rotation race condition (rotation check outside lock)
+- **Critical**: Fixed potential panic from double-close in WireGuard provider disconnect
+- **Critical**: Fixed goroutine leak in Tailscale pkexec authentication (pipes not closed after kill)
+
+### Changed
+- App tunneling now validates all inputs (interface names, IPs, paths) before shell execution
+- Taildrop validates file paths exist and are regular files before transfer
+- Ping/WhoIs validate targets match safe hostname/IP patterns
+- Added `sync.Once` guards for channel closures across the codebase
+- Health monitor now re-fetches connection data under lock inside goroutines
+- Log rotation check moved inside mutex-protected section
+
 ## [1.13.3] - 2026-04-01
 
 ### Fixed
