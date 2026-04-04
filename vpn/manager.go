@@ -453,9 +453,15 @@ func (m *Manager) SetTrustEnabled(enabled bool) error {
 // handleNetworkChanged handles network change events from the NetworkMonitor.
 // It evaluates the network against trust rules and takes appropriate action.
 func (m *Manager) handleNetworkChanged(event *app.Event) {
-	data, ok := event.Data.(*app.NetworkChangedData)
-	if !ok {
-		app.LogWarn("trust", "Invalid event data type for network changed")
+	// Accept both pointer and value types for NetworkChangedData
+	var data *app.NetworkChangedData
+	switch d := event.Data.(type) {
+	case *app.NetworkChangedData:
+		data = d
+	case app.NetworkChangedData:
+		data = &d
+	default:
+		app.LogWarn("trust", "Invalid event data type for network changed: %T", event.Data)
 		return
 	}
 
@@ -609,11 +615,19 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		password := ""
 		if profile.SavePassword {
 			savedPassword, keyErr := keyring.Get(profile.ID)
-			if keyErr == nil && savedPassword != "" {
-				password = savedPassword
-			} else {
-				app.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring", profile.Name)
+			if keyErr != nil || savedPassword == "" {
+				app.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring, prompting for auth", profile.Name)
+				// Emit auth required event to prompt user instead of connecting with empty password
+				app.Emit(app.EventTrustAuthRequired, "TrustManager", app.TrustAuthRequiredData{
+					SSID:        net.SSID,
+					ProfileID:   actualID,
+					ProfileName: profile.Name,
+					Username:    profile.Username,
+					NeedsOTP:    false,
+				})
+				return // Don't report as failure - UI will handle auth flow
 			}
+			password = savedPassword
 		}
 
 		// Connect using stored credentials

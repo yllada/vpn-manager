@@ -23,6 +23,9 @@ type Application struct {
 	config     *app.Config
 	version    string
 	tray       *TrayIndicator
+
+	// Event subscriptions for cleanup
+	trustAuthSubscription *app.Subscription
 }
 
 // NewApplication creates a new application.
@@ -101,7 +104,7 @@ func (a *Application) onActivate() {
 	}
 
 	// Subscribe to trust auth required events (OTP needed during auto-connect)
-	app.On(app.EventTrustAuthRequired, func(event *app.Event) {
+	a.trustAuthSubscription = app.On(app.EventTrustAuthRequired, func(event *app.Event) {
 		app.LogInfo("UI received EventTrustAuthRequired event")
 		if data, ok := event.Data.(app.TrustAuthRequiredData); ok {
 			app.LogInfo("EventTrustAuthRequired data: SSID=%s, ProfileID=%s, NeedsOTP=%v",
@@ -199,6 +202,12 @@ func (a *Application) showWindow() {
 // Cleanup stops all background goroutines before shutdown.
 // MUST be called before Quit() to prevent memory leaks.
 func (a *Application) Cleanup() {
+	// Unsubscribe from event bus
+	if a.trustAuthSubscription != nil {
+		a.trustAuthSubscription.Unsubscribe()
+		a.trustAuthSubscription = nil
+	}
+
 	if a.window != nil {
 		if a.window.tailscalePanel != nil {
 			a.window.tailscalePanel.StopUpdates()
@@ -353,12 +362,14 @@ func (a *Application) handleTrustAuthRequired(data app.TrustAuthRequiredData) {
 			// Show OTP dialog via OpenVPN panel
 			if a.window.openvpnPanel != nil {
 				pl := a.window.openvpnPanel.GetProfileList()
-				// Get saved password from keyring if available
-				savedPassword, _ := keyring.Get(profile.ID)
-				pl.showOTPDialog(profile, data.Username, savedPassword, false)
+				if pl != nil {
+					// Get saved password from keyring if available
+					savedPassword, _ := keyring.Get(profile.ID)
+					pl.showOTPDialog(profile, data.Username, savedPassword, false)
 
-				// Bring window to front for user attention
-				a.showWindow()
+					// Bring window to front for user attention
+					a.showWindow()
+				}
 			}
 		}
 	})

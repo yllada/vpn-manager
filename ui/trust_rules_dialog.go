@@ -24,6 +24,9 @@ type TrustRulesDialog struct {
 	ruleRows     []*adw.ActionRow // Track dynamic rule rows for cleanup
 	rules        []trust.TrustRule
 	trustManager *trust.TrustManager
+
+	// Cached profile names for performance (avoids O(N×M×K) lookups)
+	profileNameCache map[string]string
 }
 
 // NewTrustRulesDialog creates a new trust rules management dialog.
@@ -105,6 +108,9 @@ func (trd *TrustRulesDialog) refreshRulesList() {
 	if trd.trustManager != nil {
 		trd.rules = trd.trustManager.GetRules()
 	}
+
+	// Pre-fetch and cache all profile names once to avoid O(N×M×K) lookups
+	trd.cacheProfileNames()
 
 	// Remove old dynamic rule rows
 	for _, row := range trd.ruleRows {
@@ -196,39 +202,50 @@ func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *adw.ActionRow
 	return row
 }
 
-// getProfileName looks up a profile name from any available provider.
-// The profileID can be in "provider:id" format or just "id" for legacy OpenVPN profiles.
+// getProfileName looks up a profile name from the cache.
+// The cache must be populated by calling cacheProfileNames() first.
 func (trd *TrustRulesDialog) getProfileName(profileID string) string {
 	if profileID == "" {
 		return ""
 	}
 
-	// Check if it's in "provider:id" format
-	ctx := context.Background()
-	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
-		providerPrefix := fmt.Sprintf("%s:", provider.Type())
-		if len(profileID) > len(providerPrefix) && profileID[:len(providerPrefix)] == providerPrefix {
-			// Extract the actual ID
-			actualID := profileID[len(providerPrefix):]
-			profiles, err := provider.GetProfiles(ctx)
-			if err != nil {
-				continue
-			}
-			for _, p := range profiles {
-				if p.ID() == actualID {
-					return p.Name()
-				}
-			}
+	// Use cached value if available
+	if trd.profileNameCache != nil {
+		if name, ok := trd.profileNameCache[profileID]; ok {
+			return name
 		}
 	}
 
-	// Legacy format: try ProfileManager (OpenVPN)
-	profile, err := trd.mainWindow.app.vpnManager.ProfileManager().Get(profileID)
-	if err == nil {
-		return profile.Name
+	return profileID // Fallback to showing the ID if name not found
+}
+
+// cacheProfileNames pre-fetches all profile names from providers.
+// This avoids O(N×M×K) complexity when displaying rules by doing a single pass.
+func (trd *TrustRulesDialog) cacheProfileNames() {
+	trd.profileNameCache = make(map[string]string)
+
+	// Use timeout context to avoid blocking indefinitely
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
+		profiles, err := provider.GetProfiles(ctx)
+		if err != nil {
+			app.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
+			continue
+		}
+		for _, p := range profiles {
+			// Cache both "provider:id" format and legacy "id" format
+			providerID := fmt.Sprintf("%s:%s", provider.Type(), p.ID())
+			trd.profileNameCache[providerID] = p.Name()
+			trd.profileNameCache[p.ID()] = p.Name()
+		}
 	}
 
-	return profileID // Fallback to showing the ID if name not found
+	// Also include OpenVPN profiles from ProfileManager (legacy format)
+	for _, p := range trd.mainWindow.app.vpnManager.ProfileManager().List() {
+		trd.profileNameCache[p.ID] = p.Name
+	}
 }
 
 // getTrustLevelLabel returns a human-readable label for trust level.
@@ -318,8 +335,9 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	profileIDs := []string{""}
 	profileLabels := []string{"Use Default"}
 
-	// Get profiles from all available VPN providers
-	ctx := context.Background()
+	// Get profiles from all available VPN providers with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
 		profiles, err := provider.GetProfiles(ctx)
 		if err != nil {
