@@ -11,6 +11,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -93,6 +94,23 @@ func (a *Application) onActivate() {
 
 	// Configure and start health checker if auto-reconnect is enabled
 	a.setupHealthChecker()
+
+	// Initialize trust management system (network-based auto-VPN control)
+	if err := a.vpnManager.InitTrustManagement(); err != nil {
+		app.LogWarn("Failed to initialize trust management: %v", err)
+	}
+
+	// Subscribe to trust auth required events (OTP needed during auto-connect)
+	app.On(app.EventTrustAuthRequired, func(event *app.Event) {
+		app.LogInfo("UI received EventTrustAuthRequired event")
+		if data, ok := event.Data.(app.TrustAuthRequiredData); ok {
+			app.LogInfo("EventTrustAuthRequired data: SSID=%s, ProfileID=%s, NeedsOTP=%v",
+				data.SSID, data.ProfileID, data.NeedsOTP)
+			a.handleTrustAuthRequired(data)
+		} else {
+			app.LogError("EventTrustAuthRequired: failed to cast data, type=%T", event.Data)
+		}
+	})
 }
 
 // setupAppIcon sets up the application icon
@@ -309,4 +327,39 @@ func (a *Application) setupHealthChecker() {
 
 	// Start the health checker
 	a.vpnManager.StartHealthChecker()
+}
+
+// handleTrustAuthRequired handles the trust auth required event.
+// Called when auto-connect on untrusted network needs OTP authentication.
+func (a *Application) handleTrustAuthRequired(data app.TrustAuthRequiredData) {
+	glib.IdleAdd(func() {
+		// Get the profile from ProfileManager
+		profile, err := a.vpnManager.ProfileManager().Get(data.ProfileID)
+		if err != nil {
+			app.LogError("Failed to get profile for trust auth: %v", err)
+			return
+		}
+
+		// Show notification to user
+		if a.config.ShowNotifications {
+			NotifyError(profile.Name,
+				fmt.Sprintf("Connected to untrusted network '%s' - OTP required", data.SSID))
+		}
+
+		// Update status in main window
+		if a.window != nil {
+			a.window.SetStatus(fmt.Sprintf("OTP required to connect to %s (network: %s)", profile.Name, data.SSID))
+
+			// Show OTP dialog via OpenVPN panel
+			if a.window.openvpnPanel != nil {
+				pl := a.window.openvpnPanel.GetProfileList()
+				// Get saved password from keyring if available
+				savedPassword, _ := keyring.Get(profile.ID)
+				pl.showOTPDialog(profile, data.Username, savedPassword, false)
+
+				// Bring window to front for user attention
+				a.showWindow()
+			}
+		}
+	})
 }

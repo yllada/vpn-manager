@@ -5,11 +5,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
@@ -25,16 +27,19 @@ type TrustRulesDialog struct {
 }
 
 // NewTrustRulesDialog creates a new trust rules management dialog.
+// Returns nil if the TrustManager is not initialized.
 func NewTrustRulesDialog(mainWindow *MainWindow) *TrustRulesDialog {
-	trd := &TrustRulesDialog{
-		mainWindow:   mainWindow,
-		trustManager: mainWindow.app.vpnManager.TrustManager(),
-		rules:        make([]trust.TrustRule, 0),
+	trustMgr := mainWindow.app.vpnManager.TrustManager()
+	if trustMgr == nil {
+		// TrustManager not initialized - show error and return nil
+		mainWindow.ShowToast("Trust management not available", 3)
+		return nil
 	}
 
-	// Load existing rules
-	if trd.trustManager != nil {
-		trd.rules = trd.trustManager.GetRules()
+	trd := &TrustRulesDialog{
+		mainWindow:   mainWindow,
+		trustManager: trustMgr,
+		rules:        trustMgr.GetRules(),
 	}
 
 	trd.build()
@@ -141,9 +146,9 @@ func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *adw.ActionRow
 	// Build subtitle with trust level and optional VPN profile
 	subtitle := trd.getTrustLevelLabel(rule.TrustLevel)
 	if rule.VPNProfile != "" {
-		profile, err := trd.mainWindow.app.vpnManager.ProfileManager().Get(rule.VPNProfile)
-		if err == nil {
-			subtitle += fmt.Sprintf(" · VPN: %s", profile.Name)
+		profileName := trd.getProfileName(rule.VPNProfile)
+		if profileName != "" {
+			subtitle += fmt.Sprintf(" · VPN: %s", profileName)
 		}
 	}
 	row.SetSubtitle(subtitle)
@@ -189,6 +194,41 @@ func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *adw.ActionRow
 	row.AddSuffix(deleteBtn)
 
 	return row
+}
+
+// getProfileName looks up a profile name from any available provider.
+// The profileID can be in "provider:id" format or just "id" for legacy OpenVPN profiles.
+func (trd *TrustRulesDialog) getProfileName(profileID string) string {
+	if profileID == "" {
+		return ""
+	}
+
+	// Check if it's in "provider:id" format
+	ctx := context.Background()
+	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
+		providerPrefix := fmt.Sprintf("%s:", provider.Type())
+		if len(profileID) > len(providerPrefix) && profileID[:len(providerPrefix)] == providerPrefix {
+			// Extract the actual ID
+			actualID := profileID[len(providerPrefix):]
+			profiles, err := provider.GetProfiles(ctx)
+			if err != nil {
+				continue
+			}
+			for _, p := range profiles {
+				if p.ID() == actualID {
+					return p.Name()
+				}
+			}
+		}
+	}
+
+	// Legacy format: try ProfileManager (OpenVPN)
+	profile, err := trd.mainWindow.app.vpnManager.ProfileManager().Get(profileID)
+	if err == nil {
+		return profile.Name
+	}
+
+	return profileID // Fallback to showing the ID if name not found
 }
 
 // getTrustLevelLabel returns a human-readable label for trust level.
@@ -274,13 +314,42 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	}
 	formGroup.Add(trustRow)
 
-	// VPN Profile Combo Row
-	profiles := trd.mainWindow.app.vpnManager.ProfileManager().List()
+	// VPN Profile Combo Row - collect profiles from ALL available providers
 	profileIDs := []string{""}
 	profileLabels := []string{"Use Default"}
-	for _, p := range profiles {
-		profileIDs = append(profileIDs, p.ID)
-		profileLabels = append(profileLabels, p.Name)
+
+	// Get profiles from all available VPN providers
+	ctx := context.Background()
+	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
+		profiles, err := provider.GetProfiles(ctx)
+		if err != nil {
+			app.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
+			continue
+		}
+		for _, p := range profiles {
+			// Use provider:id format to uniquely identify profiles across providers
+			profileID := fmt.Sprintf("%s:%s", provider.Type(), p.ID())
+			profileLabel := fmt.Sprintf("%s (%s)", p.Name(), provider.Name())
+			profileIDs = append(profileIDs, profileID)
+			profileLabels = append(profileLabels, profileLabel)
+		}
+	}
+
+	// Also include OpenVPN profiles from ProfileManager (legacy format for compatibility)
+	for _, p := range trd.mainWindow.app.vpnManager.ProfileManager().List() {
+		// Skip if we already have this profile (from OpenVPN provider)
+		openvpnID := fmt.Sprintf("%s:%s", app.ProviderOpenVPN, p.ID)
+		alreadyAdded := false
+		for _, id := range profileIDs {
+			if id == openvpnID {
+				alreadyAdded = true
+				break
+			}
+		}
+		if !alreadyAdded {
+			profileIDs = append(profileIDs, p.ID)
+			profileLabels = append(profileLabels, p.Name+" (OpenVPN)")
+		}
 	}
 
 	profileModel := gtk.NewStringList(profileLabels)

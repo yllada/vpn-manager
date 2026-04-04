@@ -5,11 +5,14 @@ package vpn
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/keyring"
 	"github.com/yllada/vpn-manager/vpn/stats"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
@@ -516,6 +519,7 @@ func (m *Manager) executeTrustAction(action trust.TrustAction, rule *trust.Trust
 }
 
 // handleTrustConnect connects to VPN when on an untrusted network.
+// Supports multiple providers via "provider:id" format for profileID.
 func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkInfo, cfg *trust.TrustConfig) {
 	// Determine which profile to use
 	profileID := cfg.DefaultVPNProfile
@@ -534,28 +538,88 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		return
 	}
 
-	// Check if already connected
-	m.mu.RLock()
-	_, exists := m.connections[profileID]
-	m.mu.RUnlock()
-	if exists {
-		app.LogDebug("trust", "VPN already connected to profile %s", profileID)
-		return
-	}
-
 	app.LogDebug("trust", "Auto-connecting VPN profile %s for untrusted network %q", profileID, net.SSID)
 
-	// Get profile to retrieve stored credentials
-	profile, err := m.profileManager.Get(profileID)
-	if err != nil {
-		app.LogError("trust", "Failed to get VPN profile %s: %v", profileID, err)
-		m.handleConnectFailureOnUntrusted(net, cfg, err)
-		return
+	// Parse provider:id format
+	providerType, actualID := m.parseProfileID(profileID)
+
+	// Handle connection based on provider type
+	ctx := context.Background()
+	var err error
+
+	switch providerType {
+	case app.ProviderTailscale, app.ProviderWireGuard:
+		// Use the provider interface for non-OpenVPN connections
+		provider, ok := m.providerRegistry.Get(providerType)
+		if !ok {
+			err = fmt.Errorf("provider %s not available", providerType)
+			break
+		}
+
+		// Find the profile
+		profiles, profErr := provider.GetProfiles(ctx)
+		if profErr != nil {
+			err = profErr
+			break
+		}
+
+		var targetProfile app.VPNProfile
+		for _, p := range profiles {
+			if p.ID() == actualID {
+				targetProfile = p
+				break
+			}
+		}
+
+		if targetProfile == nil {
+			err = fmt.Errorf("profile %s not found", actualID)
+			break
+		}
+
+		// Connect via provider (no auth needed for Tailscale/WireGuard auto-connect)
+		err = provider.Connect(ctx, targetProfile, app.AuthInfo{})
+
+	default:
+		// OpenVPN: use legacy ProfileManager
+		app.LogInfo("trust", "OpenVPN auto-connect: looking up profile %s", actualID)
+		profile, profErr := m.profileManager.Get(actualID)
+		if profErr != nil {
+			app.LogError("trust", "OpenVPN profile %s not found: %v", actualID, profErr)
+			err = profErr
+			break
+		}
+
+		app.LogInfo("trust", "OpenVPN profile found: %s (RequiresOTP=%v, SavePassword=%v)",
+			profile.Name, profile.RequiresOTP, profile.SavePassword)
+
+		// Check if profile requires OTP - emit event for UI to handle
+		if profile.RequiresOTP {
+			app.LogInfo("trust", "Profile %s requires OTP - emitting auth required event", profile.Name)
+			app.Emit(app.EventTrustAuthRequired, "TrustManager", app.TrustAuthRequiredData{
+				SSID:        net.SSID,
+				ProfileID:   actualID,
+				ProfileName: profile.Name,
+				Username:    profile.Username,
+				NeedsOTP:    true,
+			})
+			return // Don't report as failure - UI will handle auth flow
+		}
+
+		// Get password from keyring if saved
+		password := ""
+		if profile.SavePassword {
+			savedPassword, keyErr := keyring.Get(profile.ID)
+			if keyErr == nil && savedPassword != "" {
+				password = savedPassword
+			} else {
+				app.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring", profile.Name)
+			}
+		}
+
+		// Connect using stored credentials
+		err = m.Connect(actualID, profile.Username, password)
 	}
 
-	// Connect using stored credentials from profile
-	// Note: If profile requires auth, the UI will need to handle the auth flow
-	err = m.Connect(profileID, profile.Username, "")
 	if err != nil {
 		app.LogError("trust", "Failed to auto-connect VPN: %v", err)
 		m.handleConnectFailureOnUntrusted(net, cfg, err)
@@ -568,6 +632,21 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		ProfileID: profileID,
 		Success:   true,
 	})
+}
+
+// parseProfileID parses a profile ID that may be in "provider:id" format.
+// Returns the provider type and actual ID. For legacy IDs without provider prefix,
+// assumes OpenVPN.
+func (m *Manager) parseProfileID(profileID string) (app.VPNProviderType, string) {
+	// Check for known provider prefixes
+	for _, pt := range []app.VPNProviderType{app.ProviderTailscale, app.ProviderWireGuard, app.ProviderOpenVPN} {
+		prefix := string(pt) + ":"
+		if strings.HasPrefix(profileID, prefix) {
+			return pt, strings.TrimPrefix(profileID, prefix)
+		}
+	}
+	// Legacy format: assume OpenVPN
+	return app.ProviderOpenVPN, profileID
 }
 
 // handleConnectFailureOnUntrusted handles VPN connection failure on untrusted networks.

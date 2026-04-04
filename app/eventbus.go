@@ -69,9 +69,10 @@ const (
 	EventNetworkChanged EventType = "network.changed"
 
 	// Trust events
-	EventTrustPrompt      EventType = "trust.prompt"       // Unknown network, user action needed
-	EventEvilTwinWarning  EventType = "trust.eviltwin"     // Potential evil twin detected
-	EventTrustActionTaken EventType = "trust.action.taken" // Action executed based on trust evaluation
+	EventTrustPrompt       EventType = "trust.prompt"        // Unknown network, user action needed
+	EventEvilTwinWarning   EventType = "trust.eviltwin"      // Potential evil twin detected
+	EventTrustActionTaken  EventType = "trust.action.taken"  // Action executed based on trust evaluation
+	EventTrustAuthRequired EventType = "trust.auth.required" // VPN connection needs authentication (e.g., OTP)
 )
 
 // Event represents an event in the system.
@@ -212,6 +213,21 @@ type TrustActionTakenData struct {
 	Success bool
 	// Error contains error details if Success is false.
 	Error string
+}
+
+// TrustAuthRequiredData contains data for trust auth required events.
+// Emitted when a VPN profile requires authentication (e.g., OTP) during auto-connect.
+type TrustAuthRequiredData struct {
+	// SSID is the network that triggered the auto-connect.
+	SSID string
+	// ProfileID is the VPN profile that needs authentication.
+	ProfileID string
+	// ProfileName is the human-readable profile name.
+	ProfileName string
+	// Username is the username for the profile (if stored).
+	Username string
+	// NeedsOTP indicates if OTP/2FA is required.
+	NeedsOTP bool
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -219,7 +219,9 @@ func (pd *PreferencesDialog) buildNetworkTrustPage() *adw.PreferencesPage {
 
 	manageRulesRow.ConnectActivated(func() {
 		dialog := NewTrustRulesDialog(pd.mainWindow)
-		dialog.Show()
+		if dialog != nil {
+			dialog.Show()
+		}
 	})
 	rulesGroup.Add(manageRulesRow)
 
