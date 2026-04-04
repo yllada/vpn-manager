@@ -1,15 +1,15 @@
 Package: vpn-manager
-Version: 1.14.0
+Version: 1.14.1
 Architecture: amd64
 Maintainer: VPN Manager Team <yadian.llada@gmail.com>
-Installed-Size: 45136
+Installed-Size: 45148
 Depends: openvpn | openvpn3, libgtk-4-1, libadwaita-1-0
 Recommends: polkit-1
-Filename: pool/main/v/vpn-manager/vpn-manager_1.14.0_amd64.deb
-Size: 8449500
-MD5sum: ba00fc54cd83adcbc480c25731d41de2
-SHA1: 80b81716fdaeb9b6eb559bba0ccfbae56a182c4d
-SHA256: 7828afa4dd04f1a3cbd517a2a6053859a44b8e3983aa4446192db5fcc4512e5d
+Filename: pool/main/v/vpn-manager/vpn-manager_1.14.1_amd64.deb
+Size: 8442670
+MD5sum: f27955c6a71c92a8d4d73cd146fa4446
+SHA1: d7bd613a2a61002160f747227a4e0e749ef38e66
+SHA256: 1ffe49e1579c9efaac321d7f6558dc0509e3d5a5257f8d6997c5f9d68e551fe9
 Section: net
 Priority: optional
 Homepage: https://github.com/yllada/vpn-manager
