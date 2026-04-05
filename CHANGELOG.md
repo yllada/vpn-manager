@@ -22,8 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tray**: Fixed app crashing when clicking "Open VPN Manager" from tray after starting minimized
   - GTK operations were called from systray goroutine instead of main GTK thread
   - Now dispatches `Present()` and panel refresh via `glib.IdleAdd()` for thread safety
-- **Desktop Entry**: Improved XDG autostart compatibility
-  - Added `TryExec=vpn-manager` to validate executable exists before launch
+- **Desktop Entry**: Improved XDG autostart reliability and compatibility
+  - Now uses absolute executable path via `os.Executable()` instead of relying on PATH
+  - Implemented atomic write pattern (temp file + rename) to prevent corruption on disk full
+  - Fixed error handling in `IsAutostartEnabled()` to distinguish "disabled" from "error"
+  - Fixed TOCTOU race in `DisableAutostart()` with idempotent removal pattern
+  - Added `TryExec` with absolute path to validate executable exists before launch
   - Added `X-MATE-Autostart-Delay=10` for MATE desktop support
   - Added `X-KDE-autostart-after=panel` for KDE Plasma support
   - Increased delay from 5s to 10s for better session stability
