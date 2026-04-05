@@ -46,9 +46,10 @@ var (
 
 var (
 	// GUI/General flags
-	showVersion = flag.Bool("version", false, "Show version and exit")
-	verbose     = flag.Bool("verbose", false, "Enable verbose logging")
-	showHelp    = flag.Bool("help", false, "Show help message")
+	showVersion    = flag.Bool("version", false, "Show version and exit")
+	verbose        = flag.Bool("verbose", false, "Enable verbose logging")
+	showHelp       = flag.Bool("help", false, "Show help message")
+	startMinimized = flag.Bool("minimized", false, "Start minimized to system tray (used for autostart)")
 
 	// TUI mode flag
 	tuiMode = flag.Bool("tui", false, "Launch interactive TUI mode")
@@ -138,7 +139,7 @@ func main() {
 
 	// Start the GTK application (GUI mode)
 	app.LogInfo("Starting %s v%s", app.AppName, appVersion)
-	application, err := ui.NewApplication(app.AppID, appVersion)
+	application, err := ui.NewApplication(app.AppID, appVersion, *startMinimized)
 	if err != nil {
 		app.LogError("Failed to initialize application: %v", err)
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)

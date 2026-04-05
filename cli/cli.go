@@ -577,6 +577,7 @@ Usage:
 Options:
   --version         Show version and exit
   --verbose         Enable verbose logging
+  --minimized       Start minimized to system tray (for autostart)
   --tui             Launch interactive TUI mode
   --list            List all VPN profiles
   --connect NAME    Connect to a VPN profile

@@ -24,13 +24,17 @@ type Application struct {
 	version    string
 	tray       *TrayIndicator
 
+	// startMinimized indicates whether to start hidden in system tray
+	startMinimized bool
+
 	// Event subscriptions for cleanup
 	trustAuthSubscription *app.Subscription
 }
 
 // NewApplication creates a new application.
+// If startMinimized is true, the app starts hidden in the system tray.
 // Returns an error if the VPN manager cannot be initialized.
-func NewApplication(appID, version string) (*Application, error) {
+func NewApplication(appID, version string, startMinimized bool) (*Application, error) {
 	// Create GTK4 application
 	gtkApp := gtk.NewApplication(appID, gio.ApplicationDefaultFlags)
 
@@ -49,10 +53,11 @@ func NewApplication(appID, version string) (*Application, error) {
 	}
 
 	application := &Application{
-		app:        gtkApp,
-		vpnManager: vpnManager,
-		config:     cfg,
-		version:    version,
+		app:            gtkApp,
+		vpnManager:     vpnManager,
+		config:         cfg,
+		version:        version,
+		startMinimized: startMinimized,
 	}
 
 	// Connect activation signal
@@ -87,7 +92,15 @@ func (a *Application) onActivate() {
 
 	// Create main window
 	a.window = NewMainWindow(a)
-	a.window.Show()
+
+	// Show window only if not starting minimized (autostart mode)
+	if a.startMinimized {
+		app.LogInfo("Starting minimized to system tray")
+		// Window is created but not shown - needed for GTK app lifecycle
+		// The tray indicator will allow showing the window later
+	} else {
+		a.window.Show()
+	}
 
 	// Start system tray indicator with panic recovery
 	a.tray = NewTrayIndicator(a)

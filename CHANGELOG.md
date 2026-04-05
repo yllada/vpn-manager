@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.14.2] - 2026-04-05
+
+### Fixed
+- **Autostart**: "Start with System" feature now works — previously the config field existed but had no implementation
+  - Creates proper XDG autostart desktop entry (`~/.config/autostart/vpn-manager.desktop`)
+  - App starts minimized to system tray when launched at login
+  - New `--minimized` flag for headless tray-only startup
+
+### Added
+- **Preferences**: New "System" section with "Start with System" and "Minimize to Tray" toggles
+
 ## [1.14.0] - 2026-04-03
 
 ### Security

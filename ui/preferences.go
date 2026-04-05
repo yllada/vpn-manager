@@ -16,6 +16,10 @@ type PreferencesDialog struct {
 	mainWindow *MainWindow
 	config     *app.Config
 
+	// System settings
+	autostartRow      *adw.SwitchRow
+	minimizeToTrayRow *adw.SwitchRow
+
 	// General settings
 	reconnectRow *adw.SwitchRow
 	notifyRow    *adw.SwitchRow
@@ -81,6 +85,29 @@ func (pd *PreferencesDialog) buildGeneralPage() *adw.PreferencesPage {
 	page.SetTitle("General")
 	page.SetIconName("preferences-system-symbolic")
 	page.SetName("general")
+
+	// ─────────────────────────────────────────────────────────────────────
+	// SYSTEM GROUP (first - most important settings)
+	// ─────────────────────────────────────────────────────────────────────
+	systemGroup := adw.NewPreferencesGroup()
+	systemGroup.SetTitle("System")
+	systemGroup.SetDescription("Startup and system integration")
+
+	// Autostart row - check actual filesystem state, not just config
+	pd.autostartRow = adw.NewSwitchRow()
+	pd.autostartRow.SetTitle("Start with System")
+	pd.autostartRow.SetSubtitle("Launch VPN Manager automatically when you log in")
+	pd.autostartRow.SetActive(app.IsAutostartEnabled())
+	systemGroup.Add(pd.autostartRow)
+
+	// Minimize to tray row
+	pd.minimizeToTrayRow = adw.NewSwitchRow()
+	pd.minimizeToTrayRow.SetTitle("Minimize to Tray")
+	pd.minimizeToTrayRow.SetSubtitle("Keep running in the system tray when window is closed")
+	pd.minimizeToTrayRow.SetActive(pd.config.MinimizeToTray)
+	systemGroup.Add(pd.minimizeToTrayRow)
+
+	page.Add(systemGroup)
 
 	// ─────────────────────────────────────────────────────────────────────
 	// CONNECTION GROUP
@@ -292,7 +319,25 @@ func (pd *PreferencesDialog) findTrustActionIndex(actionID string) uint {
 
 // savePreferences saves the current preferences to the config file.
 func (pd *PreferencesDialog) savePreferences() {
-	// General settings
+	// ─────────────────────────────────────────────────────────────────────
+	// SYSTEM SETTINGS (autostart requires filesystem changes)
+	// ─────────────────────────────────────────────────────────────────────
+	newAutostart := pd.autostartRow.Active()
+	if newAutostart != app.IsAutostartEnabled() {
+		if err := app.SetAutostart(newAutostart); err != nil {
+			pd.mainWindow.ShowToast("Could not change autostart setting: "+err.Error(), 5)
+			// Revert the switch to actual state
+			pd.autostartRow.SetActive(app.IsAutostartEnabled())
+		} else {
+			pd.config.AutoStart = newAutostart
+		}
+	}
+
+	pd.config.MinimizeToTray = pd.minimizeToTrayRow.Active()
+
+	// ─────────────────────────────────────────────────────────────────────
+	// GENERAL SETTINGS
+	// ─────────────────────────────────────────────────────────────────────
 	pd.config.ShowNotifications = pd.notifyRow.Active()
 	pd.config.AutoReconnect = pd.reconnectRow.Active()
 
