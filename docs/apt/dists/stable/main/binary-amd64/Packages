@@ -6,10 +6,10 @@ Installed-Size: 45156
 Depends: openvpn | openvpn3, libgtk-4-1, libadwaita-1-0
 Recommends: polkit-1
 Filename: pool/main/v/vpn-manager/vpn-manager_1.14.2_amd64.deb
-Size: 8449262
-MD5sum: 05b7ae7c3ee819e42088d5925006ea06
-SHA1: 5bf88b410b2de83a10594b21d5b9c03d39a3af84
-SHA256: decc64245a2528cff0b9bc4ee6b0e1dd5f4af18b2d1575729aaf99c9d81f7003
+Size: 8446882
+MD5sum: f93051d491d4995f8f3de17a9828ae95
+SHA1: 263967a0176d0633ee18a747dde4dd46bfa9d457
+SHA256: 1f21de493544736d1d15957ca306ec20d773dde84cb274294e9a7bfc18a59b3c
 Section: net
 Priority: optional
 Homepage: https://github.com/yllada/vpn-manager
