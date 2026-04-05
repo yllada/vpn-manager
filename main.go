@@ -145,7 +145,12 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	exitCode := application.Run(os.Args)
+	// Only pass program name to GTK - all custom flags have been processed by flag.Parse().
+	// Per GTK docs: "It is possible to pass NULL if argv is not available or
+	// commandline handling is not required." We handle --minimized, --verbose, etc.
+	// ourselves, so GTK doesn't need to see them (and would reject unknown flags).
+	// See: https://docs.gtk.org/gio/method.Application.run.html
+	exitCode := application.Run([]string{os.Args[0]})
 
 	if exitCode != 0 {
 		app.LogWarn("Application exited with code %d", exitCode)

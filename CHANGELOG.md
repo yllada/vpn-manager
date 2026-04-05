@@ -15,10 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.14.2] - 2026-04-05
 
 ### Fixed
-- **Autostart**: "Start with System" feature now works — previously the config field existed but had no implementation
-  - Creates proper XDG autostart desktop entry (`~/.config/autostart/vpn-manager.desktop`)
-  - App starts minimized to system tray when launched at login
-  - New `--minimized` flag for headless tray-only startup
+- **Autostart**: Fixed "Start with System" not working on login
+  - GTK was rejecting custom `--minimized` flag passed via `os.Args`
+  - Now only passes program name to GTK after Go's `flag.Parse()` processes our flags
+  - Per [GTK docs](https://docs.gtk.org/gio/method.Application.run.html): safe to pass NULL/empty args
+- **Desktop Entry**: Improved XDG autostart compatibility
+  - Added `TryExec=vpn-manager` to validate executable exists before launch
+  - Added `X-MATE-Autostart-Delay=10` for MATE desktop support
+  - Added `X-KDE-autostart-after=panel` for KDE Plasma support
+  - Increased delay from 5s to 10s for better session stability
 
 ### Added
 - **Preferences**: New "System" section with "Start with System" and "Minimize to Tray" toggles

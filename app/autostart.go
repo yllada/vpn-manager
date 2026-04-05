@@ -9,9 +9,17 @@ import (
 	"path/filepath"
 )
 
-// Autostart desktop entry content.
-// Uses X-GNOME-Autostart-enabled for GNOME/GTK environments.
-// The --minimized flag starts the app in the system tray.
+// Autostart desktop entry content following XDG Autostart Specification.
+// See: https://specifications.freedesktop.org/autostart-spec/latest/
+//
+// Key fields:
+//   - TryExec: Validates executable exists before attempting to run
+//   - X-GNOME-Autostart-enabled: GNOME extension to enable/disable
+//   - X-GNOME-Autostart-Delay: Seconds to wait after session start (allows DE to settle)
+//   - X-MATE-Autostart-Delay: Same delay for MATE desktop
+//   - X-KDE-autostart-after: KDE waits for panel before starting
+//
+// The --minimized flag starts the app hidden in the system tray.
 const autostartDesktopEntry = `[Desktop Entry]
 Version=1.0
 Type=Application
@@ -19,11 +27,14 @@ Name=VPN Manager
 Comment=Modern VPN Manager for Linux
 Icon=vpn-manager
 Exec=vpn-manager --minimized
+TryExec=vpn-manager
 Terminal=false
 Categories=Network;System;
 StartupNotify=false
 X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Delay=5
+X-GNOME-Autostart-Delay=10
+X-MATE-Autostart-Delay=10
+X-KDE-autostart-after=panel
 `
 
 // getAutostartDir returns the XDG autostart directory path.
