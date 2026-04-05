@@ -204,12 +204,16 @@ func (a *Application) GetWindow() *gtk.Window {
 
 // showWindow shows the main window and refreshes all panel statuses.
 // This ensures UI reflects actual VPN state when returning from systray.
+// IMPORTANT: This method is called from the systray goroutine, so all GTK
+// operations MUST be dispatched to the main thread via glib.IdleAdd().
 func (a *Application) showWindow() {
-	if a.window != nil {
-		a.window.window.Present()
-		// Refresh all panel statuses to sync UI with actual VPN state
-		a.window.RefreshAllPanels()
-	}
+	glib.IdleAdd(func() {
+		if a.window != nil {
+			a.window.window.Present()
+			// Refresh all panel statuses to sync UI with actual VPN state
+			a.window.RefreshAllPanels()
+		}
+	})
 }
 
 // Cleanup stops all background goroutines before shutdown.

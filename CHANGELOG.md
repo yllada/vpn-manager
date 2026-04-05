@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - GTK was rejecting custom `--minimized` flag passed via `os.Args`
   - Now only passes program name to GTK after Go's `flag.Parse()` processes our flags
   - Per [GTK docs](https://docs.gtk.org/gio/method.Application.run.html): safe to pass NULL/empty args
+- **Tray**: Fixed app crashing when clicking "Open VPN Manager" from tray after starting minimized
+  - GTK operations were called from systray goroutine instead of main GTK thread
+  - Now dispatches `Present()` and panel refresh via `glib.IdleAdd()` for thread safety
 - **Desktop Entry**: Improved XDG autostart compatibility
   - Added `TryExec=vpn-manager` to validate executable exists before launch
   - Added `X-MATE-Autostart-Delay=10` for MATE desktop support
