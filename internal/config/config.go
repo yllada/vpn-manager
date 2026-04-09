@@ -1,6 +1,6 @@
 // Package config provides configuration management for VPN Manager.
 // It handles loading, saving, and managing application settings.
-package app
+package config
 
 import (
 	"fmt"
@@ -329,5 +329,5 @@ func getConfigPath() (string, error) {
 		return "", fmt.Errorf("error getting home directory: %w", err)
 	}
 
-	return filepath.Join(homeDir, ".config", "vpn-manager", "config.yaml"), nil
+	return filepath.Join(homeDir, ".config", ConfigDirName, ConfigFileName), nil
 }

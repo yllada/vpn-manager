@@ -10,7 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
+	"github.com/yllada/vpn-manager/internal/paths"
 )
 
 // pingTargetPattern matches valid ping/whois targets.
@@ -51,7 +52,7 @@ func findTailscaleBinary() (string, error) {
 	}
 
 	// Check common locations
-	for _, p := range app.TailscaleBinaryPaths {
+	for _, p := range paths.TailscaleBinaryPaths {
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}
@@ -198,12 +199,12 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 
 // upViaDaemon runs tailscale up via the daemon for elevated privileges.
 func (c *Client) upViaDaemon(ctx context.Context, opts UpOptions) error {
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale up requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
-	_, err := client.UpWithContext(ctx, app.TailscaleUpParams{
+	client := &daemon.TailscaleClient{}
+	_, err := client.UpWithContext(ctx, daemon.TailscaleUpParams{
 		ExitNode:               opts.ExitNode,
 		ExitNodeAllowLANAccess: opts.ExitNodeAllowLANAccess,
 		AcceptRoutes:           opts.AcceptRoutes,
@@ -246,11 +247,11 @@ func (c *Client) downViaDaemon(ctx context.Context) error {
 	// Clean up LAN Gateway rules before disconnecting
 	_ = c.CleanupLANGateway(ctx)
 
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale down requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
+	client := &daemon.TailscaleClient{}
 	return client.DownWithContext(ctx)
 }
 
@@ -371,12 +372,12 @@ func (c *Client) Set(ctx context.Context, opts SetOptions) error {
 
 // setViaDaemon runs tailscale set via the daemon for elevated privileges.
 func (c *Client) setViaDaemon(ctx context.Context, opts SetOptions) error {
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale set requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
-	_, err := client.SetWithContext(ctx, app.TailscaleSetParams{
+	client := &daemon.TailscaleClient{}
+	_, err := client.SetWithContext(ctx, daemon.TailscaleSetParams{
 		ShieldsUp:              opts.ShieldsUp,
 		AcceptRoutes:           opts.AcceptRoutes,
 		AcceptDNS:              opts.AcceptDNS,
@@ -518,11 +519,11 @@ func (c *Client) SetOperator(ctx context.Context, username string) error {
 	}
 
 	// Need elevated privileges - use daemon
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale set operator requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
+	client := &daemon.TailscaleClient{}
 	return client.SetOperatorWithContext(ctx, username)
 }
 

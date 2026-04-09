@@ -11,10 +11,10 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yllada/vpn-manager/app"
 	vpnerrors "github.com/yllada/vpn-manager/internal/errors"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/pkg/tui/components"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
@@ -445,7 +445,7 @@ func handleStatsKeys(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func connectToProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil || profile == nil {
-			return ErrorMsg{Err: app.WrapError(nil, "invalid manager or profile")}
+			return ErrorMsg{Err: vpnerrors.WrapError(nil, "invalid manager or profile")}
 		}
 
 		logger.LogInfo("tui", "Starting auth flow for profile: %s", profile.Name)
@@ -483,7 +483,7 @@ func isTailscaleProfile(profileID string) bool {
 func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 	return func() tea.Msg {
 		// Get Tailscale provider
-		providerIface, ok := manager.GetProvider(app.ProviderTailscale)
+		providerIface, ok := manager.GetProvider(vpntypes.ProviderTailscale)
 		if !ok {
 			return ErrorMsg{Err: vpnerrors.WrapError(nil, "Tailscale provider not available")}
 		}
@@ -532,7 +532,7 @@ func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 		if status.BackendState == "Stopped" || status.BackendState == "NoState" {
 			logger.LogInfo("tui", "Tailscale is logged in but stopped, connecting...")
 
-			err := tsProvider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
+			err := tsProvider.Connect(ctx, nil, vpntypes.AuthInfo{Interactive: true})
 			if err != nil {
 				return ErrorMsg{Err: vpnerrors.WrapError(err, "failed to connect Tailscale")}
 			}
@@ -554,7 +554,7 @@ func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 func disconnectProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil || profile == nil {
-			return ErrorMsg{Err: app.WrapError(nil, "invalid manager or profile")}
+			return ErrorMsg{Err: vpnerrors.WrapError(nil, "invalid manager or profile")}
 		}
 
 		logger.LogInfo("tui", "Disconnecting from profile: %s", profile.Name)
@@ -997,7 +997,7 @@ func handleTailscaleAuthPoll(m Model, manager *vpn.Manager) (tea.Model, tea.Cmd)
 	}
 
 	// Get Tailscale provider
-	providerIface, ok := manager.GetProvider(app.ProviderTailscale)
+	providerIface, ok := manager.GetProvider(vpntypes.ProviderTailscale)
 	if !ok {
 		return m, tailscaleAuthPollCmd() // Continue polling
 	}
@@ -1029,7 +1029,7 @@ func handleTailscaleAuthPoll(m Model, manager *vpn.Manager) (tea.Model, tea.Cmd)
 	case "Stopped":
 		// Auth completed but not connected yet - try to connect
 		logger.LogInfo("tui", "Tailscale auth complete, connecting...")
-		err := tsProvider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
+		err := tsProvider.Connect(ctx, nil, vpntypes.AuthInfo{Interactive: true})
 		if err != nil {
 			return m, func() tea.Msg {
 				return TailscaleAuthCompleteMsg{Success: false, Error: err}

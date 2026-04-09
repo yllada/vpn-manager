@@ -1,8 +1,9 @@
-// Package app provides safe goroutine execution with panic recovery.
+// Package resilience provides safe goroutine execution with panic recovery.
 // This prevents the application from crashing silently when a goroutine panics.
-package app
+package resilience
 
 import (
+	"log"
 	"runtime/debug"
 )
 
@@ -12,7 +13,7 @@ import (
 //
 // Usage:
 //
-//	app.SafeGo(func() {
+//	resilience.SafeGo(func() {
 //	    // your code here
 //	})
 func SafeGo(fn func()) {
@@ -27,7 +28,7 @@ func SafeGo(fn func()) {
 //
 // Usage:
 //
-//	app.SafeGoWithName("uptimeCounter", func() {
+//	resilience.SafeGoWithName("uptimeCounter", func() {
 //	    // your code here
 //	})
 func SafeGoWithName(name string, fn func()) {
@@ -43,13 +44,13 @@ func SafeGoWithName(name string, fn func()) {
 // Usage:
 //
 //	go func() {
-//	    defer app.RecoverPanic("myFunction")
+//	    defer resilience.RecoverPanic("myFunction")
 //	    // your code here
 //	}()
 func RecoverPanic(context string) {
 	if r := recover(); r != nil {
 		stack := debug.Stack()
-		LogError("PANIC RECOVERED [%s]: %v\nStack trace:\n%s", context, r, string(stack))
+		log.Printf("PANIC RECOVERED [%s]: %v\nStack trace:\n%s", context, r, string(stack))
 	}
 }
 
@@ -59,7 +60,7 @@ func RecoverPanic(context string) {
 // Usage:
 //
 //	go func() {
-//	    defer app.RecoverPanicWithCallback("myFunction", func(err interface{}) {
+//	    defer resilience.RecoverPanicWithCallback("myFunction", func(err interface{}) {
 //	        // handle the panic
 //	    })
 //	    // your code here
@@ -67,7 +68,7 @@ func RecoverPanic(context string) {
 func RecoverPanicWithCallback(context string, callback func(interface{})) {
 	if r := recover(); r != nil {
 		stack := debug.Stack()
-		LogError("PANIC RECOVERED [%s]: %v\nStack trace:\n%s", context, r, string(stack))
+		log.Printf("PANIC RECOVERED [%s]: %v\nStack trace:\n%s", context, r, string(stack))
 		if callback != nil {
 			callback(r)
 		}

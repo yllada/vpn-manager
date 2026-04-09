@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/logger"
 )
 
@@ -251,13 +251,13 @@ func (c *Client) SetExitNode(ctx context.Context, nodeID string) error {
 
 // setExitNodeViaDaemon sets the exit node via the daemon for elevated privileges.
 func (c *Client) setExitNodeViaDaemon(ctx context.Context, nodeID string) error {
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale set exit-node requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
+	client := &daemon.TailscaleClient{}
 	exitNode := nodeID
-	_, err := client.SetWithContext(ctx, app.TailscaleSetParams{
+	_, err := client.SetWithContext(ctx, daemon.TailscaleSetParams{
 		ExitNode: &exitNode,
 	})
 	return err
@@ -321,13 +321,13 @@ func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allo
 
 // setExitNodeWithOptionsViaDaemon sets exit node with options via the daemon.
 func (c *Client) setExitNodeWithOptionsViaDaemon(ctx context.Context, nodeID string, allowLANAccess bool) error {
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale set exit-node requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
+	client := &daemon.TailscaleClient{}
 	exitNode := nodeID
-	_, err := client.SetWithContext(ctx, app.TailscaleSetParams{
+	_, err := client.SetWithContext(ctx, daemon.TailscaleSetParams{
 		ExitNode:               &exitNode,
 		ExitNodeAllowLANAccess: &allowLANAccess,
 	})

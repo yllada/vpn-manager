@@ -11,8 +11,9 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/stats"
 )
@@ -447,7 +448,7 @@ func (sp *StatsPanel) StartUpdates() {
 	sp.stopOnce = sync.Once{}
 	sp.mu.Unlock()
 
-	app.SafeGoWithName("stats-panel-updates", func() {
+	resilience.SafeGoWithName("stats-panel-updates", func() {
 		ticker := time.NewTicker(sp.updateInterval)
 		defer ticker.Stop()
 
@@ -769,13 +770,13 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 }
 
 // getProviderIcon returns the appropriate icon for a VPN provider type.
-func getProviderIcon(providerType app.VPNProviderType) string {
+func getProviderIcon(providerType vpntypes.VPNProviderType) string {
 	switch providerType {
-	case app.ProviderOpenVPN:
+	case vpntypes.ProviderOpenVPN:
 		return "network-vpn-symbolic"
-	case app.ProviderTailscale:
+	case vpntypes.ProviderTailscale:
 		return "network-workgroup-symbolic"
-	case app.ProviderWireGuard:
+	case vpntypes.ProviderWireGuard:
 		return "security-high-symbolic"
 	default:
 		return "network-vpn-symbolic"
@@ -783,13 +784,13 @@ func getProviderIcon(providerType app.VPNProviderType) string {
 }
 
 // getProviderDisplayName returns a human-readable name for a VPN provider type.
-func getProviderDisplayName(providerType app.VPNProviderType) string {
+func getProviderDisplayName(providerType vpntypes.VPNProviderType) string {
 	switch providerType {
-	case app.ProviderOpenVPN:
+	case vpntypes.ProviderOpenVPN:
 		return "OpenVPN"
-	case app.ProviderTailscale:
+	case vpntypes.ProviderTailscale:
 		return "Tailscale"
-	case app.ProviderWireGuard:
+	case vpntypes.ProviderWireGuard:
 		return "WireGuard"
 	default:
 		return string(providerType)
@@ -797,13 +798,13 @@ func getProviderDisplayName(providerType app.VPNProviderType) string {
 }
 
 // getProviderBadgeClass returns the CSS class for a provider badge.
-func getProviderBadgeClass(providerType app.VPNProviderType) string {
+func getProviderBadgeClass(providerType vpntypes.VPNProviderType) string {
 	switch providerType {
-	case app.ProviderOpenVPN:
+	case vpntypes.ProviderOpenVPN:
 		return "openvpn"
-	case app.ProviderTailscale:
+	case vpntypes.ProviderTailscale:
 		return "tailscale"
-	case app.ProviderWireGuard:
+	case vpntypes.ProviderWireGuard:
 		return "wireguard"
 	default:
 		return "openvpn"

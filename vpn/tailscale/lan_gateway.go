@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/logger"
 )
 
@@ -55,12 +55,12 @@ func (c *Client) ConfigureLANGateway(ctx context.Context) error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.LANGatewayClient{}
-	result, err := client.EnableWithContext(ctx, app.GatewayEnableParams{
+	client := &daemon.LANGatewayClient{}
+	result, err := client.EnableWithContext(ctx, daemon.GatewayEnableParams{
 		// Let daemon auto-detect WiFi interface and LAN network
 	})
 	if err != nil {
@@ -78,11 +78,11 @@ func (c *Client) CleanupLANGateway(ctx context.Context) error {
 	logger.LogInfo("Cleaning up LAN Gateway configuration")
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.LANGatewayClient{}
+	client := &daemon.LANGatewayClient{}
 	if err := client.DisableWithContext(ctx); err != nil {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}

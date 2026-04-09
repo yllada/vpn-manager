@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/pkg/tui/components"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/stats"
@@ -55,7 +55,7 @@ type Model struct {
 
 	// eventBus is the application event bus for receiving VPN events.
 	// Note: EventBus subscriptions are managed in app.go via setupEventBusBridge.
-	eventBus *app.EventBus
+	eventBus *eventbus.EventBus
 
 	// View state
 	currentView ViewState
@@ -128,7 +128,7 @@ func NewModel(manager *vpn.Manager) Model {
 
 	return Model{
 		manager:       manager,
-		eventBus:      app.GetEventBus(),
+		eventBus:      eventbus.GetEventBus(),
 		currentView:   ViewDashboard,
 		keys:          DefaultKeyMap(),
 		help:          h,

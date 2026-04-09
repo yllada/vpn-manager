@@ -4,7 +4,7 @@ package tailscale
 import (
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // Status represents the output of `tailscale status --json`.
@@ -219,8 +219,8 @@ func (p *Profile) Name() string {
 }
 
 // Type returns the provider type.
-func (p *Profile) Type() app.VPNProviderType {
-	return app.ProviderTailscale
+func (p *Profile) Type() vpntypes.VPNProviderType {
+	return vpntypes.ProviderTailscale
 }
 
 // IsConnected returns if this profile is connected.

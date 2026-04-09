@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
 )
 
 // IPv6Mode defines how IPv6 is handled during VPN connections.
@@ -122,12 +122,12 @@ func (ip6 *IPv6Protection) Enable(vpnInterface string, vpnSupportsIPv6 bool) err
 
 	if shouldBlock {
 		// Use daemon for privileged operations (required)
-		if !app.IsDaemonAvailable() {
+		if !daemon.IsDaemonAvailable() {
 			return fmt.Errorf("vpn-managerd daemon is not running")
 		}
 
-		client := &app.IPv6ProtectionClient{}
-		if err := client.Enable(app.IPv6EnableParams{
+		client := &daemon.IPv6ProtectionClient{}
+		if err := client.Enable(daemon.IPv6EnableParams{
 			Mode:        string(ip6.config.Mode),
 			BlockWebRTC: ip6.config.BlockWebRTC,
 		}); err != nil {
@@ -154,11 +154,11 @@ func (ip6 *IPv6Protection) Disable() error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.IPv6ProtectionClient{}
+	client := &daemon.IPv6ProtectionClient{}
 	if err := client.Disable(); err != nil {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}

@@ -19,9 +19,11 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/keyring"
+	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
@@ -129,7 +131,7 @@ func (t *TrayIndicator) onReady() {
 	// Disconnect - only shown when connected
 	t.disconnectItem = systray.AddMenuItem("Disconnect", "Disconnect from VPN")
 	t.disconnectItem.Hide()
-	app.SafeGoWithName("tray-disconnect-handler", func() {
+	resilience.SafeGoWithName("tray-disconnect-handler", func() {
 		for {
 			select {
 			case <-t.disconnectItem.ClickedCh:
@@ -152,7 +154,7 @@ func (t *TrayIndicator) onReady() {
 
 	t.trustNetworkItem = systray.AddMenuItem("Trust This Network", "Mark current network as trusted")
 	t.trustNetworkItem.Hide()
-	app.SafeGoWithName("tray-trust-handler", func() {
+	resilience.SafeGoWithName("tray-trust-handler", func() {
 		for {
 			select {
 			case <-t.trustNetworkItem.ClickedCh:
@@ -165,7 +167,7 @@ func (t *TrayIndicator) onReady() {
 
 	t.untrustNetworkItem = systray.AddMenuItem("Untrust This Network", "Mark current network as untrusted")
 	t.untrustNetworkItem.Hide()
-	app.SafeGoWithName("tray-untrust-handler", func() {
+	resilience.SafeGoWithName("tray-untrust-handler", func() {
 		for {
 			select {
 			case <-t.untrustNetworkItem.ClickedCh:
@@ -179,8 +181,8 @@ func (t *TrayIndicator) onReady() {
 	systray.AddSeparator()
 
 	// Subscribe to network change events to update menu items
-	app.On(app.EventNetworkChanged, func(event *app.Event) {
-		if data, ok := event.Data.(*app.NetworkChangedData); ok {
+	eventbus.On(eventbus.EventNetworkChanged, func(event *eventbus.Event) {
+		if data, ok := event.Data.(*eventbus.NetworkChangedData); ok {
 			t.updateNetworkTrustMenu(data.SSID, data.BSSID, data.Connected)
 		}
 	})
@@ -193,7 +195,7 @@ func (t *TrayIndicator) onReady() {
 	// ════════════════════════════════════════════════════════════════════════
 
 	t.openAppItem = systray.AddMenuItem("Open VPN Manager", "Show main window")
-	app.SafeGoWithName("tray-openapp-handler", func() {
+	resilience.SafeGoWithName("tray-openapp-handler", func() {
 		for {
 			select {
 			case <-t.openAppItem.ClickedCh:
@@ -205,7 +207,7 @@ func (t *TrayIndicator) onReady() {
 	})
 
 	t.quitItem = systray.AddMenuItem("Quit", "Exit VPN Manager")
-	app.SafeGoWithName("tray-quit-handler", func() {
+	resilience.SafeGoWithName("tray-quit-handler", func() {
 		for {
 			select {
 			case <-t.quitItem.ClickedCh:
@@ -332,7 +334,7 @@ func (t *TrayIndicator) startUptimeCounter() {
 
 	t.stateMu.Unlock()
 
-	app.SafeGoWithName("tray-uptime-counter", func() {
+	resilience.SafeGoWithName("tray-uptime-counter", func() {
 		for {
 			select {
 			case <-tickerCh:
@@ -402,7 +404,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 	}
 
 	// 2. Disconnect Tailscale (uses its own provider, not ProfileManager)
-	if provider, ok := t.app.vpnManager.GetProvider(app.ProviderTailscale); ok {
+	if provider, ok := t.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
 		status, err := provider.Status(ctx)
 		if err == nil && status.Connected {
 			if err := provider.Disconnect(ctx, nil); err != nil {
@@ -422,7 +424,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 	}
 
 	// 3. Disconnect WireGuard (uses its own provider, not ProfileManager)
-	if provider, ok := t.app.vpnManager.GetProvider(app.ProviderWireGuard); ok {
+	if provider, ok := t.app.vpnManager.GetProvider(vpntypes.ProviderWireGuard); ok {
 		status, err := provider.Status(ctx)
 		if err == nil && status.Connected {
 			if err := provider.Disconnect(ctx, nil); err != nil {
@@ -700,7 +702,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 		})
 	}
 
-	app.SafeGoWithName("tray-monitor-connection", func() {
+	resilience.SafeGoWithName("tray-monitor-connection", func() {
 		t.monitorConnection(profile.ID)
 	})
 }

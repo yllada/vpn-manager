@@ -11,31 +11,35 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/errors"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/shutdown"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn/stats"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
-// Common errors - re-exported from common package for convenience.
+// Common errors - re-exported from errors package for convenience.
 var (
-	ErrAlreadyConnected = app.ErrAlreadyConnected
-	ErrNotConnected     = app.ErrNotConnected
-	ErrConnectionFailed = app.ErrConnectionFailed
+	ErrAlreadyConnected = errors.ErrAlreadyConnected
+	ErrNotConnected     = errors.ErrNotConnected
+	ErrConnectionFailed = errors.ErrConnectionFailed
 )
 
-// ConnectionStatus is an alias for app.ConnectionStatus.
+// ConnectionStatus is an alias for vpntypes.ConnectionStatus.
 // Using alias allows local code to use the type without package prefix.
-type ConnectionStatus = app.ConnectionStatus
+type ConnectionStatus = vpntypes.ConnectionStatus
 
-// Status constants aliased from app package.
+// Status constants aliased from vpntypes package.
 const (
-	StatusDisconnected  = app.StatusDisconnected
-	StatusConnecting    = app.StatusConnecting
-	StatusConnected     = app.StatusConnected
-	StatusDisconnecting = app.StatusDisconnecting
-	StatusError         = app.StatusError
+	StatusDisconnected  = vpntypes.StatusDisconnected
+	StatusConnecting    = vpntypes.StatusConnecting
+	StatusConnected     = vpntypes.StatusConnected
+	StatusDisconnecting = vpntypes.StatusDisconnecting
+	StatusError         = vpntypes.StatusError
 )
 
 // Connection represents an active VPN connection.
@@ -73,7 +77,7 @@ type Manager struct {
 	healthChecker    *HealthChecker
 	killSwitch       *KillSwitch
 	appTunnel        *AppTunnel
-	providerRegistry *app.ProviderRegistry
+	providerRegistry *vpntypes.ProviderRegistry
 	nmBackend        *NMBackend // NetworkManager backend for system VPN icon
 
 	// Security features
@@ -81,13 +85,13 @@ type Manager struct {
 	ipv6Protection *IPv6Protection
 
 	// Resilience
-	circuitBreaker *app.CircuitBreaker
+	circuitBreaker *resilience.CircuitBreaker
 
 	// Trust management
 	trustConfig       *trust.TrustConfig
 	trustManager      *trust.TrustManager
 	networkMonitor    *trust.NetworkMonitor
-	trustSubscription *app.Subscription
+	trustSubscription *eventbus.Subscription
 
 	// Traffic statistics
 	statsManager *stats.StatsManager
@@ -100,14 +104,14 @@ type Manager struct {
 func NewManager() (*Manager, error) {
 	pm, err := NewProfileManager()
 	if err != nil {
-		return nil, app.WrapError(err, "failed to initialize profile manager")
+		return nil, errors.WrapError(err, "failed to initialize profile manager")
 	}
 
 	// Create circuit breaker for connection resilience
-	cbConfig := app.DefaultCircuitBreakerConfig()
-	cbConfig.OnStateChange = func(from, to app.CircuitState) {
+	cbConfig := resilience.DefaultCircuitBreakerConfig()
+	cbConfig.OnStateChange = func(from, to resilience.CircuitState) {
 		logger.LogInfo("VPN Circuit Breaker: %s -> %s", from, to)
-		app.Emit(app.EventStatusChanged, "CircuitBreaker", map[string]string{
+		eventbus.Emit(eventbus.EventStatusChanged, "CircuitBreaker", map[string]string{
 			"from": from.String(),
 			"to":   to.String(),
 		})
@@ -116,13 +120,13 @@ func NewManager() (*Manager, error) {
 	m := &Manager{
 		profileManager:   pm,
 		connections:      make(map[string]*Connection),
-		providerRegistry: app.NewProviderRegistry(),
+		providerRegistry: vpntypes.NewProviderRegistry(),
 		killSwitch:       NewKillSwitch(),
 		appTunnel:        NewAppTunnel(),
 		nmBackend:        NewNMBackend(),
 		dnsProtection:    NewDNSProtection(),
 		ipv6Protection:   NewIPv6Protection(),
-		circuitBreaker:   app.NewCircuitBreaker(cbConfig),
+		circuitBreaker:   resilience.NewCircuitBreaker(cbConfig),
 	}
 
 	// Initialize health checker with default config
@@ -147,47 +151,47 @@ func NewManager() (*Manager, error) {
 
 // registerShutdownHooks registers cleanup functions for graceful shutdown.
 func (m *Manager) registerShutdownHooks() {
-	sm := app.GetShutdownManager()
+	sm := shutdown.GetShutdownManager()
 
 	// Stop trust management first
-	sm.Register("trust-stop", app.PriorityFirst, func(ctx context.Context) error {
+	sm.Register("trust-stop", shutdown.PriorityFirst, func(ctx context.Context) error {
 		logger.LogInfo("Shutdown: Stopping trust management")
 		m.StopTrustManagement()
 		return nil
 	})
 
 	// Disconnect all VPNs first
-	sm.Register("vpn-disconnect-all", app.PriorityFirst, func(ctx context.Context) error {
+	sm.Register("vpn-disconnect-all", shutdown.PriorityFirst, func(ctx context.Context) error {
 		logger.LogInfo("Shutdown: Disconnecting all VPN connections")
 		return m.DisconnectAll()
 	})
 
 	// Restore DNS settings
-	sm.Register("dns-restore", app.PriorityLow, func(ctx context.Context) error {
+	sm.Register("dns-restore", shutdown.PriorityLow, func(ctx context.Context) error {
 		logger.LogInfo("Shutdown: Restoring DNS settings")
 		return m.dnsProtection.Disable()
 	})
 
 	// Restore IPv6 settings
-	sm.Register("ipv6-restore", app.PriorityLow, func(ctx context.Context) error {
+	sm.Register("ipv6-restore", shutdown.PriorityLow, func(ctx context.Context) error {
 		logger.LogInfo("Shutdown: Restoring IPv6 settings")
 		return m.ipv6Protection.Disable()
 	})
 
 	// Disable kill switch
-	sm.Register("killswitch-disable", app.PriorityLow, func(ctx context.Context) error {
+	sm.Register("killswitch-disable", shutdown.PriorityLow, func(ctx context.Context) error {
 		logger.LogInfo("Shutdown: Disabling kill switch")
 		return m.killSwitch.Disable()
 	})
 
 	// Stop health checker
-	sm.Register("health-checker-stop", app.PriorityNormal, func(ctx context.Context) error {
+	sm.Register("health-checker-stop", shutdown.PriorityNormal, func(ctx context.Context) error {
 		m.StopHealthChecker()
 		return nil
 	})
 
 	// Close stats manager
-	sm.Register("stats-close", app.PriorityLow, func(ctx context.Context) error {
+	sm.Register("stats-close", shutdown.PriorityLow, func(ctx context.Context) error {
 		if m.statsManager != nil {
 			logger.LogInfo("Shutdown: Closing stats manager")
 			return m.statsManager.Close()
@@ -207,7 +211,7 @@ func (m *Manager) IPv6Protection() *IPv6Protection {
 }
 
 // CircuitBreaker returns the circuit breaker.
-func (m *Manager) CircuitBreaker() *app.CircuitBreaker {
+func (m *Manager) CircuitBreaker() *resilience.CircuitBreaker {
 	return m.circuitBreaker
 }
 
@@ -236,22 +240,22 @@ func (m *Manager) ProfileManager() *ProfileManager {
 }
 
 // ProviderRegistry returns the provider registry.
-func (m *Manager) ProviderRegistry() *app.ProviderRegistry {
+func (m *Manager) ProviderRegistry() *vpntypes.ProviderRegistry {
 	return m.providerRegistry
 }
 
 // RegisterProvider adds a VPN provider to the registry.
-func (m *Manager) RegisterProvider(provider app.VPNProvider) {
+func (m *Manager) RegisterProvider(provider vpntypes.VPNProvider) {
 	m.providerRegistry.Register(provider)
 }
 
 // GetProvider returns a provider by type.
-func (m *Manager) GetProvider(providerType app.VPNProviderType) (app.VPNProvider, bool) {
+func (m *Manager) GetProvider(providerType vpntypes.VPNProviderType) (vpntypes.VPNProvider, bool) {
 	return m.providerRegistry.Get(providerType)
 }
 
 // AvailableProviders returns all available providers on this system.
-func (m *Manager) AvailableProviders() []app.VPNProvider {
+func (m *Manager) AvailableProviders() []vpntypes.VPNProvider {
 	return m.providerRegistry.Available()
 }
 
@@ -302,7 +306,7 @@ func (m *Manager) StatsManager() *stats.StatsManager {
 // StartStatsCollection begins traffic statistics collection for a connection.
 // Call this when a VPN connection is established.
 // Returns the session ID for tracking, or empty string if stats unavailable.
-func (m *Manager) StartStatsCollection(profileID string, providerType app.VPNProviderType, vpnIface, serverAddr string) string {
+func (m *Manager) StartStatsCollection(profileID string, providerType vpntypes.VPNProviderType, vpnIface, serverAddr string) string {
 	if m.statsManager == nil {
 		return ""
 	}
@@ -363,10 +367,10 @@ func (m *Manager) InitTrustManagement() error {
 	m.trustManager = trust.NewTrustManager(config)
 
 	// Create network monitor (always create, but only start if enabled)
-	m.networkMonitor = trust.NewNetworkMonitor(app.GetEventBus())
+	m.networkMonitor = trust.NewNetworkMonitor(eventbus.GetEventBus())
 
 	// Subscribe to network change events
-	m.trustSubscription = app.On(app.EventNetworkChanged, m.handleNetworkChanged)
+	m.trustSubscription = eventbus.On(eventbus.EventNetworkChanged, m.handleNetworkChanged)
 
 	// Start network monitor if trust management is enabled
 	if config.Enabled {
@@ -427,7 +431,7 @@ func (m *Manager) SetTrustEnabled(enabled bool) error {
 	defer m.mu.Unlock()
 
 	if m.trustConfig == nil {
-		return app.WrapError(nil, "trust management not initialized")
+		return errors.WrapError(nil, "trust management not initialized")
 	}
 
 	m.trustConfig.Enabled = enabled
@@ -436,7 +440,7 @@ func (m *Manager) SetTrustEnabled(enabled bool) error {
 		// Start network monitor if not already running
 		if m.networkMonitor != nil && !m.networkMonitor.IsRunning() {
 			if err := m.networkMonitor.Start(); err != nil {
-				return app.WrapError(err, "failed to start network monitor")
+				return errors.WrapError(err, "failed to start network monitor")
 			}
 		}
 		logger.LogDebug("trust", "Trust management enabled")
@@ -453,13 +457,13 @@ func (m *Manager) SetTrustEnabled(enabled bool) error {
 
 // handleNetworkChanged handles network change events from the NetworkMonitor.
 // It evaluates the network against trust rules and takes appropriate action.
-func (m *Manager) handleNetworkChanged(event *app.Event) {
+func (m *Manager) handleNetworkChanged(event *eventbus.Event) {
 	// Accept both pointer and value types for NetworkChangedData
-	var data *app.NetworkChangedData
+	var data *eventbus.NetworkChangedData
 	switch d := event.Data.(type) {
-	case *app.NetworkChangedData:
+	case *eventbus.NetworkChangedData:
 		data = d
-	case app.NetworkChangedData:
+	case eventbus.NetworkChangedData:
 		data = &d
 	default:
 		logger.LogWarn("trust", "Invalid event data type for network changed: %T", event.Data)
@@ -536,7 +540,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 
 	if profileID == "" {
 		logger.LogWarn("trust", "No VPN profile configured for auto-connect")
-		app.Emit(app.EventTrustActionTaken, "TrustManager", app.TrustActionTakenData{
+		eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
 			Action:  string(trust.TrustActionConnectVPN),
 			SSID:    net.SSID,
 			Success: false,
@@ -555,7 +559,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 	var err error
 
 	switch providerType {
-	case app.ProviderTailscale, app.ProviderWireGuard:
+	case vpntypes.ProviderTailscale, vpntypes.ProviderWireGuard:
 		// Use the provider interface for non-OpenVPN connections
 		provider, ok := m.providerRegistry.Get(providerType)
 		if !ok {
@@ -570,7 +574,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 			break
 		}
 
-		var targetProfile app.VPNProfile
+		var targetProfile vpntypes.VPNProfile
 		for _, p := range profiles {
 			if p.ID() == actualID {
 				targetProfile = p
@@ -584,7 +588,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		}
 
 		// Connect via provider (no auth needed for Tailscale/WireGuard auto-connect)
-		err = provider.Connect(ctx, targetProfile, app.AuthInfo{})
+		err = provider.Connect(ctx, targetProfile, vpntypes.AuthInfo{})
 
 	default:
 		// OpenVPN: use legacy ProfileManager
@@ -602,7 +606,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		// Check if profile requires OTP - emit event for UI to handle
 		if profile.RequiresOTP {
 			logger.LogInfo("trust", "Profile %s requires OTP - emitting auth required event", profile.Name)
-			app.Emit(app.EventTrustAuthRequired, "TrustManager", app.TrustAuthRequiredData{
+			eventbus.Emit(eventbus.EventTrustAuthRequired, "TrustManager", eventbus.TrustAuthRequiredData{
 				SSID:        net.SSID,
 				ProfileID:   actualID,
 				ProfileName: profile.Name,
@@ -619,7 +623,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 			if keyErr != nil || savedPassword == "" {
 				logger.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring, prompting for auth", profile.Name)
 				// Emit auth required event to prompt user instead of connecting with empty password
-				app.Emit(app.EventTrustAuthRequired, "TrustManager", app.TrustAuthRequiredData{
+				eventbus.Emit(eventbus.EventTrustAuthRequired, "TrustManager", eventbus.TrustAuthRequiredData{
 					SSID:        net.SSID,
 					ProfileID:   actualID,
 					ProfileName: profile.Name,
@@ -641,7 +645,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		return
 	}
 
-	app.Emit(app.EventTrustActionTaken, "TrustManager", app.TrustActionTakenData{
+	eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
 		Action:    string(trust.TrustActionConnectVPN),
 		SSID:      net.SSID,
 		ProfileID: profileID,
@@ -652,22 +656,22 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 // parseProfileID parses a profile ID that may be in "provider:id" format.
 // Returns the provider type and actual ID. For legacy IDs without provider prefix,
 // assumes OpenVPN.
-func (m *Manager) parseProfileID(profileID string) (app.VPNProviderType, string) {
+func (m *Manager) parseProfileID(profileID string) (vpntypes.VPNProviderType, string) {
 	// Check for known provider prefixes
-	for _, pt := range []app.VPNProviderType{app.ProviderTailscale, app.ProviderWireGuard, app.ProviderOpenVPN} {
+	for _, pt := range []vpntypes.VPNProviderType{vpntypes.ProviderTailscale, vpntypes.ProviderWireGuard, vpntypes.ProviderOpenVPN} {
 		prefix := string(pt) + ":"
 		if strings.HasPrefix(profileID, prefix) {
 			return pt, strings.TrimPrefix(profileID, prefix)
 		}
 	}
 	// Legacy format: assume OpenVPN
-	return app.ProviderOpenVPN, profileID
+	return vpntypes.ProviderOpenVPN, profileID
 }
 
 // handleConnectFailureOnUntrusted handles VPN connection failure on untrusted networks.
 // If BlockOnUntrustedFailure is enabled, activates the kill switch.
 func (m *Manager) handleConnectFailureOnUntrusted(net *trust.NetworkInfo, cfg *trust.TrustConfig, connectErr error) {
-	app.Emit(app.EventTrustActionTaken, "TrustManager", app.TrustActionTakenData{
+	eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
 		Action:  string(trust.TrustActionConnectVPN),
 		SSID:    net.SSID,
 		Success: false,
@@ -714,7 +718,7 @@ func (m *Manager) handleTrustDisconnect(net *trust.NetworkInfo) {
 		errMsg = lastErr.Error()
 	}
 
-	app.Emit(app.EventTrustActionTaken, "TrustManager", app.TrustActionTakenData{
+	eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
 		Action:  string(trust.TrustActionDisconnectVPN),
 		SSID:    net.SSID,
 		Success: success,
@@ -726,7 +730,7 @@ func (m *Manager) handleTrustDisconnect(net *trust.NetworkInfo) {
 func (m *Manager) handleTrustPrompt(net *trust.NetworkInfo, cfg *trust.TrustConfig) {
 	logger.LogDebug("trust", "Prompting user for unknown network %q", net.SSID)
 
-	app.Emit(app.EventTrustPrompt, "TrustManager", app.TrustPromptData{
+	eventbus.Emit(eventbus.EventTrustPrompt, "TrustManager", eventbus.TrustPromptData{
 		SSID:             net.SSID,
 		BSSID:            net.BSSID,
 		Type:             string(net.Type),
@@ -745,7 +749,7 @@ func (m *Manager) handleEvilTwinWarning(rule *trust.TrustRule, net *trust.Networ
 		knownBSSIDs = rule.KnownBSSIDs
 	}
 
-	app.Emit(app.EventEvilTwinWarning, "TrustManager", app.EvilTwinWarningData{
+	eventbus.Emit(eventbus.EventEvilTwinWarning, "TrustManager", eventbus.EvilTwinWarningData{
 		SSID:          net.SSID,
 		NewBSSID:      net.BSSID,
 		KnownBSSIDs:   knownBSSIDs,
@@ -775,7 +779,7 @@ func (m *Manager) activateKillSwitchForUntrusted() {
 	logger.LogWarn("trust", "Kill switch activated - all non-local traffic blocked")
 
 	// Emit event
-	app.Emit(app.EventKillSwitchEnabled, "TrustManager", app.SecurityEventData{
+	eventbus.Emit(eventbus.EventKillSwitchEnabled, "TrustManager", eventbus.SecurityEventData{
 		Feature: "killswitch",
 		Enabled: true,
 	})

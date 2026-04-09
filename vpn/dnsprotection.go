@@ -22,7 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
+	"github.com/yllada/vpn-manager/internal/paths"
 )
 
 // DNSProtectionMode defines how DNS protection is handled.
@@ -86,7 +87,7 @@ type DNSProtection struct {
 func NewDNSProtection() *DNSProtection {
 	dp := &DNSProtection{
 		config:        DefaultDNSConfig(),
-		backupPath:    app.ResolvConfBackupPath,
+		backupPath:    paths.ResolvConfBackupPath,
 		firewallChain: DNSFirewallChainName,
 	}
 	dp.detectBackend()
@@ -272,7 +273,7 @@ func (dp *DNSProtection) disableNetworkManager() error {
 // ═══════════════════════════════════════════════════════════════════════════
 
 func (dp *DNSProtection) enableResolvConf(dnsServers []string) error {
-	resolvPath := app.ResolvConfPath
+	resolvPath := paths.ResolvConfPath
 
 	// Backup current resolv.conf
 	if err := dp.backupResolvConf(resolvPath); err != nil {
@@ -334,7 +335,7 @@ func (dp *DNSProtection) backupResolvConf(path string) error {
 func (dp *DNSProtection) blockAlternativeDNS() error {
 	// Blocking DNS-over-TLS (port 853) requires daemon for privileged operations
 	if dp.config.BlockDNSOverTLS {
-		if !app.IsDaemonAvailable() {
+		if !daemon.IsDaemonAvailable() {
 			log.Printf("DNSProtection: Warning: cannot block DoT without daemon")
 		}
 		// DoT blocking is handled by daemon when DNS protection is enabled
@@ -448,7 +449,7 @@ func (dp *DNSProtection) getCurrentDNS() ([]string, error) {
 		}
 
 	default:
-		content, err := os.ReadFile(app.ResolvConfPath)
+		content, err := os.ReadFile(paths.ResolvConfPath)
 		if err != nil {
 			return nil, err
 		}
@@ -633,7 +634,7 @@ func (dp *DNSProtection) getCurrentDNSUnlocked() ([]string, error) {
 		}
 
 	default:
-		content, err := os.ReadFile(app.ResolvConfPath)
+		content, err := os.ReadFile(paths.ResolvConfPath)
 		if err != nil {
 			return nil, err
 		}
@@ -670,12 +671,12 @@ func (dp *DNSProtection) EnableFirewallDNS(vpnInterface string) error {
 	dp.vpnInterface = vpnInterface
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.DNSProtectionClient{}
-	if err := client.Enable(app.DNSEnableParams{
+	client := &daemon.DNSProtectionClient{}
+	if err := client.Enable(daemon.DNSEnableParams{
 		VPNInterface: vpnInterface,
 		Servers:      dp.vpnDNS,
 		BlockDoT:     dp.config.BlockDNSOverTLS,
@@ -701,11 +702,11 @@ func (dp *DNSProtection) DisableFirewallDNS() error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.DNSProtectionClient{}
+	client := &daemon.DNSProtectionClient{}
 	if err := client.Disable(); err != nil {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
@@ -865,11 +866,11 @@ func (dp *DNSProtection) disableStrictModeInternal() error {
 // Uses daemon for privileged operations.
 func (dp *DNSProtection) disableFirewallDNSInternal() error {
 	// Use daemon for privileged operations
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.DNSProtectionClient{}
+	client := &daemon.DNSProtectionClient{}
 	return client.Disable()
 }
 
@@ -915,7 +916,7 @@ func (dp *DNSProtection) SaveState() error {
 	}
 
 	// Ensure state directory exists
-	if err := app.EnsureStateDir(); err != nil {
+	if err := paths.EnsureStateDir(); err != nil {
 		log.Printf("DNSProtection: Warning: failed to ensure state directory: %v", err)
 		return err
 	}
@@ -927,7 +928,7 @@ func (dp *DNSProtection) SaveState() error {
 	}
 
 	// Atomic write: write to temp file, then rename
-	statePath := app.DNSStatePath
+	statePath := paths.DNSStatePath
 	tempPath := statePath + ".tmp"
 
 	// Write to temp file
@@ -965,10 +966,10 @@ func writeDNSStateFile(path string, data []byte) error {
 // LoadDNSState reads the persisted DNS protection state from disk.
 // Returns nil if no state file exists (not an error condition).
 func LoadDNSState() (*DNSState, error) {
-	statePath := app.DNSStatePath
+	statePath := paths.DNSStatePath
 
 	// Check if state file exists
-	if !app.StateFileExists(statePath) {
+	if !paths.StateFileExists(statePath) {
 		return nil, nil
 	}
 
@@ -1047,9 +1048,9 @@ func (dp *DNSProtection) RecoverState() error {
 
 // ClearState removes the DNS state file.
 func (dp *DNSProtection) ClearState() error {
-	statePath := app.DNSStatePath
+	statePath := paths.DNSStatePath
 
-	if !app.StateFileExists(statePath) {
+	if !paths.StateFileExists(statePath) {
 		return nil
 	}
 

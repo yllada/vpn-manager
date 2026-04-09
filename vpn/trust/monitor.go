@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 )
 
 // =============================================================================
@@ -24,7 +25,7 @@ import (
 // It implements debouncing to avoid rapid-fire events during WiFi roaming.
 type NetworkMonitor struct {
 	// eventBus is the application event bus for publishing network changes.
-	eventBus *app.EventBus
+	eventBus *eventbus.EventBus
 
 	// conn is the D-Bus system bus connection.
 	conn *dbus.Conn
@@ -56,7 +57,7 @@ type NetworkMonitor struct {
 
 // NewNetworkMonitor creates a new NetworkMonitor instance.
 // The monitor is not started automatically; call Start() to begin listening.
-func NewNetworkMonitor(eventBus *app.EventBus) *NetworkMonitor {
+func NewNetworkMonitor(eventBus *eventbus.EventBus) *NetworkMonitor {
 	return &NetworkMonitor{
 		eventBus:         eventBus,
 		stopChan:         make(chan struct{}),
@@ -113,7 +114,7 @@ func (nm *NetworkMonitor) Start() error {
 
 	// Start the signal listener goroutine
 	if !nm.dbusFailed {
-		app.SafeGoWithName("network-monitor-dbus", nm.listenLoop)
+		resilience.SafeGoWithName("network-monitor-dbus", nm.listenLoop)
 	}
 
 	logger.LogDebug("NetworkMonitor: Started (D-Bus: %v)", !nm.dbusFailed)
@@ -291,7 +292,7 @@ func (nm *NetworkMonitor) checkAndEmitNetworkChange() {
 	}
 
 	// Build event data
-	eventData := &app.NetworkChangedData{
+	eventData := &eventbus.NetworkChangedData{
 		SSID:      newNet.SSID,
 		BSSID:     newNet.BSSID,
 		Type:      string(newNet.Type),
@@ -301,7 +302,7 @@ func (nm *NetworkMonitor) checkAndEmitNetworkChange() {
 
 	// Include previous network info
 	if oldNet != nil {
-		eventData.Previous = &app.NetworkChangedData{
+		eventData.Previous = &eventbus.NetworkChangedData{
 			SSID:      oldNet.SSID,
 			BSSID:     oldNet.BSSID,
 			Type:      string(oldNet.Type),
@@ -311,7 +312,7 @@ func (nm *NetworkMonitor) checkAndEmitNetworkChange() {
 	}
 
 	// Emit event
-	event := app.NewEvent(app.EventNetworkChanged, "NetworkMonitor", eventData)
+	event := eventbus.NewEvent(eventbus.EventNetworkChanged, "NetworkMonitor", eventData)
 	nm.eventBus.Publish(event)
 
 	logger.LogDebug("NetworkMonitor: Network changed - SSID=%q Type=%s Connected=%v",

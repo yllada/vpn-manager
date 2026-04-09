@@ -10,8 +10,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
@@ -171,7 +171,7 @@ func (mw *MainWindow) createTailscalePage() {
 		// Ensure current user is configured as Tailscale operator
 		// This allows running tailscale commands without password prompts
 		// Only prompts for password once if not already configured
-		app.SafeGoWithName("tailscale-ensure-operator", func() {
+		resilience.SafeGoWithName("tailscale-ensure-operator", func() {
 			if err := provider.EnsureOperator(); err != nil {
 				// Log but don't fail - user can still use daemon
 				logger.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)

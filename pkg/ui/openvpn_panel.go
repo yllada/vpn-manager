@@ -11,9 +11,9 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/keyring"
+	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -764,7 +764,7 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 	}
 
 	// Monitor connection status
-	app.SafeGoWithName("openvpn-monitor-connection", func() {
+	resilience.SafeGoWithName("openvpn-monitor-connection", func() {
 		pl.monitorConnection(profile.ID)
 	})
 }
@@ -1016,7 +1016,7 @@ func (pl *ProfileList) startStatsUpdate(profileID string) {
 	pl.stopStats = make(chan struct{})
 	pl.statsUpdating = true
 
-	app.SafeGoWithName("openvpn-stats-update", func() {
+	resilience.SafeGoWithName("openvpn-stats-update", func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 

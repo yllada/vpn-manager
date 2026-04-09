@@ -1,6 +1,6 @@
-// Package app provides shared constants, types, and utilities
+// Package config provides shared constants, types, and utilities
 // used across the VPN Manager application.
-package app
+package config
 
 import "time"
 

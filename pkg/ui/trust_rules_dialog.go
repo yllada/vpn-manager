@@ -11,8 +11,8 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
@@ -357,7 +357,7 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	// Also include OpenVPN profiles from ProfileManager (legacy format for compatibility)
 	for _, p := range trd.mainWindow.app.vpnManager.ProfileManager().List() {
 		// Skip if we already have this profile (from OpenVPN provider)
-		openvpnID := fmt.Sprintf("%s:%s", app.ProviderOpenVPN, p.ID)
+		openvpnID := fmt.Sprintf("%s:%s", vpntypes.ProviderOpenVPN, p.ID)
 		alreadyAdded := false
 		for _, id := range profileIDs {
 			if id == openvpnID {

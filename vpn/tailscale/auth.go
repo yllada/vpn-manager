@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -108,12 +108,12 @@ func (c *Client) Login(ctx context.Context, authKey string) (string, error) {
 
 // loginViaDaemon attempts login via the daemon for elevated privileges.
 func (c *Client) loginViaDaemon(ctx context.Context, authKey, loginServer string) (string, error) {
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return "", fmt.Errorf("tailscale login requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
-	result, err := client.LoginWithContext(ctx, app.TailscaleLoginParams{
+	client := &daemon.TailscaleClient{}
+	result, err := client.LoginWithContext(ctx, daemon.TailscaleLoginParams{
 		AuthKey:     authKey,
 		LoginServer: loginServer,
 	})
@@ -143,11 +143,11 @@ func (c *Client) Logout(ctx context.Context) error {
 
 // logoutViaDaemon attempts tailscale logout via the daemon for elevated privileges.
 func (c *Client) logoutViaDaemon(ctx context.Context) error {
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("tailscale logout requires elevated privileges and daemon is not running")
 	}
 
-	client := &app.TailscaleClient{}
+	client := &daemon.TailscaleClient{}
 	return client.LogoutWithContext(ctx)
 }
 

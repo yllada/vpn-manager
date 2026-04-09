@@ -10,7 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/stats"
@@ -46,7 +46,7 @@ func Run(manager *vpn.Manager) error {
 	setupTUISignalHandler(program, done)
 
 	// Setup EventBus bridge - subscribes to app events and sends them to the TUI
-	stopEventBridge := setupEventBusBridge(manager, manager.ProfileManager(), app.GetEventBus(), program)
+	stopEventBridge := setupEventBusBridge(manager, manager.ProfileManager(), eventbus.GetEventBus(), program)
 	defer stopEventBridge()
 
 	// Run the program
@@ -86,12 +86,12 @@ func setupTUISignalHandler(program *tea.Program, done <-chan struct{}) {
 // setupEventBusBridge subscribes to application events and converts them to Bubble Tea messages.
 // This is the recommended pattern for integrating external event sources with Bubble Tea.
 // Returns a cleanup function that should be called when the TUI exits.
-func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus *app.EventBus, program *tea.Program) func() {
-	var subscriptions []*app.Subscription
+func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eb *eventbus.EventBus, program *tea.Program) func() {
+	var subscriptions []*eventbus.Subscription
 
 	// Subscribe to connection established events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventConnectionEstablished, func(e *app.Event) {
-		if data, ok := e.Data.(*app.ConnectionEventData); ok {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventConnectionEstablished, func(e *eventbus.Event) {
+		if data, ok := e.Data.(*eventbus.ConnectionEventData); ok {
 			logger.LogDebug("tui", "EventBus: connection established for %s", data.ProfileID)
 			// Look up the actual connection from manager
 			var conn *vpn.Connection
@@ -100,13 +100,13 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 			}
 			program.Send(ConnectionUpdatedMsg{
 				Connection: conn,
-				Status:     data.Status,
+				Status:     vpn.ConnectionStatus(data.Status),
 			})
 		}
 	}))
 
 	// Subscribe to connection closed events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventConnectionClosed, func(e *app.Event) {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventConnectionClosed, func(e *eventbus.Event) {
 		logger.LogDebug("tui", "EventBus: connection closed")
 		program.Send(ConnectionUpdatedMsg{
 			Connection: nil,
@@ -115,16 +115,16 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 	}))
 
 	// Subscribe to connection failed events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventConnectionFailed, func(e *app.Event) {
-		if data, ok := e.Data.(*app.ConnectionEventData); ok {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventConnectionFailed, func(e *eventbus.Event) {
+		if data, ok := e.Data.(*eventbus.ConnectionEventData); ok {
 			logger.LogDebug("tui", "EventBus: connection failed: %v", data.Error)
 			program.Send(ErrorMsg{Err: data.Error})
 		}
 	}))
 
 	// Subscribe to connection starting events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventConnectionStarting, func(e *app.Event) {
-		if data, ok := e.Data.(*app.ConnectionEventData); ok {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventConnectionStarting, func(e *eventbus.Event) {
+		if data, ok := e.Data.(*eventbus.ConnectionEventData); ok {
 			logger.LogDebug("tui", "EventBus: connection starting for %s", data.ProfileID)
 			// Look up the actual connection from manager (may not exist yet during startup)
 			var conn *vpn.Connection
@@ -139,8 +139,8 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 	}))
 
 	// Subscribe to status changed events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventStatusChanged, func(e *app.Event) {
-		if data, ok := e.Data.(*app.ConnectionEventData); ok {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventStatusChanged, func(e *eventbus.Event) {
+		if data, ok := e.Data.(*eventbus.ConnectionEventData); ok {
 			logger.LogDebug("tui", "EventBus: status changed to %v", data.Status)
 			// Look up the actual connection from manager
 			var conn *vpn.Connection
@@ -149,14 +149,14 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 			}
 			program.Send(ConnectionUpdatedMsg{
 				Connection: conn,
-				Status:     data.Status,
+				Status:     vpn.ConnectionStatus(data.Status),
 			})
 		}
 	}))
 
 	// Subscribe to bytes/stats updates
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventBytesUpdated, func(e *app.Event) {
-		if data, ok := e.Data.(*app.BytesEventData); ok {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventBytesUpdated, func(e *eventbus.Event) {
+		if data, ok := e.Data.(*eventbus.BytesEventData); ok {
 			program.Send(StatsUpdatedMsg{
 				Stats: &stats.SessionSummary{
 					TotalBytesIn:  data.BytesRecv,
@@ -168,15 +168,15 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 	}))
 
 	// Subscribe to error events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventError, func(e *app.Event) {
-		if data, ok := e.Data.(*app.ErrorEventData); ok {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventError, func(e *eventbus.Event) {
+		if data, ok := e.Data.(*eventbus.ErrorEventData); ok {
 			logger.LogDebug("tui", "EventBus: error occurred: %v", data.Error)
 			program.Send(ErrorMsg{Err: data.Error})
 		}
 	}))
 
 	// Subscribe to profile events
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventProfileAdded, func(e *app.Event) {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventProfileAdded, func(e *eventbus.Event) {
 		logger.LogDebug("tui", "EventBus: profile added, reloading profiles")
 		if pm != nil {
 			profiles := pm.List()
@@ -184,7 +184,7 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 		}
 	}))
 
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventProfileUpdated, func(e *app.Event) {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventProfileUpdated, func(e *eventbus.Event) {
 		logger.LogDebug("tui", "EventBus: profile updated, reloading profiles")
 		if pm != nil {
 			profiles := pm.List()
@@ -192,7 +192,7 @@ func setupEventBusBridge(manager *vpn.Manager, pm *vpn.ProfileManager, eventBus 
 		}
 	}))
 
-	subscriptions = append(subscriptions, eventBus.Subscribe(app.EventProfileDeleted, func(e *app.Event) {
+	subscriptions = append(subscriptions, eb.Subscribe(eventbus.EventProfileDeleted, func(e *eventbus.Event) {
 		logger.LogDebug("tui", "EventBus: profile deleted, reloading profiles")
 		if pm != nil {
 			profiles := pm.List()

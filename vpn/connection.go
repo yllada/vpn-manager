@@ -15,8 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
+	"github.com/yllada/vpn-manager/internal/errors"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // Connect initiates a VPN connection for the specified profile.
@@ -59,19 +63,19 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 	m.connections[profileID] = conn
 
 	// Emit connection starting event
-	app.Emit(app.EventConnectionStarting, "Manager", app.ConnectionEventData{
+	eventbus.Emit(eventbus.EventConnectionStarting, "Manager", eventbus.ConnectionEventData{
 		ProfileID:   profileID,
 		ProfileName: profile.Name,
 	})
 
 	// Use NetworkManager if enabled and available
 	if profile.UseNetworkManager && m.nmBackend.IsAvailable() {
-		app.SafeGoWithName("vpn-nm-connection", func() {
+		resilience.SafeGoWithName("vpn-nm-connection", func() {
 			m.runNMConnection(conn, username, password)
 		})
 	} else {
 		// Start connection in goroutine (direct OpenVPN)
-		app.SafeGoWithName("vpn-openvpn-connection", func() {
+		resilience.SafeGoWithName("vpn-openvpn-connection", func() {
 			m.runConnection(conn, username, password)
 		})
 	}
@@ -116,8 +120,8 @@ func (m *Manager) Disconnect(profileID string) error {
 	}
 
 	// Disconnect via daemon (the daemon manages the OpenVPN process)
-	if app.IsDaemonAvailable() {
-		client := &app.OpenVPNClient{}
+	if daemon.IsDaemonAvailable() {
+		client := &daemon.OpenVPNClient{}
 		if err := client.Disconnect(profileID); err != nil {
 			logger.LogWarn("vpn", "Daemon disconnect failed: %v", err)
 		}
@@ -158,7 +162,7 @@ func (m *Manager) Disconnect(profileID string) error {
 	logger.LogDebug("vpn", "Disconnected from %s", profileID)
 
 	// Emit event
-	app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
+	eventbus.Emit(eventbus.EventConnectionClosed, "Manager", eventbus.ConnectionEventData{
 		ProfileID: profileID,
 	})
 
@@ -175,7 +179,7 @@ func (m *Manager) DisconnectAll() error {
 	}
 	m.mu.Unlock()
 
-	var errors app.ErrorList
+	var errors errors.ErrorList
 	for _, id := range profileIDs {
 		if err := m.Disconnect(id); err != nil {
 			errors.Add(err)
@@ -223,14 +227,14 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	// For NetworkManager or "exclude" mode, we need to apply routes manually
 	if conn.Profile.SplitTunnelEnabled && len(conn.Profile.SplitTunnelRoutes) > 0 {
 		if conn.Profile.UseNetworkManager || conn.Profile.SplitTunnelMode == "exclude" {
-			app.SafeGoWithName("vpn-split-tunnel-routes", func() {
+			resilience.SafeGoWithName("vpn-split-tunnel-routes", func() {
 				m.applySplitTunnelRoutes(conn)
 			})
 		}
 	}
 
 	// Stats Collection
-	m.StartStatsCollection(conn.Profile.ID, app.ProviderOpenVPN, tunIface, vpnServerIP)
+	m.StartStatsCollection(conn.Profile.ID, vpntypes.ProviderOpenVPN, tunIface, vpnServerIP)
 }
 
 // runNMConnection executes VPN connection via NetworkManager.
@@ -302,7 +306,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 				logger.LogDebug("vpn", "Connected via NetworkManager - IP: %s", ip)
 
 				// Emit connection established event
-				app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
+				eventbus.Emit(eventbus.EventConnectionEstablished, "Manager", eventbus.ConnectionEventData{
 					ProfileID:   profileID,
 					ProfileName: profileName,
 					IPAddress:   ip,
@@ -323,16 +327,16 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 	logger.LogDebug("vpn", "Configuration file: %s", conn.Profile.ConfigPath)
 
 	// Check daemon availability
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		err := fmt.Errorf("vpn-managerd daemon is not running. Install and start it with: sudo ./build/install-daemon.sh")
 		logger.LogError("vpn", "%v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
 
-	client := &app.OpenVPNClient{}
+	client := &daemon.OpenVPNClient{}
 
-	params := app.OpenVPNConnectParams{
+	params := daemon.OpenVPNConnectParams{
 		ProfileID:         conn.Profile.ID,
 		ConfigPath:        conn.Profile.ConfigPath,
 		Username:          username,
@@ -357,7 +361,7 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 
 // monitorDaemonConnection monitors an OpenVPN connection managed by the daemon.
 func (m *Manager) monitorDaemonConnection(conn *Connection) {
-	client := &app.OpenVPNClient{}
+	client := &daemon.OpenVPNClient{}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -387,7 +391,7 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 					logger.LogInfo("vpn", "Connected via daemon - IP: %s", status.IPAddress)
 
 					// Emit connection established event
-					app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
+					eventbus.Emit(eventbus.EventConnectionEstablished, "Manager", eventbus.ConnectionEventData{
 						ProfileID:   profileID,
 						ProfileName: conn.Profile.Name,
 						IPAddress:   status.IPAddress,
@@ -409,7 +413,7 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 					conn.mu.Unlock()
 
 					// Emit disconnection event
-					app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
+					eventbus.Emit(eventbus.EventConnectionClosed, "Manager", eventbus.ConnectionEventData{
 						ProfileID: profileID,
 					})
 
@@ -479,7 +483,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			conn.mu.Unlock()
 
 			// Emit connection established event
-			app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
+			eventbus.Emit(eventbus.EventConnectionEstablished, "Manager", eventbus.ConnectionEventData{
 				ProfileID:   profileID,
 				ProfileName: profileName,
 				IPAddress:   ipAddress,
@@ -507,7 +511,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			// Invoke auth failed callback if set and not already called
 			if onAuthFailed != nil && !authFailedCalled && needsOTP {
 				logger.LogDebug("vpn", "AUTH_FAILED detected without OTP - suggesting OTP retry")
-				app.SafeGoWithName("vpn-auth-failed-callback", func() {
+				resilience.SafeGoWithName("vpn-auth-failed-callback", func() {
 					onAuthFailed(conn.Profile, true)
 				})
 			}
@@ -525,7 +529,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 			conn.mu.Unlock()
 
 			if onAuthFailed != nil && !authFailedCalled && needsOTP {
-				app.SafeGoWithName("vpn-challenge-callback", func() {
+				resilience.SafeGoWithName("vpn-challenge-callback", func() {
 					onAuthFailed(conn.Profile, true)
 				})
 			}
@@ -554,7 +558,7 @@ func (m *Manager) handleConnectionError(conn *Connection, err error) {
 	conn.mu.Unlock()
 
 	// Emit connection failed event
-	app.Emit(app.EventConnectionFailed, "Manager", app.ConnectionEventData{
+	eventbus.Emit(eventbus.EventConnectionFailed, "Manager", eventbus.ConnectionEventData{
 		ProfileID:   profileID,
 		ProfileName: profileName,
 		Error:       err,

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // --- Provider Tests ---
@@ -34,8 +34,8 @@ func TestNewProvider(t *testing.T) {
 func TestProviderType(t *testing.T) {
 	p := NewProvider()
 
-	if p.Type() != app.ProviderWireGuard {
-		t.Errorf("expected type %s, got %s", app.ProviderWireGuard, p.Type())
+	if p.Type() != vpntypes.ProviderWireGuard {
+		t.Errorf("expected type %s, got %s", vpntypes.ProviderWireGuard, p.Type())
 	}
 }
 
@@ -51,14 +51,14 @@ func TestProviderSupportsFeature(t *testing.T) {
 	p := NewProvider()
 
 	tests := []struct {
-		feature  app.ProviderFeature
+		feature  vpntypes.ProviderFeature
 		expected bool
 	}{
-		{app.FeatureKillSwitch, true},
-		{app.FeatureAutoConnect, true},
-		{app.FeatureSplitTunnel, true},
-		{app.FeatureExitNode, false},
-		{app.FeatureMFA, false},
+		{vpntypes.FeatureKillSwitch, true},
+		{vpntypes.FeatureAutoConnect, true},
+		{vpntypes.FeatureSplitTunnel, true},
+		{vpntypes.FeatureExitNode, false},
+		{vpntypes.FeatureMFA, false},
 	}
 
 	for _, tc := range tests {
@@ -97,8 +97,8 @@ func TestNewProfile(t *testing.T) {
 		t.Errorf("expected interface name 'test-server', got '%s'", profile.InterfaceName)
 	}
 
-	if profile.Type() != app.ProviderWireGuard {
-		t.Errorf("expected type %s, got %s", app.ProviderWireGuard, profile.Type())
+	if profile.Type() != vpntypes.ProviderWireGuard {
+		t.Errorf("expected type %s, got %s", vpntypes.ProviderWireGuard, profile.Type())
 	}
 
 	// ID should be generated from filename
@@ -690,19 +690,19 @@ func TestConnectionGetStatus(t *testing.T) {
 func TestConnectionStatusConstants(t *testing.T) {
 	// Verify status constants are properly aliased
 	tests := []struct {
-		status    ConnectionStatus
-		appStatus app.ConnectionStatus
+		status         ConnectionStatus
+		vpntypesStatus vpntypes.ConnectionStatus
 	}{
-		{StatusDisconnected, app.StatusDisconnected},
-		{StatusConnecting, app.StatusConnecting},
-		{StatusConnected, app.StatusConnected},
-		{StatusDisconnecting, app.StatusDisconnecting},
-		{StatusError, app.StatusError},
+		{StatusDisconnected, vpntypes.StatusDisconnected},
+		{StatusConnecting, vpntypes.StatusConnecting},
+		{StatusConnected, vpntypes.StatusConnected},
+		{StatusDisconnecting, vpntypes.StatusDisconnecting},
+		{StatusError, vpntypes.StatusError},
 	}
 
 	for _, tc := range tests {
-		if tc.status != tc.appStatus {
-			t.Errorf("Status constant mismatch: wireguard.%v != app.%v", tc.status, tc.appStatus)
+		if tc.status != tc.vpntypesStatus {
+			t.Errorf("Status constant mismatch: wireguard.%v != vpntypes.%v", tc.status, tc.vpntypesStatus)
 		}
 	}
 }

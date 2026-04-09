@@ -11,8 +11,9 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
@@ -359,7 +360,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 	if conn != nil && conn.Status == wireguard.StatusConnected {
 		// Disconnect
 		row.connBtn.SetSensitive(false)
-		app.SafeGoWithName("wireguard-disconnect", func() {
+		resilience.SafeGoWithName("wireguard-disconnect", func() {
 			err := wp.provider.Disconnect(context.Background(), row.profile)
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
@@ -373,8 +374,8 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 	} else {
 		// Connect
 		row.connBtn.SetSensitive(false)
-		app.SafeGoWithName("wireguard-connect", func() {
-			err := wp.provider.Connect(context.Background(), row.profile, app.AuthInfo{})
+		resilience.SafeGoWithName("wireguard-connect", func() {
+			err := wp.provider.Connect(context.Background(), row.profile, vpntypes.AuthInfo{})
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
@@ -530,7 +531,7 @@ func (wp *WireGuardPanel) StartUpdates() {
 	wp.stopUpdatesOnce = sync.Once{}
 	stopCh := wp.stopUpdates // Capture for goroutine
 
-	app.SafeGoWithName("wireguard-status-updates", func() {
+	resilience.SafeGoWithName("wireguard-status-updates", func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 

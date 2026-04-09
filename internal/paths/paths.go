@@ -1,7 +1,6 @@
-// Package app provides shared constants, types, and utilities
+// Package paths provides path constants for binaries and files
 // used across the VPN Manager application.
-// This file contains path constants for binaries and files.
-package app
+package paths
 
 import (
 	"fmt"

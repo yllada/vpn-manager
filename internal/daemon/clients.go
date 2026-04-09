@@ -1,7 +1,7 @@
-// Package app provides client wrappers for daemon privileged operations.
+// Package daemon provides client wrappers for daemon privileged operations.
 // These functions provide a clean API for vpn/* modules to delegate operations
 // to the daemon. The daemon must be running for privileged operations to work.
-package app
+package daemon
 
 import (
 	"context"

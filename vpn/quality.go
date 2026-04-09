@@ -13,8 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/paths"
+	"github.com/yllada/vpn-manager/internal/resilience"
 )
 
 // =============================================================================
@@ -165,7 +166,7 @@ func GetInterfaceStats(iface string) (*InterfaceStats, error) {
 		return nil, fmt.Errorf("interface name is empty")
 	}
 
-	basePath := filepath.Join(app.SysClassNetPath, iface, "statistics")
+	basePath := filepath.Join(paths.SysClassNetPath, iface, "statistics")
 
 	// Check if interface exists
 	if _, err := os.Stat(basePath); os.IsNotExist(err) {
@@ -319,7 +320,7 @@ func (qm *QualityMonitor) Start() error {
 		qm.mu.Unlock()
 	}
 
-	app.SafeGoWithName("quality-monitor-loop", func() {
+	resilience.SafeGoWithName("quality-monitor-loop", func() {
 		qm.runLoop()
 	})
 

@@ -1,10 +1,10 @@
-// Package app provides shared constants, types, and utilities
-// used across the VPN Manager application.
-// This file provides autostart management for Linux desktop environments.
-package app
+// Package autostart provides autostart management for Linux desktop environments.
+// This file provides XDG-compliant autostart functionality for VPN Manager.
+package autostart
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -76,12 +76,12 @@ func getAutostartFilePath() (string, error) {
 	return filepath.Join(autostartDir, "vpn-manager.desktop"), nil
 }
 
-// IsAutostartEnabled checks if autostart is currently enabled.
+// IsEnabled checks if autostart is currently enabled.
 // Returns true if the autostart desktop file exists.
-func IsAutostartEnabled() bool {
+func IsEnabled() bool {
 	filePath, err := getAutostartFilePath()
 	if err != nil {
-		LogWarn("Failed to get autostart file path: %v", err)
+		log.Printf("WARN: Failed to get autostart file path: %v", err)
 		return false
 	}
 
@@ -93,14 +93,14 @@ func IsAutostartEnabled() bool {
 		return false
 	}
 	// Other errors (permission denied, etc.) - log and assume disabled
-	LogWarn("Failed to check autostart file: %v", err)
+	log.Printf("WARN: Failed to check autostart file: %v", err)
 	return false
 }
 
-// EnableAutostart creates the autostart desktop entry.
+// Enable creates the autostart desktop entry.
 // This will make VPN Manager start automatically when the user logs in.
 // The app will start minimized to the system tray.
-func EnableAutostart() error {
+func Enable() error {
 	autostartDir, err := getAutostartDir()
 	if err != nil {
 		return fmt.Errorf("failed to get autostart directory: %w", err)
@@ -132,19 +132,19 @@ func EnableAutostart() error {
 	if err := os.Rename(tempPath, filePath); err != nil {
 		// Clean up temp file on rename failure
 		if rmErr := os.Remove(tempPath); rmErr != nil {
-			LogWarn("Failed to clean up temp autostart file %s: %v", tempPath, rmErr)
+			log.Printf("WARN: Failed to clean up temp autostart file %s: %v", tempPath, rmErr)
 		}
 		return fmt.Errorf("failed to finalize autostart file: %w", err)
 	}
 
-	LogInfo("Autostart enabled: %s", filePath)
+	log.Printf("Autostart enabled: %s", filePath)
 	return nil
 }
 
-// DisableAutostart removes the autostart desktop entry.
+// Disable removes the autostart desktop entry.
 // VPN Manager will no longer start automatically on login.
 // This operation is idempotent - calling it when already disabled is a no-op.
-func DisableAutostart() error {
+func Disable() error {
 	filePath, err := getAutostartFilePath()
 	if err != nil {
 		return fmt.Errorf("failed to get autostart file path: %w", err)
@@ -154,35 +154,41 @@ func DisableAutostart() error {
 	if err := os.Remove(filePath); err != nil {
 		if os.IsNotExist(err) {
 			// Already disabled, nothing to do
-			LogDebug("Autostart already disabled (file does not exist)")
+			log.Println("Autostart already disabled (file does not exist)")
 			return nil
 		}
 		return fmt.Errorf("failed to remove autostart file: %w", err)
 	}
 
-	LogInfo("Autostart disabled: %s", filePath)
+	log.Printf("Autostart disabled: %s", filePath)
 	return nil
 }
 
-// SetAutostart enables or disables autostart based on the enabled parameter.
-// This is a convenience function that calls EnableAutostart or DisableAutostart.
-func SetAutostart(enabled bool) error {
+// Set enables or disables autostart based on the enabled parameter.
+// This is a convenience function that calls Enable or Disable.
+func Set(enabled bool) error {
 	if enabled {
-		return EnableAutostart()
+		return Enable()
 	}
-	return DisableAutostart()
+	return Disable()
 }
 
-// SyncAutostartWithConfig ensures the autostart state matches the config.
+// AutostartConfig is an interface for config types that have AutoStart field.
+// This allows the package to work with any config type.
+type AutostartConfig interface {
+	GetAutoStart() bool
+}
+
+// SyncWithConfig ensures the autostart state matches the config.
 // Call this during application startup to handle edge cases where
 // the config and filesystem state may be out of sync.
-func SyncAutostartWithConfig(config *Config) error {
-	currentState := IsAutostartEnabled()
+func SyncWithConfig(autoStartEnabled bool) error {
+	currentState := IsEnabled()
 
-	if config.AutoStart != currentState {
-		LogWarn("Autostart state mismatch: config=%v, filesystem=%v. Syncing...",
-			config.AutoStart, currentState)
-		return SetAutostart(config.AutoStart)
+	if autoStartEnabled != currentState {
+		log.Printf("WARN: Autostart state mismatch: config=%v, filesystem=%v. Syncing...",
+			autoStartEnabled, currentState)
+		return Set(autoStartEnabled)
 	}
 
 	return nil

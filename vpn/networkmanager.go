@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 )
 
 // NMBackend provides NetworkManager-based VPN connection management.
@@ -126,7 +126,7 @@ func (nm *NMBackend) findConnectionByFile(configPath string) string {
 func (nm *NMBackend) Connect(connName, username, password string) error {
 	// First, try to save credentials for future reconnections
 	// This is done async so we don't block the connection
-	app.SafeGoWithName("nm-save-credentials", func() {
+	resilience.SafeGoWithName("nm-save-credentials", func() {
 		if username != "" {
 			_ = exec.Command("nmcli", "connection", "modify", connName,
 				"+vpn.data", fmt.Sprintf("username=%s", username),
@@ -154,7 +154,7 @@ func (nm *NMBackend) connectWithPasswdFile(connName, password string) error {
 		return err
 	}
 
-	app.SafeGoWithName("nm-stdin-write", func() {
+	resilience.SafeGoWithName("nm-stdin-write", func() {
 		defer func() { _ = stdin.Close() }()
 		_, _ = fmt.Fprintf(stdin, "vpn.secrets.password:%s\n", password)
 	})
@@ -333,7 +333,7 @@ func (nm *NMBackend) MonitorConnection(connName string, callback func(connected 
 		return
 	}
 
-	app.SafeGoWithName("nm-monitor-connection", func() {
+	resilience.SafeGoWithName("nm-monitor-connection", func() {
 		defer func() { _ = cmd.Process.Kill() }()
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {

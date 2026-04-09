@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 	"golang.org/x/term"
@@ -327,7 +327,7 @@ func (c *CLI) Connect(nameOrID string) error {
 	}
 
 	// Wait for connection to establish (with timeout)
-	timeout := time.After(app.ConnectionTimeout)
+	timeout := time.After(config.ConnectionTimeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 

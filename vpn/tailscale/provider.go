@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // AvailabilityState represents Tailscale's installation/daemon state.
@@ -93,8 +93,8 @@ func (p *Provider) IsOperator() bool {
 }
 
 // Type returns the provider type identifier.
-func (p *Provider) Type() app.VPNProviderType {
-	return app.ProviderTailscale
+func (p *Provider) Type() vpntypes.VPNProviderType {
+	return vpntypes.ProviderTailscale
 }
 
 // Name returns a human-readable name for the provider.
@@ -145,7 +145,7 @@ func (p *Provider) Version() (string, error) {
 // Connect initiates a Tailscale connection.
 // For Tailscale, this typically means calling `tailscale up` with the
 // appropriate options from the profile.
-func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app.AuthInfo) error {
+func (p *Provider) Connect(ctx context.Context, profile vpntypes.VPNProfile, auth vpntypes.AuthInfo) error {
 	if p.client == nil {
 		return fmt.Errorf("tailscale client not initialized")
 	}
@@ -169,7 +169,7 @@ func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app
 }
 
 // Disconnect terminates the Tailscale connection.
-func (p *Provider) Disconnect(ctx context.Context, profile app.VPNProfile) error {
+func (p *Provider) Disconnect(ctx context.Context, profile vpntypes.VPNProfile) error {
 	if p.client == nil {
 		return fmt.Errorf("tailscale client not initialized")
 	}
@@ -178,30 +178,30 @@ func (p *Provider) Disconnect(ctx context.Context, profile app.VPNProfile) error
 }
 
 // Status returns the current Tailscale status.
-func (p *Provider) Status(ctx context.Context) (*app.ProviderStatus, error) {
+func (p *Provider) Status(ctx context.Context) (*vpntypes.ProviderStatus, error) {
 	if p.client == nil {
 		return nil, fmt.Errorf("tailscale client not initialized")
 	}
 
 	status, err := p.client.Status(ctx)
 	if err != nil {
-		return &app.ProviderStatus{
-			Provider:     app.ProviderTailscale,
+		return &vpntypes.ProviderStatus{
+			Provider:     vpntypes.ProviderTailscale,
 			Connected:    false,
 			BackendState: "Unknown",
 			Error:        err.Error(),
 		}, nil
 	}
 
-	providerStatus := &app.ProviderStatus{
-		Provider:     app.ProviderTailscale,
+	providerStatus := &vpntypes.ProviderStatus{
+		Provider:     vpntypes.ProviderTailscale,
 		BackendState: status.BackendState,
 		Connected:    status.BackendState == "Running",
 	}
 
 	// Add connection info if we have Self info (available even when stopped)
 	if status.Self != nil {
-		providerStatus.ConnectionInfo = &app.ConnectionInfo{
+		providerStatus.ConnectionInfo = &vpntypes.ConnectionInfo{
 			TailscaleIPs: status.Self.TailscaleIPs,
 			Hostname:     status.Self.HostName,
 		}
@@ -221,7 +221,7 @@ func (p *Provider) Status(ctx context.Context) (*app.ProviderStatus, error) {
 
 // GetProfiles returns the Tailscale profile.
 // Tailscale typically has a single "profile" representing the current account/network.
-func (p *Provider) GetProfiles(ctx context.Context) ([]app.VPNProfile, error) {
+func (p *Provider) GetProfiles(ctx context.Context) ([]vpntypes.VPNProfile, error) {
 	if p.client == nil {
 		return nil, fmt.Errorf("tailscale client not initialized")
 	}
@@ -248,21 +248,21 @@ func (p *Provider) GetProfiles(ctx context.Context) ([]app.VPNProfile, error) {
 		profile.name = fmt.Sprintf("Tailscale (%s)", status.CurrentTailnet.Name)
 	}
 
-	return []app.VPNProfile{profile}, nil
+	return []vpntypes.VPNProfile{profile}, nil
 }
 
 // SupportsFeature checks if Tailscale supports a specific feature.
-func (p *Provider) SupportsFeature(feature app.ProviderFeature) bool {
+func (p *Provider) SupportsFeature(feature vpntypes.ProviderFeature) bool {
 	switch feature {
-	case app.FeatureExitNode:
+	case vpntypes.FeatureExitNode:
 		return true
-	case app.FeatureSplitTunnel:
+	case vpntypes.FeatureSplitTunnel:
 		return true // Via exit nodes and route acceptance
-	case app.FeatureAutoConnect:
+	case vpntypes.FeatureAutoConnect:
 		return true
-	case app.FeatureMFA:
+	case vpntypes.FeatureMFA:
 		return true // Via SSO providers
-	case app.FeatureKillSwitch:
+	case vpntypes.FeatureKillSwitch:
 		return false // Not directly supported
 	default:
 		return false

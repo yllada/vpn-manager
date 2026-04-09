@@ -9,8 +9,10 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/autostart"
+	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
@@ -19,7 +21,7 @@ import (
 type PreferencesDialog struct {
 	dialog     *adw.PreferencesDialog
 	mainWindow *MainWindow
-	config     *app.Config
+	config     *config.Config
 
 	// System settings
 	autostartRow      *adw.SwitchRow
@@ -102,7 +104,7 @@ func (pd *PreferencesDialog) buildGeneralPage() *adw.PreferencesPage {
 	pd.autostartRow = adw.NewSwitchRow()
 	pd.autostartRow.SetTitle("Start with System")
 	pd.autostartRow.SetSubtitle("Launch VPN Manager automatically when you log in")
-	pd.autostartRow.SetActive(app.IsAutostartEnabled())
+	pd.autostartRow.SetActive(autostart.IsEnabled())
 	systemGroup.Add(pd.autostartRow)
 
 	// Minimize to tray row
@@ -328,11 +330,11 @@ func (pd *PreferencesDialog) savePreferences() {
 	// SYSTEM SETTINGS (autostart requires filesystem changes)
 	// ─────────────────────────────────────────────────────────────────────
 	newAutostart := pd.autostartRow.Active()
-	if newAutostart != app.IsAutostartEnabled() {
-		if err := app.SetAutostart(newAutostart); err != nil {
+	if newAutostart != autostart.IsEnabled() {
+		if err := autostart.Set(newAutostart); err != nil {
 			pd.mainWindow.ShowToast("Could not change autostart setting: "+err.Error(), 5)
 			// Revert the switch to actual state
-			pd.autostartRow.SetActive(app.IsAutostartEnabled())
+			pd.autostartRow.SetActive(autostart.IsEnabled())
 		} else {
 			pd.config.AutoStart = newAutostart
 		}
@@ -354,7 +356,7 @@ func (pd *PreferencesDialog) savePreferences() {
 	pd.config.Tailscale.ExitNodeAllowLANAccess = pd.tailscaleLANGatewayRow.Active()
 
 	// Apply Tailscale settings immediately if provider is available
-	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(app.ProviderTailscale); ok {
+	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
 		if tsProvider, ok := provider.(*tailscale.Provider); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

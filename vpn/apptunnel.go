@@ -14,7 +14,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
 )
 
 // AppTunnelMode defines how apps are routed.
@@ -215,12 +215,12 @@ func (at *AppTunnel) Enable(vpnInterface, vpnGateway string) error {
 	at.vpnGateway = vpnGateway
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &app.SplitTunnelClient{}
-	_, err := client.Setup(app.TunnelSetupParams{
+	client := &daemon.SplitTunnelClient{}
+	_, err := client.Setup(daemon.TunnelSetupParams{
 		Mode:            string(at.mode),
 		Apps:            at.getAppExecutables(),
 		VPNInterface:    vpnInterface,
@@ -257,7 +257,7 @@ func (at *AppTunnel) Disable() error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !app.IsDaemonAvailable() {
+	if !daemon.IsDaemonAvailable() {
 		log.Printf("AppTunnel: Warning - daemon not available for cleanup")
 		// Still reset state
 		at.enabled = false
@@ -266,7 +266,7 @@ func (at *AppTunnel) Disable() error {
 		return nil
 	}
 
-	client := &app.SplitTunnelClient{}
+	client := &daemon.SplitTunnelClient{}
 	if err := client.Cleanup(); err != nil {
 		log.Printf("AppTunnel: Warning during disable: %v", err)
 		// Continue anyway to reset state

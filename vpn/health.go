@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/errors"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 )
 
 // HealthState represents the current health state of a connection.
@@ -144,7 +145,7 @@ func (hc *HealthChecker) Start() {
 
 	logger.LogInfo("Health checker started (interval: %v)", hc.config.CheckInterval)
 
-	app.SafeGoWithName("health-checker-loop", func() {
+	resilience.SafeGoWithName("health-checker-loop", func() {
 		hc.runLoop()
 	})
 }
@@ -259,7 +260,7 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 			conn.Profile.Name, oldState.String(), health.State.String())
 
 		if hc.onHealthChange != nil {
-			app.SafeGoWithName("health-change-callback", func() {
+			resilience.SafeGoWithName("health-change-callback", func() {
 				hc.onHealthChange(profileID, oldState, health.State)
 			})
 		}
@@ -268,7 +269,7 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 		if health.State == HealthUnhealthy && hc.config.AutoReconnect {
 			// Capture profileID only - re-fetch connection/health inside goroutine under lock
 			pid := profileID
-			app.SafeGoWithName("health-auto-reconnect", func() {
+			resilience.SafeGoWithName("health-auto-reconnect", func() {
 				hc.attemptReconnect(pid)
 			})
 		}
@@ -288,7 +289,7 @@ func (hc *HealthChecker) testConnectivity() (time.Duration, error) {
 		}
 	}
 
-	return 0, app.ErrConnectionFailed
+	return 0, errors.ErrConnectionFailed
 }
 
 // attemptReconnect attempts to reconnect a failed connection.
@@ -307,7 +308,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 		hc.mu.Unlock()
 		logger.LogError("Max reconnect attempts reached for profile %s", profileID)
 		if hc.onReconnectFailed != nil {
-			hc.onReconnectFailed(profileID, app.ErrConnectionFailed)
+			hc.onReconnectFailed(profileID, errors.ErrConnectionFailed)
 		}
 		return
 	}
@@ -415,7 +416,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 		if canRetry {
 			// Schedule another attempt
 			pid := profileID
-			app.SafeGoWithName("health-reconnect-retry", func() {
+			resilience.SafeGoWithName("health-reconnect-retry", func() {
 				hc.attemptReconnect(pid)
 			})
 		} else {

@@ -1,14 +1,15 @@
-// Package app provides a centralized event bus for VPN Manager.
+// Package eventbus provides a centralized event bus for VPN Manager.
 // This implements a type-safe, thread-safe publish-subscribe pattern
 // for decoupled communication between components.
 //
 // The event bus prevents tight coupling between UI and backend,
 // enables clean testing, and provides a single source of truth
 // for application state changes.
-package app
+package eventbus
 
 import (
 	"context"
+	"log"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -112,11 +113,13 @@ func (e *Event) WithContext(ctx context.Context) *Event {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ConnectionEventData contains data for connection events.
+// Note: ProviderType and Status fields are strings to avoid circular imports.
+// The actual types (VPNProviderType, ConnectionStatus) live in app package.
 type ConnectionEventData struct {
 	ProfileID    string
 	ProfileName  string
-	ProviderType VPNProviderType
-	Status       ConnectionStatus
+	ProviderType string // VPNProviderType as string
+	Status       int    // ConnectionStatus as int
 	IPAddress    string
 	Error        error
 	Attempt      int // For reconnection events
@@ -149,9 +152,10 @@ type SecurityEventData struct {
 }
 
 // ErrorEventData contains data for error events.
+// Note: Code and Category are strings to avoid circular imports.
 type ErrorEventData struct {
-	Code        ErrorCode
-	Category    ErrorCategory
+	Code        string // ErrorCode as string
+	Category    string // ErrorCategory as string
 	Message     string
 	Error       error
 	Recoverable bool
@@ -450,7 +454,7 @@ func (bus *EventBus) Publish(event *Event) {
 		default:
 			// Queue full, drop event
 			atomic.AddUint64(&bus.dropped, 1)
-			LogWarn("EventBus: queue full, dropping event: %s", event.Type)
+			log.Printf("[WARN] EventBus: queue full, dropping event: %s", event.Type)
 		}
 	} else {
 		// Sync delivery
@@ -510,7 +514,7 @@ func (bus *EventBus) deliverEvent(event *Event) {
 func (bus *EventBus) safeDeliver(handler EventHandler, event *Event) {
 	defer func() {
 		if r := recover(); r != nil {
-			LogError("EventBus: handler panic for event %s: %v", event.Type, r)
+			log.Printf("[ERROR] EventBus: handler panic for event %s: %v", event.Type, r)
 		}
 	}()
 
@@ -567,7 +571,7 @@ func SubscribeTyped[T any](bus *EventBus, eventType EventType, handler TypedEven
 			if data, ok := event.Data.(*T); ok && data != nil {
 				handler(event.Type, *data)
 			} else {
-				LogWarn("EventBus: type mismatch for event %s, expected %s got %s",
+				log.Printf("[WARN] EventBus: type mismatch for event %s, expected %s got %s",
 					event.Type, reflect.TypeOf((*T)(nil)).Elem(), reflect.TypeOf(event.Data))
 			}
 		}

@@ -1,10 +1,10 @@
-// Package app provides resilience utilities for network operations.
+// Package resilience provides resilience utilities for network operations.
 // Implements Circuit Breaker pattern following industry standards
 // from cloud-native applications.
 //
 // References:
 // - https://docs.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker
-package app
+package resilience
 
 import (
 	"context"

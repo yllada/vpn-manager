@@ -28,8 +28,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/pkg/cli"
 	"github.com/yllada/vpn-manager/pkg/tui"
 	"github.com/yllada/vpn-manager/pkg/ui"
@@ -139,8 +140,8 @@ func main() {
 	}
 
 	// Start the GTK application (GUI mode)
-	logger.LogInfo("Starting %s v%s", app.AppName, appVersion)
-	application, err := ui.NewApplication(app.AppID, appVersion, *startMinimized)
+	logger.LogInfo("Starting %s v%s", config.AppName, appVersion)
+	application, err := ui.NewApplication(config.AppID, appVersion, *startMinimized)
 	if err != nil {
 		logger.LogError("Failed to initialize application: %v", err)
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -231,7 +232,7 @@ func runTUI() {
 	if tsProvider, tsErr := tailscale.NewProvider(); tsErr == nil {
 		manager.RegisterProvider(tsProvider)
 		// Ensure current user is configured as Tailscale operator
-		app.SafeGoWithName("tailscale-ensure-operator", func() {
+		resilience.SafeGoWithName("tailscale-ensure-operator", func() {
 			if err := tsProvider.EnsureOperator(); err != nil {
 				logger.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
 			}
@@ -251,7 +252,7 @@ func setupSignalHandler(cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	app.SafeGoWithName("signal-handler", func() {
+	resilience.SafeGoWithName("signal-handler", func() {
 		sig := <-sigChan
 		logger.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
 		cancel()

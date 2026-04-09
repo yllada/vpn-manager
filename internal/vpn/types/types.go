@@ -1,12 +1,49 @@
-// Package common provides shared constants, types, and utilities
+// Package types provides shared VPN types and interfaces
 // used across the VPN Manager application.
-package app
+package types
 
 import (
 	"context"
 	"sync"
 	"time"
 )
+
+// =============================================================================
+// CONNECTION STATUS
+// =============================================================================
+
+// ConnectionStatus represents the state of a VPN connection.
+type ConnectionStatus int
+
+const (
+	StatusDisconnected ConnectionStatus = iota
+	StatusConnecting
+	StatusConnected
+	StatusDisconnecting
+	StatusError
+)
+
+// String returns a human-readable status string.
+func (s ConnectionStatus) String() string {
+	switch s {
+	case StatusDisconnected:
+		return "Disconnected"
+	case StatusConnecting:
+		return "Connecting..."
+	case StatusConnected:
+		return "Connected"
+	case StatusDisconnecting:
+		return "Disconnecting..."
+	case StatusError:
+		return "Error"
+	default:
+		return "Unknown"
+	}
+}
+
+// =============================================================================
+// VPN PROVIDER TYPES
+// =============================================================================
 
 // VPNProviderType identifies the type of VPN provider.
 type VPNProviderType string
@@ -24,6 +61,10 @@ const (
 func (t VPNProviderType) String() string {
 	return string(t)
 }
+
+// =============================================================================
+// VPN PROVIDER INTERFACE
+// =============================================================================
 
 // VPNProvider defines the interface for any VPN provider implementation.
 // This abstraction allows the application to support multiple VPN backends
@@ -62,6 +103,10 @@ type VPNProvider interface {
 	SupportsFeature(feature ProviderFeature) bool
 }
 
+// =============================================================================
+// PROVIDER FEATURES
+// =============================================================================
+
 // ProviderFeature represents optional features that a provider may support.
 type ProviderFeature string
 
@@ -77,6 +122,10 @@ const (
 	// FeatureKillSwitch indicates support for kill switch functionality.
 	FeatureKillSwitch ProviderFeature = "kill_switch"
 )
+
+// =============================================================================
+// VPN PROFILE INTERFACE
+// =============================================================================
 
 // VPNProfile represents a VPN profile that is agnostic to the provider type.
 // Each provider implements this interface with its specific profile data.
@@ -103,6 +152,10 @@ type VPNProfile interface {
 	AutoConnect() bool
 }
 
+// =============================================================================
+// AUTHENTICATION
+// =============================================================================
+
 // AuthInfo contains authentication information for VPN connections.
 // Different providers use different fields based on their authentication model.
 type AuthInfo struct {
@@ -119,6 +172,10 @@ type AuthInfo struct {
 	// For GUI this is true, for automated scripts this is false
 	Interactive bool
 }
+
+// =============================================================================
+// PROVIDER STATUS
+// =============================================================================
 
 // ProviderStatus represents the current status of a VPN provider.
 type ProviderStatus struct {
@@ -142,6 +199,10 @@ type ProviderStatus struct {
 	// Error contains any error message if the provider is in an error state.
 	Error string
 }
+
+// =============================================================================
+// CONNECTION INFO
+// =============================================================================
 
 // ConnectionInfo contains detailed information about an active VPN connection.
 type ConnectionInfo struct {
@@ -175,6 +236,10 @@ type ConnectionInfo struct {
 	// TailscaleIPs contains the Tailscale IP addresses (Tailscale-specific).
 	TailscaleIPs []string
 }
+
+// =============================================================================
+// PROVIDER REGISTRY
+// =============================================================================
 
 // ProviderRegistry manages available VPN providers.
 // Thread-safe for concurrent access.

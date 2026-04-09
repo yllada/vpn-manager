@@ -1,5 +1,5 @@
-// Package app provides the daemon client singleton for privileged operations.
-package app
+// Package daemon provides the daemon client singleton for privileged operations.
+package daemon
 
 import (
 	"context"
@@ -18,34 +18,20 @@ import (
 var (
 	daemonClient     *protocol.Client
 	daemonClientOnce sync.Once
-	daemonMu         sync.RWMutex
+	daemonMu         sync.Mutex // Protects daemonClient for reset operations
 )
 
 // DaemonClient returns the shared daemon client instance.
 // Returns nil if the daemon is not available.
-// The client is lazily initialized on first call.
+// The client is lazily initialized on first call using sync.Once.
 func DaemonClient() *protocol.Client {
-	daemonMu.RLock()
-	if daemonClient != nil {
-		daemonMu.RUnlock()
-		return daemonClient
-	}
-	daemonMu.RUnlock()
-
-	daemonMu.Lock()
-	defer daemonMu.Unlock()
-
-	// Double-check after acquiring write lock
-	if daemonClient != nil {
-		return daemonClient
-	}
-
-	// Check if daemon is available before creating client
-	if !protocol.IsDaemonAvailable() {
-		return nil
-	}
-
-	daemonClient = protocol.NewClient()
+	daemonClientOnce.Do(func() {
+		// Check if daemon is available before creating client
+		if !protocol.IsDaemonAvailable() {
+			return
+		}
+		daemonClient = protocol.NewClient()
+	})
 	return daemonClient
 }
 
@@ -73,13 +59,15 @@ func ConnectToDaemon(ctx context.Context) (*protocol.Client, error) {
 }
 
 // CloseDaemonConnection closes the daemon connection if open.
+// The client instance remains valid and can reconnect later.
 func CloseDaemonConnection() {
 	daemonMu.Lock()
 	defer daemonMu.Unlock()
 
 	if daemonClient != nil {
 		_ = daemonClient.Close()
-		daemonClient = nil
+		// Note: We don't nil out daemonClient because sync.Once
+		// already ran. The client can reconnect via ConnectToDaemon.
 	}
 }
 

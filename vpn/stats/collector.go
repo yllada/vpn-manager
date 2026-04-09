@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/paths"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // =============================================================================
@@ -34,7 +36,7 @@ func getInterfaceStats(iface string) (*interfaceStats, error) {
 		return nil, fmt.Errorf("interface name is empty")
 	}
 
-	basePath := filepath.Join(app.SysClassNetPath, iface, "statistics")
+	basePath := filepath.Join(paths.SysClassNetPath, iface, "statistics")
 
 	// Check if interface exists
 	if _, err := os.Stat(basePath); os.IsNotExist(err) {
@@ -96,7 +98,7 @@ type Collector struct {
 	vpnIface     string
 	sessionID    string
 	profileID    string
-	providerType app.VPNProviderType
+	providerType vpntypes.VPNProviderType
 	serverAddr   string
 	prevStats    *interfaceStats
 	startTime    time.Time
@@ -133,7 +135,7 @@ func NewCollector(repo *Repository, interval time.Duration) *Collector {
 // Start begins traffic collection for a new VPN session.
 // It creates a new session record and starts the collection goroutine.
 // Returns the session ID for tracking.
-func (c *Collector) Start(profileID string, providerType app.VPNProviderType, vpnIface, serverAddr string) (string, error) {
+func (c *Collector) Start(profileID string, providerType vpntypes.VPNProviderType, vpnIface, serverAddr string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -176,7 +178,7 @@ func (c *Collector) Start(profileID string, providerType app.VPNProviderType, vp
 	}
 
 	// Start collection goroutine
-	app.SafeGoWithName("stats-collector", func() {
+	resilience.SafeGoWithName("stats-collector", func() {
 		c.collectLoop()
 	})
 
@@ -416,7 +418,7 @@ func NewStatsManager(dbPath string) (*StatsManager, error) {
 			}
 			dataHome = filepath.Join(homeDir, ".local", "share")
 		}
-		dbPath = filepath.Join(dataHome, app.UserDataDirName, app.StatsDBFile)
+		dbPath = filepath.Join(dataHome, paths.UserDataDirName, paths.StatsDBFile)
 	}
 
 	repo, err := NewRepository(dbPath)
@@ -452,7 +454,7 @@ func (sm *StatsManager) Close() error {
 }
 
 // StartSession begins tracking a new VPN session.
-func (sm *StatsManager) StartSession(profileID string, providerType app.VPNProviderType, vpnIface, serverAddr string) (string, error) {
+func (sm *StatsManager) StartSession(profileID string, providerType vpntypes.VPNProviderType, vpnIface, serverAddr string) (string, error) {
 	return sm.collector.Start(profileID, providerType, vpnIface, serverAddr)
 }
 

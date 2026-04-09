@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // TestParseStatus tests parsing of tailscale status JSON.
@@ -121,7 +121,7 @@ func TestProfile(t *testing.T) {
 	if profile.Name() != "Test Profile" {
 		t.Errorf("expected name 'Test Profile', got '%s'", profile.Name())
 	}
-	if profile.Type() != app.ProviderTailscale {
+	if profile.Type() != vpntypes.ProviderTailscale {
 		t.Errorf("expected type ProviderTailscale, got '%s'", profile.Type())
 	}
 
@@ -169,7 +169,7 @@ func TestProviderType(t *testing.T) {
 		t.Skipf("Tailscale not available: %v", err)
 	}
 
-	if provider.Type() != app.ProviderTailscale {
+	if provider.Type() != vpntypes.ProviderTailscale {
 		t.Errorf("expected type ProviderTailscale, got '%s'", provider.Type())
 	}
 	if provider.Name() != "Tailscale" {
@@ -185,11 +185,11 @@ func TestProviderSupportsFeature(t *testing.T) {
 	}
 
 	// Features that should be supported
-	supportedFeatures := []app.ProviderFeature{
-		app.FeatureExitNode,
-		app.FeatureSplitTunnel,
-		app.FeatureAutoConnect,
-		app.FeatureMFA,
+	supportedFeatures := []vpntypes.ProviderFeature{
+		vpntypes.FeatureExitNode,
+		vpntypes.FeatureSplitTunnel,
+		vpntypes.FeatureAutoConnect,
+		vpntypes.FeatureMFA,
 	}
 
 	for _, feature := range supportedFeatures {
@@ -199,7 +199,7 @@ func TestProviderSupportsFeature(t *testing.T) {
 	}
 
 	// Features that should not be supported
-	if provider.SupportsFeature(app.FeatureKillSwitch) {
+	if provider.SupportsFeature(vpntypes.FeatureKillSwitch) {
 		t.Error("expected FeatureKillSwitch to not be supported")
 	}
 }
@@ -221,7 +221,7 @@ func TestProviderStatus(t *testing.T) {
 	if status == nil {
 		t.Fatal("expected status to be non-nil")
 	}
-	if status.Provider != app.ProviderTailscale {
+	if status.Provider != vpntypes.ProviderTailscale {
 		t.Errorf("expected provider ProviderTailscale, got '%s'", status.Provider)
 	}
 

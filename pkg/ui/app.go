@@ -10,9 +10,11 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/config"
+	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/keyring"
+	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -21,7 +23,7 @@ type Application struct {
 	app        *gtk.Application
 	window     *MainWindow
 	vpnManager *vpn.Manager
-	config     *app.Config
+	config     *config.Config
 	version    string
 	tray       *TrayIndicator
 
@@ -29,7 +31,7 @@ type Application struct {
 	startMinimized bool
 
 	// Event subscriptions for cleanup
-	trustAuthSubscription *app.Subscription
+	trustAuthSubscription *eventbus.Subscription
 }
 
 // NewApplication creates a new application.
@@ -46,11 +48,11 @@ func NewApplication(appID, version string, startMinimized bool) (*Application, e
 	}
 
 	// Load configuration
-	cfg, err := app.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		// Use default configuration if there's an error
 		logger.LogWarn("Failed to load config, using defaults: %v", err)
-		cfg = app.DefaultConfig()
+		cfg = config.DefaultConfig()
 	}
 
 	application := &Application{
@@ -105,7 +107,7 @@ func (a *Application) onActivate() {
 
 	// Start system tray indicator with panic recovery
 	a.tray = NewTrayIndicator(a)
-	app.SafeGoWithName("systray-main", func() {
+	resilience.SafeGoWithName("systray-main", func() {
 		a.tray.Run()
 	})
 
@@ -118,9 +120,9 @@ func (a *Application) onActivate() {
 	}
 
 	// Subscribe to trust auth required events (OTP needed during auto-connect)
-	a.trustAuthSubscription = app.On(app.EventTrustAuthRequired, func(event *app.Event) {
+	a.trustAuthSubscription = eventbus.On(eventbus.EventTrustAuthRequired, func(event *eventbus.Event) {
 		logger.LogInfo("UI received EventTrustAuthRequired event")
-		if data, ok := event.Data.(app.TrustAuthRequiredData); ok {
+		if data, ok := event.Data.(eventbus.TrustAuthRequiredData); ok {
 			logger.LogInfo("EventTrustAuthRequired data: SSID=%s, ProfileID=%s, NeedsOTP=%v",
 				data.SSID, data.ProfileID, data.NeedsOTP)
 			a.handleTrustAuthRequired(data)
@@ -167,7 +169,7 @@ func (a *Application) GetVPNManager() *vpn.Manager {
 }
 
 // GetConfig returns the configuration
-func (a *Application) GetConfig() *app.Config {
+func (a *Application) GetConfig() *config.Config {
 	return a.config
 }
 
@@ -358,7 +360,7 @@ func (a *Application) setupHealthChecker() {
 
 // handleTrustAuthRequired handles the trust auth required event.
 // Called when auto-connect on untrusted network needs OTP authentication.
-func (a *Application) handleTrustAuthRequired(data app.TrustAuthRequiredData) {
+func (a *Application) handleTrustAuthRequired(data eventbus.TrustAuthRequiredData) {
 	glib.IdleAdd(func() {
 		// Get the profile from ProfileManager
 		profile, err := a.vpnManager.ProfileManager().Get(data.ProfileID)

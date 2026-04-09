@@ -1,12 +1,14 @@
-// Package app provides graceful shutdown management for VPN Manager.
+// Package shutdown provides graceful shutdown management for VPN Manager.
 // This module implements proper cleanup of resources, goroutines, and
 // connections when the application is terminating.
 //
 // Following best practices from Kubernetes, systemd, and POSIX signals.
-package app
+package shutdown
 
 import (
 	"context"
+	"errors"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -96,6 +98,9 @@ type ShutdownManager struct {
 
 	// Callbacks
 	onPhaseChange func(ShutdownPhase)
+
+	// Optional event emitter (injected by app layer)
+	emitEvent func(eventType string, source string, data interface{})
 }
 
 // Global shutdown manager instance
@@ -135,6 +140,14 @@ func (sm *ShutdownManager) SetOnPhaseChange(callback func(ShutdownPhase)) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.onPhaseChange = callback
+}
+
+// SetEventEmitter sets an optional event emitter function.
+// This allows the app layer to inject its event system.
+func (sm *ShutdownManager) SetEventEmitter(emitter func(eventType string, source string, data interface{})) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.emitEvent = emitter
 }
 
 // RegisterHook adds a shutdown hook.
@@ -212,14 +225,17 @@ func (sm *ShutdownManager) setPhase(phase ShutdownPhase) {
 	sm.mu.Lock()
 	sm.phase = phase
 	callback := sm.onPhaseChange
+	emitter := sm.emitEvent
 	sm.mu.Unlock()
 
 	if callback != nil {
 		callback(phase)
 	}
 
-	// Emit event
-	Emit(EventShutdown, "ShutdownManager", phase)
+	// Emit event if emitter is configured
+	if emitter != nil {
+		emitter("shutdown", "ShutdownManager", phase)
+	}
 }
 
 // Shutdown initiates graceful shutdown.
@@ -234,7 +250,7 @@ func (sm *ShutdownManager) Shutdown(ctx context.Context) error {
 }
 
 func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
-	LogInfo("Shutdown: Initiating graceful shutdown")
+	log.Println("Shutdown: Initiating graceful shutdown")
 	close(sm.shutdownCh)
 	sm.setPhase(PhaseShuttingDown)
 
@@ -249,10 +265,10 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 	copy(hooks, sm.hooks)
 	sm.mu.RUnlock()
 
-	var errors ErrorList
+	var errs []error
 
 	for _, hook := range hooks {
-		LogInfo("Shutdown: Running hook '%s' (priority %d)", hook.Name, hook.Priority)
+		log.Printf("Shutdown: Running hook '%s' (priority %d)", hook.Name, hook.Priority)
 
 		hookCtx, hookCancel := context.WithTimeout(timeoutCtx, hook.Timeout)
 
@@ -264,13 +280,13 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 		select {
 		case hookErr := <-errCh:
 			if hookErr != nil {
-				LogError("Shutdown: Hook '%s' failed: %v", hook.Name, hookErr)
-				errors.Add(hookErr)
+				log.Printf("Shutdown: Hook '%s' failed: %v", hook.Name, hookErr)
+				errs = append(errs, hookErr)
 			} else {
-				LogInfo("Shutdown: Hook '%s' completed", hook.Name)
+				log.Printf("Shutdown: Hook '%s' completed", hook.Name)
 			}
 		case <-hookCtx.Done():
-			LogWarn("Shutdown: Hook '%s' timed out", hook.Name)
+			log.Printf("Shutdown: Hook '%s' timed out", hook.Name)
 		}
 
 		hookCancel()
@@ -278,7 +294,7 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 		// Check if overall context is done
 		select {
 		case <-timeoutCtx.Done():
-			LogWarn("Shutdown: Overall timeout reached, forcing shutdown")
+			log.Println("Shutdown: Overall timeout reached, forcing shutdown")
 			sm.setPhase(PhaseForcedShutdown)
 			goto done
 		default:
@@ -287,7 +303,7 @@ func (sm *ShutdownManager) doShutdown(ctx context.Context) error {
 
 	// Wait for tracked operations
 	sm.setPhase(PhaseGracePeriod)
-	LogInfo("Shutdown: Waiting for %d active operations to complete", sm.ActiveOperations())
+	log.Printf("Shutdown: Waiting for %d active operations to complete", sm.ActiveOperations())
 
 done:
 	waitCh := make(chan struct{})
@@ -298,21 +314,21 @@ done:
 
 	select {
 	case <-waitCh:
-		LogInfo("Shutdown: All operations completed")
+		log.Println("Shutdown: All operations completed")
 	case <-timeoutCtx.Done():
-		LogWarn("Shutdown: Timeout waiting for operations, %d still active", sm.ActiveOperations())
+		log.Printf("Shutdown: Timeout waiting for operations, %d still active", sm.ActiveOperations())
 	}
 
 	sm.setPhase(PhaseCompleted)
 	sm.closeOnce.Do(func() { close(sm.completedCh) })
 
-	LogInfo("Shutdown: Complete")
-	return errors.Combined()
+	log.Println("Shutdown: Complete")
+	return combineErrors(errs)
 }
 
 // ForceShutdown immediately terminates without waiting.
 func (sm *ShutdownManager) ForceShutdown() {
-	LogWarn("shutdown", "Force shutdown initiated")
+	log.Println("shutdown: Force shutdown initiated")
 	sm.setPhase(PhaseForcedShutdown)
 
 	if sm.cancelFunc != nil {
@@ -323,25 +339,39 @@ func (sm *ShutdownManager) ForceShutdown() {
 	sm.closeOnce.Do(func() { close(sm.completedCh) })
 }
 
+// SafeGoFunc is a type for safe goroutine launcher function.
+// This is injected to avoid circular dependency with resilience package.
+type SafeGoFunc func(name string, fn func())
+
 // InstallSignalHandlers sets up OS signal handlers for graceful shutdown.
 // Handles SIGINT, SIGTERM, and SIGHUP.
-func InstallSignalHandlers() context.Context {
+// safeGo is an optional function for launching goroutines with panic recovery.
+// If nil, regular goroutines are used.
+func InstallSignalHandlers(safeGo SafeGoFunc) context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	SafeGoWithName("signal-handler", func() {
+	launchGoroutine := func(name string, fn func()) {
+		if safeGo != nil {
+			safeGo(name, fn)
+		} else {
+			go fn()
+		}
+	}
+
+	launchGoroutine("signal-handler", func() {
 		sig := <-sigCh
-		LogInfo("Received signal: %v", sig)
+		log.Printf("Received signal: %v", sig)
 
 		// Start graceful shutdown
-		SafeGoWithName("graceful-shutdown", func() { _ = GetShutdownManager().Shutdown(ctx) })
+		launchGoroutine("graceful-shutdown", func() { _ = GetShutdownManager().Shutdown(ctx) })
 
 		// Wait for second signal for force quit
 		select {
 		case sig = <-sigCh:
-			LogWarn("Received second signal (%v), forcing shutdown", sig)
+			log.Printf("Received second signal (%v), forcing shutdown", sig)
 			GetShutdownManager().ForceShutdown()
 			cancel()
 			os.Exit(1)
@@ -351,4 +381,15 @@ func InstallSignalHandlers() context.Context {
 	})
 
 	return ctx
+}
+
+// combineErrors combines multiple errors into one.
+func combineErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	return errors.Join(errs...)
 }

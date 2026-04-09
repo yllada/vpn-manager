@@ -14,8 +14,9 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
@@ -553,7 +554,7 @@ func (tp *TailscalePanel) onConnectClicked() {
 	tp.connectBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Processing Tailscale connection...")
 
-	app.SafeGoWithName("tailscale-connect", func() {
+	resilience.SafeGoWithName("tailscale-connect", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -596,7 +597,7 @@ func (tp *TailscalePanel) onConnectClicked() {
 			})
 		} else {
 			// Connect
-			if err := tp.provider.Connect(ctx, nil, app.AuthInfo{Interactive: true}); err != nil {
+			if err := tp.provider.Connect(ctx, nil, vpntypes.AuthInfo{Interactive: true}); err != nil {
 				glib.IdleAdd(func() {
 					tp.connectBtn.SetSensitive(true)
 					tp.mainWindow.showError("Connect Error", err.Error())
@@ -624,7 +625,7 @@ func (tp *TailscalePanel) onLoginClicked() {
 	tp.loginBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Starting Tailscale login...")
 
-	app.SafeGoWithName("tailscale-login", func() {
+	resilience.SafeGoWithName("tailscale-login", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -662,7 +663,7 @@ func (tp *TailscalePanel) onLogoutClicked() {
 	tp.logoutBtn.SetSensitive(false)
 	tp.mainWindow.SetStatus("Logging out of Tailscale...")
 
-	app.SafeGoWithName("tailscale-logout", func() {
+	resilience.SafeGoWithName("tailscale-logout", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -764,7 +765,7 @@ func (tp *TailscalePanel) showOperatorSetupDialog() {
 func (tp *TailscalePanel) onSuggestExitNodeClicked() {
 	tp.mainWindow.SetStatus("Finding best exit node...")
 
-	app.SafeGoWithName("tailscale-suggest-exit-node", func() {
+	resilience.SafeGoWithName("tailscale-suggest-exit-node", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -1093,7 +1094,7 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 				tp.lanGatewayRow.SetSubtitle("Configuring network rules...")
 
 				// Configure rules in background
-				app.SafeGoWithName("tailscale-lan-gateway-auto-config", func() {
+				resilience.SafeGoWithName("tailscale-lan-gateway-auto-config", func() {
 					ctx := context.Background()
 					if err := tp.provider.ConfigureLANGateway(ctx); err != nil {
 						logger.LogWarn("[LAN Gateway] Auto-configuration failed: %v", err)
@@ -1130,7 +1131,7 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 				logger.LogInfo("[LAN Gateway] Rules are active, triggering cleanup...")
 
 				// Cleanup rules in background
-				app.SafeGoWithName("tailscale-lan-gateway-cleanup", func() {
+				resilience.SafeGoWithName("tailscale-lan-gateway-cleanup", func() {
 					ctx := context.Background()
 					if err := tp.provider.CleanupLANGateway(ctx); err != nil {
 						logger.LogWarn("[LAN Gateway] Failed to cleanup: %v", err)
@@ -1352,7 +1353,7 @@ func (tp *TailscalePanel) updateTrayIfNoOtherConnections() {
 func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, enable bool) {
 	tp.mainWindow.SetStatus("Changing gateway...")
 
-	app.SafeGoWithName("tailscale-set-exit-node", func() {
+	resilience.SafeGoWithName("tailscale-set-exit-node", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -1500,7 +1501,7 @@ func (tp *TailscalePanel) startStatsCollection() {
 	// Tailscale uses "tailscale0" interface
 	sessionID := tp.mainWindow.app.vpnManager.StartStatsCollection(
 		profileID,
-		app.ProviderTailscale,
+		vpntypes.ProviderTailscale,
 		"tailscale0",
 		serverAddr,
 	)
@@ -1520,7 +1521,7 @@ func (tp *TailscalePanel) StartUpdates() {
 	tp.stopUpdatesOnce = sync.Once{}
 	tp.stopUpdates = make(chan struct{})
 
-	app.SafeGoWithName("tailscale-periodic-updates", func() {
+	resilience.SafeGoWithName("tailscale-periodic-updates", func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 
