@@ -6,7 +6,7 @@ package tui
 import (
 	"time"
 
-	"github.com/yllada/vpn-manager/cli/tui/components"
+	"github.com/yllada/vpn-manager/pkg/tui/components"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/stats"
 )

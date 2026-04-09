@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yllada/vpn-manager/cli/tui/styles"
+	"github.com/yllada/vpn-manager/pkg/tui/styles"
 )
 
 // ConfirmResult is sent when the user responds to a confirmation dialog.

@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yllada/vpn-manager/cli/tui/styles"
+	"github.com/yllada/vpn-manager/pkg/tui/styles"
 )
 
 // ProgressState represents the current state of the progress bar.

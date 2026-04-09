@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yllada/vpn-manager/protocol"
+	"github.com/yllada/vpn-manager/pkg/protocol"
 )
 
 func TestNewServer(t *testing.T) {

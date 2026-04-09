@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yllada/vpn-manager/cli/tui/styles"
+	"github.com/yllada/vpn-manager/pkg/tui/styles"
 	"github.com/yllada/vpn-manager/vpn"
 	vpnstats "github.com/yllada/vpn-manager/vpn/stats"
 )

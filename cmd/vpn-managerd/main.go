@@ -18,7 +18,7 @@ import (
 	"github.com/yllada/vpn-manager/daemon"
 	"github.com/yllada/vpn-manager/daemon/privileged"
 	"github.com/yllada/vpn-manager/daemon/privileged/tailscale"
-	"github.com/yllada/vpn-manager/protocol"
+	"github.com/yllada/vpn-manager/pkg/protocol"
 )
 
 // Version information (set at build time via ldflags)

@@ -16,7 +16,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/keyring"
+	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 	"golang.org/x/term"
 )

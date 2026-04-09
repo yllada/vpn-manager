@@ -238,7 +238,7 @@ jobs:
               -X main.buildTime=${BUILD_TIME} \
               -X main.commitSHA=${COMMIT_SHA}" \
             -o "${{ env.APP_NAME }}" \
-            .
+            ./cmd/vpn-manager
           
           # Verify main binary
           file "${{ env.APP_NAME }}"

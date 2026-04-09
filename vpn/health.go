@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/keyring"
+	"github.com/yllada/vpn-manager/internal/keyring"
 )
 
 // HealthState represents the current health state of a connection.

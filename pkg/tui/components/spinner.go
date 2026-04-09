@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yllada/vpn-manager/cli/tui/styles"
+	"github.com/yllada/vpn-manager/pkg/tui/styles"
 )
 
 // SpinnerModel wraps bubbles/spinner with VPN Manager styling.

@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/yllada/vpn-manager/protocol"
+	"github.com/yllada/vpn-manager/pkg/protocol"
 )
 
 // HandlerFunc is the signature for RPC method handlers.

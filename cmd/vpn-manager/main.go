@@ -29,9 +29,9 @@ import (
 	"syscall"
 
 	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/cli"
-	"github.com/yllada/vpn-manager/cli/tui"
-	"github.com/yllada/vpn-manager/ui"
+	"github.com/yllada/vpn-manager/pkg/cli"
+	"github.com/yllada/vpn-manager/pkg/tui"
+	"github.com/yllada/vpn-manager/pkg/ui"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 )

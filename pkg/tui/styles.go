@@ -6,7 +6,7 @@ package tui
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yllada/vpn-manager/cli/tui/styles"
+	"github.com/yllada/vpn-manager/pkg/tui/styles"
 )
 
 // -----------------------------------------------------------------------------

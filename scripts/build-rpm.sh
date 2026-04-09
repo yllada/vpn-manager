@@ -76,7 +76,7 @@ else
         -trimpath \
         -ldflags="-s -w -X main.appVersion=${VERSION}" \
         -o "${SOURCE_DIR}/${PKG_NAME}" \
-        .
+        ./cmd/vpn-manager
 fi
 
 # Build or copy daemon binary

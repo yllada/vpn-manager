@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/protocol"
+	"github.com/yllada/vpn-manager/pkg/protocol"
 )
 
 // =============================================================================

@@ -11,7 +11,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/keyring"
+	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
 

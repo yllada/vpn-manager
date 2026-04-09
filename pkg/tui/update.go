@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/cli/tui/components"
-	"github.com/yllada/vpn-manager/keyring"
+	"github.com/yllada/vpn-manager/pkg/tui/components"
+	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 )

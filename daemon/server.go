@@ -13,7 +13,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/yllada/vpn-manager/protocol"
+	"github.com/yllada/vpn-manager/pkg/protocol"
 )
 
 // Server is the daemon server that handles client connections.

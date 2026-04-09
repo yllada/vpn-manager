@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yllada/vpn-manager/cli/tui/components"
-	"github.com/yllada/vpn-manager/cli/tui/styles"
+	"github.com/yllada/vpn-manager/pkg/tui/components"
+	"github.com/yllada/vpn-manager/pkg/tui/styles"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
