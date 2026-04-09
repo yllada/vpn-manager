@@ -16,6 +16,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/health"
 )
 
 // Application represents the main application
@@ -265,13 +266,13 @@ func (a *Application) setupHealthChecker() {
 	}
 
 	// Configure auto-reconnect based on app config
-	config := vpn.DefaultHealthConfig()
+	config := health.DefaultConfig()
 	config.AutoReconnect = a.config.AutoReconnect
 
 	hc.UpdateConfig(config)
 
 	// Set up callbacks for health events
-	hc.SetOnHealthChange(func(profileID string, oldState, newState vpn.HealthState) {
+	hc.SetOnHealthChange(func(profileID string, oldState, newState health.State) {
 		// Update UI on health state change
 		glib.IdleAdd(func() {
 			if a.window != nil && a.window.openvpnPanel != nil {
@@ -284,10 +285,10 @@ func (a *Application) setupHealthChecker() {
 			profile, err := a.vpnManager.ProfileManager().Get(profileID)
 			if err == nil {
 				switch newState {
-				case vpn.HealthUnhealthy:
+				case health.StateUnhealthy:
 					NotifyError(profile.Name, "Connection lost - attempting to reconnect...")
-				case vpn.HealthHealthy:
-					if oldState == vpn.HealthUnhealthy {
+				case health.StateHealthy:
+					if oldState == health.StateUnhealthy {
 						NotifyConnected(profile.Name + " (reconnected)")
 					}
 				}

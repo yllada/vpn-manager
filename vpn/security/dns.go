@@ -1,4 +1,4 @@
-// Package vpn provides DNS leak protection for VPN connections.
+// Package security provides DNS leak protection for VPN connections.
 // This module implements DNS configuration management to prevent DNS leaks
 // when connected to a VPN, following best practices from ProtonVPN and Mullvad.
 //
@@ -8,7 +8,7 @@
 // References:
 // - https://www.dnsleaktest.com/what-is-a-dns-leak.html
 // - https://mullvad.net/en/help/dns-leaks
-package vpn
+package security
 
 import (
 	"bufio"

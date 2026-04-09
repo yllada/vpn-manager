@@ -1,6 +1,6 @@
-// Package vpn provides VPN connection management functionality.
+// Package security provides VPN connection security functionality.
 // This file implements kill switch functionality using iptables/nftables.
-package vpn
+package security
 
 import (
 	"encoding/json"

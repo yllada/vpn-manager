@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/vpn/profile"
 )
 
 func TestNewManager(t *testing.T) {
@@ -280,7 +281,7 @@ func TestManager_AvailableProviders(t *testing.T) {
 
 func TestConnection_Fields(t *testing.T) {
 	conn := &Connection{
-		Profile: &Profile{
+		Profile: &profile.Profile{
 			ID:   "test-profile",
 			Name: "Test",
 		},

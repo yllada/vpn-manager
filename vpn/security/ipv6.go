@@ -1,11 +1,11 @@
-// Package vpn provides IPv6 handling for VPN connections.
+// Package security provides IPv6 handling for VPN connections.
 // IPv6 leaks can expose real user identity even when IPv4 traffic goes through VPN.
 // This module implements IPv6 protection following Mullvad and ProtonVPN practices.
 //
 // References:
 // - https://blog.ipv6.ie/ipv6-leaks-and-vpns/
 // - https://mullvad.net/en/help/ipv6/
-package vpn
+package security
 
 import (
 	"fmt"

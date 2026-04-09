@@ -1,6 +1,6 @@
-// Package vpn provides NetworkManager integration for VPN connections.
+// Package network provides NetworkManager integration for VPN connections.
 // Using NetworkManager allows the system to show the VPN icon in the panel.
-package vpn
+package network
 
 import (
 	"bufio"

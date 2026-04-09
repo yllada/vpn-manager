@@ -1,7 +1,7 @@
-// Package vpn provides VPN connection management functionality.
+// Package network provides VPN connection management functionality.
 // This file contains the QualityMonitor for tracking connection quality metrics
 // including latency, jitter, and bandwidth measurements.
-package vpn
+package network
 
 import (
 	"fmt"

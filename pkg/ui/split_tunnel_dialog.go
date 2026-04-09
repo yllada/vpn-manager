@@ -11,13 +11,14 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/profile"
 )
 
 // SplitTunnelDialog represents the split tunneling configuration dialog.
 type SplitTunnelDialog struct {
 	dialog      *adw.Dialog
 	mainWindow  *MainWindow
-	profile     *vpn.Profile
+	profile     *profile.Profile
 	prefsPage   *adw.PreferencesPage // Store reference for dynamic updates
 	otpRow      *adw.SwitchRow
 	enabledRow  *adw.SwitchRow
@@ -43,7 +44,7 @@ type SplitTunnelDialog struct {
 }
 
 // NewSplitTunnelDialog creates a new split tunneling configuration dialog.
-func NewSplitTunnelDialog(mainWindow *MainWindow, profile *vpn.Profile) *SplitTunnelDialog {
+func NewSplitTunnelDialog(mainWindow *MainWindow, profile *profile.Profile) *SplitTunnelDialog {
 	std := &SplitTunnelDialog{
 		mainWindow: mainWindow,
 		profile:    profile,

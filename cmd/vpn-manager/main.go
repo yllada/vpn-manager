@@ -1,5 +1,5 @@
 // Package main provides the entry point for the VPN Manager application.
-// VPN Manager is a modern GTK4-based OpenVPN client for Linux that provides
+// VPN Manager is a modern GTK4-based VPN client for Linux that provides
 // an intuitive interface for managing VPN connections.
 //
 // Features:
@@ -7,7 +7,7 @@
 //   - Secure credential storage using the system keyring
 //   - Real-time connection status monitoring
 //   - Native GTK4 interface for GNOME integration
-//   - Command-line interface for scripting and automation
+//   - Support for OpenVPN, WireGuard, and Tailscale
 //
 // Usage:
 //
@@ -15,7 +15,6 @@
 //
 // Environment:
 //
-//	The application supports OpenVPN, WireGuard, and Tailscale.
 //	VPN tools can be installed after the app starts - panels show installation guidance.
 package main
 
@@ -31,11 +30,8 @@ import (
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
-	"github.com/yllada/vpn-manager/pkg/cli"
-	"github.com/yllada/vpn-manager/pkg/tui"
 	"github.com/yllada/vpn-manager/pkg/ui"
-	"github.com/yllada/vpn-manager/vpn"
-	"github.com/yllada/vpn-manager/vpn/tailscale"
+	"github.com/yllada/vpn-manager/vpn/security"
 )
 
 // Build-time variables injected via ldflags (-X main.appVersion=x.y.z)
@@ -47,23 +43,11 @@ var (
 )
 
 var (
-	// GUI/General flags
+	// Application flags
 	showVersion    = flag.Bool("version", false, "Show version and exit")
 	verbose        = flag.Bool("verbose", false, "Enable verbose logging")
 	showHelp       = flag.Bool("help", false, "Show help message")
 	startMinimized = flag.Bool("minimized", false, "Start minimized to system tray (used for autostart)")
-
-	// TUI mode flag
-	tuiMode = flag.Bool("tui", false, "Launch interactive TUI mode")
-
-	// CLI flags
-	listProfiles   = flag.Bool("list", false, "List all VPN profiles")
-	connectProfile = flag.String("connect", "", "Connect to a VPN profile by name")
-	disconnectVPN  = flag.String("disconnect", "", "Disconnect from VPN (use 'all' or profile name)")
-	showStatus     = flag.Bool("status", false, "Show current connection status")
-	jsonOutput     = flag.Bool("json", false, "Output in JSON format (for --list, --status)")
-	runApp         = flag.Bool("run", false, "Run a command through VPN (remaining args are the command)")
-	listApps       = flag.Bool("list-apps", false, "List installed applications for split tunneling")
 
 	// Kill switch systemd service flags (used by systemd service, not for direct user use)
 	recoverKillSwitch = flag.Bool("recover-killswitch", false, "Recover kill switch state (used by systemd service)")
@@ -75,7 +59,7 @@ func main() {
 
 	// Handle help flag
 	if *showHelp {
-		cli.PrintHelp()
+		printHelp()
 		os.Exit(0)
 	}
 
@@ -127,19 +111,8 @@ func main() {
 		logger.LogInfo("OpenVPN is not installed - OpenVPN tab will show installation guidance")
 	}
 
-	// Check if any CLI mode flag is set
-	if *listProfiles || *connectProfile != "" || *disconnectVPN != "" || *showStatus || *runApp || *listApps {
-		runCLI(ctx)
-		return
-	}
-
-	// Check if TUI mode is requested
-	if *tuiMode {
-		runTUI()
-		return
-	}
-
-	// Start the GTK application (GUI mode)
+	// Start the GTK application
+	_ = ctx // ctx available for future use
 	logger.LogInfo("Starting %s v%s", config.AppName, appVersion)
 	application, err := ui.NewApplication(config.AppID, appVersion, *startMinimized)
 	if err != nil {
@@ -147,6 +120,7 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
 	// Only pass program name to GTK - all custom flags have been processed by flag.Parse().
 	// Per GTK docs: "It is possible to pass NULL if argv is not available or
 	// commandline handling is not required." We handle --minimized, --verbose, etc.
@@ -160,90 +134,19 @@ func main() {
 	os.Exit(exitCode)
 }
 
-// runCLI handles command-line interface operations.
-// It accepts a context for graceful shutdown support.
-func runCLI(ctx context.Context) {
-	// Determine output format
-	format := cli.FormatText
-	if *jsonOutput {
-		format = cli.FormatJSON
-	}
-
-	cliApp, err := cli.NewWithFormat(format)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check if context is already cancelled before proceeding
-	select {
-	case <-ctx.Done():
-		logger.LogInfo("Operation cancelled before execution")
-		return
-	default:
-	}
-
-	var cliErr error
-
-	switch {
-	case *listProfiles:
-		cliErr = cliApp.ListProfiles()
-	case *connectProfile != "":
-		cliErr = cliApp.Connect(*connectProfile)
-	case *disconnectVPN != "":
-		if *disconnectVPN == "all" {
-			cliErr = cliApp.Disconnect("")
-		} else {
-			cliErr = cliApp.Disconnect(*disconnectVPN)
-		}
-	case *showStatus:
-		cliErr = cliApp.Status()
-	case *runApp:
-		// Remaining args after --run are the command to execute
-		args := flag.Args()
-		if len(args) == 0 {
-			cliErr = fmt.Errorf("no command specified. Usage: vpn-manager --run <command> [args...]")
-		} else {
-			cliErr = cliApp.RunApp(args)
-		}
-	case *listApps:
-		cliErr = cliApp.ListApps()
-	}
-
-	if cliErr != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
-		os.Exit(1)
-	}
-}
-
-// runTUI launches the interactive Terminal User Interface.
-// It creates a VPN manager and runs the Bubble Tea TUI application.
-func runTUI() {
-	logger.LogInfo("Starting TUI mode")
-
-	manager, err := vpn.NewManager()
-	if err != nil {
-		logger.LogError("Failed to initialize VPN manager: %v", err)
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Register Tailscale provider if available
-	if tsProvider, tsErr := tailscale.NewProvider(); tsErr == nil {
-		manager.RegisterProvider(tsProvider)
-		// Ensure current user is configured as Tailscale operator
-		resilience.SafeGoWithName("tailscale-ensure-operator", func() {
-			if err := tsProvider.EnsureOperator(); err != nil {
-				logger.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
-			}
-		})
-	}
-
-	if err := tui.Run(manager); err != nil {
-		logger.LogError("TUI error: %v", err)
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+// printHelp prints usage information.
+func printHelp() {
+	fmt.Println("VPN Manager - GTK4 VPN Client for Linux")
+	fmt.Println()
+	fmt.Println("Usage: vpn-manager [options]")
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  --version     Show version and exit")
+	fmt.Println("  --verbose     Enable verbose logging")
+	fmt.Println("  --minimized   Start minimized to system tray")
+	fmt.Println("  --help        Show this help message")
+	fmt.Println()
+	fmt.Println("Supports OpenVPN, WireGuard, and Tailscale.")
 }
 
 // setupSignalHandler configures graceful shutdown on SIGINT/SIGTERM.
@@ -256,8 +159,6 @@ func setupSignalHandler(cancel context.CancelFunc) {
 		sig := <-sigChan
 		logger.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
 		cancel()
-		// Note: In CLI mode, the context cancellation will be checked
-		// In GUI mode, GTK handles the shutdown via window close
 	})
 }
 
@@ -283,10 +184,10 @@ func checkOpenVPNInstalled() bool {
 func handleRecoverKillSwitch() {
 	logger.LogInfo("Recovering kill switch state (systemd service start)")
 
-	ks := vpn.NewKillSwitch()
+	ks := security.NewKillSwitch()
 
 	// Load the persisted state
-	state, err := vpn.LoadState()
+	state, err := security.LoadState()
 	if err != nil {
 		logger.LogError("Failed to load kill switch state: %v", err)
 		os.Exit(1)
@@ -312,7 +213,7 @@ func handleRecoverKillSwitch() {
 	}
 
 	// Set mode and enable
-	ks.SetMode(vpn.KillSwitchMode(state.Mode))
+	ks.SetMode(security.KillSwitchMode(state.Mode))
 
 	var enableErr error
 	if state.AllowLAN && len(state.LANRanges) > 0 {
@@ -335,7 +236,7 @@ func handleRecoverKillSwitch() {
 func handleDisableKillSwitch() {
 	logger.LogInfo("Disabling kill switch (systemd service stop)")
 
-	ks := vpn.NewKillSwitch()
+	ks := security.NewKillSwitch()
 
 	// Recover current state first so we know how to disable
 	if err := ks.RecoverState(); err != nil {

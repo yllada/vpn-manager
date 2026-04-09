@@ -1,4 +1,4 @@
-package vpn
+package profile
 
 import (
 	"os"

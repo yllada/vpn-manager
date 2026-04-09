@@ -25,6 +25,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/profile"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
@@ -653,7 +654,7 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 
 // ConnectFromTray connects to a VPN profile from the tray.
 // This is called when connecting via dialogs or external triggers.
-func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password string) {
+func (t *TrayIndicator) ConnectFromTray(profile *profile.Profile, username, password string) {
 	t.SetConnecting(profile.Name)
 
 	// Update window UI if visible
@@ -681,7 +682,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 		savedUsername := username
 		savedPassword := password
 
-		conn.SetOnAuthFailed(func(failedProfile *vpn.Profile, needsOTP bool) {
+		conn.SetOnAuthFailed(func(failedProfile *profile.Profile, needsOTP bool) {
 			if needsOTP {
 				failedProfile.RequiresOTP = true
 				if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
@@ -767,7 +768,7 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // showFloatingOTPDialog shows an OTP entry dialog using AdwWindow.
-func (t *TrayIndicator) showFloatingOTPDialog(profile *vpn.Profile, username, password string) {
+func (t *TrayIndicator) showFloatingOTPDialog(profile *profile.Profile, username, password string) {
 	window := adw.NewWindow()
 	window.SetTitle("VPN Authentication")
 	window.SetModal(false)
@@ -838,7 +839,7 @@ func (t *TrayIndicator) showFloatingOTPDialog(profile *vpn.Profile, username, pa
 }
 
 // ShowFloatingPasswordDialog shows a credentials entry dialog using AdwWindow.
-func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
+func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *profile.Profile) {
 	window := adw.NewWindow()
 	window.SetTitle("VPN Credentials")
 	window.SetModal(false)

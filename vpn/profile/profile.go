@@ -1,7 +1,7 @@
-// Package vpn provides VPN connection management functionality.
+// Package profile provides VPN connection profile management functionality.
 // This file contains the Profile and ProfileManager types for managing
 // VPN connection profiles.
-package vpn
+package profile
 
 import (
 	"crypto/rand"

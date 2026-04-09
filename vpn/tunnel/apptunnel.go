@@ -1,6 +1,5 @@
-// Package vpn provides VPN connection management functionality.
-// This file implements per-application split tunneling using cgroups and policy routing.
-package vpn
+// Package tunnel provides per-application split tunneling using cgroups and policy routing.
+package tunnel
 
 import (
 	"bufio"
@@ -92,6 +91,13 @@ func (at *AppTunnel) IsAvailable() bool {
 		return true
 	}
 	return false
+}
+
+// IsEnabled returns whether app tunneling is currently enabled.
+func (at *AppTunnel) IsEnabled() bool {
+	at.mu.Lock()
+	defer at.mu.Unlock()
+	return at.enabled
 }
 
 // IsCgroupV2 checks if the system uses cgroup v2.
@@ -278,13 +284,6 @@ func (at *AppTunnel) Disable() error {
 
 	log.Printf("AppTunnel: Disabled via daemon")
 	return nil
-}
-
-// IsEnabled returns whether app tunneling is currently active.
-func (at *AppTunnel) IsEnabled() bool {
-	at.mu.Lock()
-	defer at.mu.Unlock()
-	return at.enabled
 }
 
 // LaunchApp launches an application within the VPN cgroup.

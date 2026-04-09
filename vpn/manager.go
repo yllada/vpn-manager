@@ -18,8 +18,13 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/shutdown"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/vpn/health"
+	"github.com/yllada/vpn-manager/vpn/network"
+	"github.com/yllada/vpn-manager/vpn/profile"
+	"github.com/yllada/vpn-manager/vpn/security"
 	"github.com/yllada/vpn-manager/vpn/stats"
 	"github.com/yllada/vpn-manager/vpn/trust"
+	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
 
 // Common errors - re-exported from errors package for convenience.
@@ -46,7 +51,7 @@ const (
 // It tracks connection state, statistics, and provides methods for management.
 type Connection struct {
 	// Profile is the VPN profile associated with this connection.
-	Profile *Profile
+	Profile *profile.Profile
 	// Status is the current connection status.
 	Status ConnectionStatus
 	// StartTime is when the connection was initiated.
@@ -64,7 +69,7 @@ type Connection struct {
 	mu               sync.RWMutex
 	stopChan         chan struct{}
 	logHandler       func(string)
-	onAuthFailed     func(profile *Profile, needsOTP bool)
+	onAuthFailed     func(profile *profile.Profile, needsOTP bool)
 	authFailedCalled bool
 }
 
@@ -72,17 +77,17 @@ type Connection struct {
 // It maintains a registry of active connections and provides methods
 // to connect, disconnect, and query connection status.
 type Manager struct {
-	profileManager   *ProfileManager
+	profileManager   *profile.ProfileManager
 	connections      map[string]*Connection
-	healthChecker    *HealthChecker
-	killSwitch       *KillSwitch
-	appTunnel        *AppTunnel
+	healthChecker    *health.Checker
+	killSwitch       *security.KillSwitch
+	appTunnel        *tunnel.AppTunnel
 	providerRegistry *vpntypes.ProviderRegistry
-	nmBackend        *NMBackend // NetworkManager backend for system VPN icon
+	nmBackend        *network.NMBackend // NetworkManager backend for system VPN icon
 
 	// Security features
-	dnsProtection  *DNSProtection
-	ipv6Protection *IPv6Protection
+	dnsProtection  *security.DNSProtection
+	ipv6Protection *security.IPv6Protection
 
 	// Resilience
 	circuitBreaker *resilience.CircuitBreaker
@@ -102,7 +107,7 @@ type Manager struct {
 // NewManager creates a new VPN connection manager.
 // It initializes the profile manager and prepares the connection registry.
 func NewManager() (*Manager, error) {
-	pm, err := NewProfileManager()
+	pm, err := profile.NewProfileManager()
 	if err != nil {
 		return nil, errors.WrapError(err, "failed to initialize profile manager")
 	}
@@ -121,16 +126,17 @@ func NewManager() (*Manager, error) {
 		profileManager:   pm,
 		connections:      make(map[string]*Connection),
 		providerRegistry: vpntypes.NewProviderRegistry(),
-		killSwitch:       NewKillSwitch(),
-		appTunnel:        NewAppTunnel(),
-		nmBackend:        NewNMBackend(),
-		dnsProtection:    NewDNSProtection(),
-		ipv6Protection:   NewIPv6Protection(),
+		killSwitch:       security.NewKillSwitch(),
+		appTunnel:        tunnel.NewAppTunnel(),
+		nmBackend:        network.NewNMBackend(),
+		dnsProtection:    security.NewDNSProtection(),
+		ipv6Protection:   security.NewIPv6Protection(),
 		circuitBreaker:   resilience.NewCircuitBreaker(cbConfig),
 	}
 
 	// Initialize health checker with default config
-	m.healthChecker = NewHealthChecker(m, DefaultHealthConfig())
+	// Use HealthAdapter to implement health.ConnectionProvider interface
+	m.healthChecker = health.NewChecker(NewHealthAdapter(m), health.DefaultConfig())
 
 	// Initialize traffic statistics (non-fatal if it fails)
 	if statsManager, err := stats.NewStatsManager(""); err != nil {
@@ -201,12 +207,12 @@ func (m *Manager) registerShutdownHooks() {
 }
 
 // DNSProtection returns the DNS protection manager.
-func (m *Manager) DNSProtection() *DNSProtection {
+func (m *Manager) DNSProtection() *security.DNSProtection {
 	return m.dnsProtection
 }
 
 // IPv6Protection returns the IPv6 protection manager.
-func (m *Manager) IPv6Protection() *IPv6Protection {
+func (m *Manager) IPv6Protection() *security.IPv6Protection {
 	return m.ipv6Protection
 }
 
@@ -216,7 +222,7 @@ func (m *Manager) CircuitBreaker() *resilience.CircuitBreaker {
 }
 
 // HealthChecker returns the health checker instance.
-func (m *Manager) HealthChecker() *HealthChecker {
+func (m *Manager) HealthChecker() *health.Checker {
 	return m.healthChecker
 }
 
@@ -235,7 +241,7 @@ func (m *Manager) StopHealthChecker() {
 }
 
 // ProfileManager returns the associated profile manager.
-func (m *Manager) ProfileManager() *ProfileManager {
+func (m *Manager) ProfileManager() *profile.ProfileManager {
 	return m.profileManager
 }
 
@@ -284,12 +290,12 @@ func (m *Manager) FixAllVPNConnections() {
 }
 
 // KillSwitch returns the kill switch instance
-func (m *Manager) KillSwitch() *KillSwitch {
+func (m *Manager) KillSwitch() *security.KillSwitch {
 	return m.killSwitch
 }
 
 // AppTunnel returns the per-app tunnel manager.
-func (m *Manager) AppTunnel() *AppTunnel {
+func (m *Manager) AppTunnel() *tunnel.AppTunnel {
 	return m.appTunnel
 }
 
@@ -766,7 +772,7 @@ func (m *Manager) activateKillSwitchForUntrusted() {
 
 	// Set mode to always to ensure it stays active
 	oldMode := m.killSwitch.GetMode()
-	m.killSwitch.SetMode(KillSwitchAlways)
+	m.killSwitch.SetMode(security.KillSwitchAlways)
 
 	// Enable with no VPN interface (block all non-local traffic)
 	// Use empty interface and server IP since we're blocking everything
@@ -820,4 +826,45 @@ func (m *Manager) DetectOrphanedVPN() (bool, *OrphanedVPNInfo) {
 		Interface: tunIface,
 		IPAddress: ipAddr,
 	}
+}
+
+// =============================================================================
+// HEALTH CONNECTION PROVIDER INTERFACE
+// =============================================================================
+
+// ListConnectionsForHealth returns all connections in a format suitable for health checking.
+// This implements part of the health.ConnectionProvider interface.
+func (m *Manager) ListConnectionsForHealth() []*health.ConnectionInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make([]*health.ConnectionInfo, 0, len(m.connections))
+	for _, conn := range m.connections {
+		result = append(result, &health.ConnectionInfo{
+			ProfileID:   conn.Profile.ID,
+			ProfileName: conn.Profile.Name,
+			Status:      health.ConnectionStatus(conn.Status),
+			Profile:     conn.Profile,
+		})
+	}
+	return result
+}
+
+// GetConnectionForHealth returns a connection by profile ID in a format suitable for health checking.
+// This implements part of the health.ConnectionProvider interface.
+func (m *Manager) GetConnectionForHealth(profileID string) (*health.ConnectionInfo, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	conn, exists := m.connections[profileID]
+	if !exists {
+		return nil, false
+	}
+
+	return &health.ConnectionInfo{
+		ProfileID:   conn.Profile.ID,
+		ProfileName: conn.Profile.Name,
+		Status:      health.ConnectionStatus(conn.Status),
+		Profile:     conn.Profile,
+	}, true
 }

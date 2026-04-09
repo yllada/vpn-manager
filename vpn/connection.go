@@ -21,6 +21,9 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/vpn/profile"
+	"github.com/yllada/vpn-manager/vpn/security"
+	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
 
 // Connect initiates a VPN connection for the specified profile.
@@ -138,7 +141,7 @@ func (m *Manager) Disconnect(profileID string) error {
 	}
 
 	// Disable per-app tunneling if no other connections remain
-	if len(m.connections) <= 1 && m.appTunnel.enabled {
+	if len(m.connections) <= 1 && m.appTunnel.IsEnabled() {
 		if err := m.appTunnel.Disable(); err != nil {
 			logger.LogWarn("apptunnel", "failed to disable: %v", err)
 		}
@@ -196,7 +199,7 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	vpnServerIP := m.getVPNServerIP(conn.Profile)
 
 	// Kill Switch
-	if m.killSwitch != nil && m.killSwitch.GetMode() != KillSwitchOff {
+	if m.killSwitch != nil && m.killSwitch.GetMode() != security.KillSwitchOff {
 		if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
 			logger.LogWarn("killswitch", "failed to enable: %v", err)
 		}
@@ -206,7 +209,7 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	if m.appTunnel != nil && conn.Profile.SplitTunnelAppsEnabled && len(conn.Profile.SplitTunnelApps) > 0 {
 		gateway := m.getDefaultGateway()
 		if conn.Profile.SplitTunnelAppMode != "" {
-			m.appTunnel.SetMode(AppTunnelMode(conn.Profile.SplitTunnelAppMode))
+			m.appTunnel.SetMode(tunnel.AppTunnelMode(conn.Profile.SplitTunnelAppMode))
 		}
 		if conn.Profile.SplitTunnelDNS {
 			vpnDNS := []string{DefaultVPNGatewayDNS}
@@ -587,7 +590,7 @@ func (c *Connection) SetLogHandler(handler func(string)) {
 // The callback receives the profile and a boolean indicating if OTP might be needed.
 // This is used for intelligent OTP fallback - when auth fails without OTP,
 // the UI can prompt for OTP and retry.
-func (c *Connection) SetOnAuthFailed(handler func(profile *Profile, needsOTP bool)) {
+func (c *Connection) SetOnAuthFailed(handler func(prof *profile.Profile, needsOTP bool)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onAuthFailed = handler
@@ -662,12 +665,12 @@ func (c *Connection) UpdateStats() bool {
 }
 
 // getVPNServerIP extracts the VPN server IP from the profile config
-func (m *Manager) getVPNServerIP(profile *Profile) string {
-	if profile == nil || profile.ConfigPath == "" {
+func (m *Manager) getVPNServerIP(prof *profile.Profile) string {
+	if prof == nil || prof.ConfigPath == "" {
 		return ""
 	}
 
-	data, err := os.ReadFile(profile.ConfigPath)
+	data, err := os.ReadFile(prof.ConfigPath)
 	if err != nil {
 		logger.LogDebug("vpn", "Failed to read config for server IP: %v", err)
 		return ""

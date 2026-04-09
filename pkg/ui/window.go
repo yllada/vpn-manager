@@ -13,6 +13,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/profile"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
@@ -543,7 +544,7 @@ func (mw *MainWindow) showAddProfileDialog(configPath string) {
 		dialog.Close()
 
 		// Create profile
-		profile := &vpn.Profile{
+		profile := &profile.Profile{
 			Name:       name,
 			ConfigPath: configPath,
 		}
