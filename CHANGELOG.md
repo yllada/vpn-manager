@@ -12,6 +12,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [2.0.0] - 2026-04-09
+
+### ⚠️ BREAKING CHANGES
+
+- **Daemon-only architecture**: All privileged operations now run through `vpn-managerd` daemon
+  - Eliminated all `pkexec` prompts — no more password dialogs for VPN operations
+  - Unix socket IPC between GUI client and daemon (`/var/run/vpn-manager/vpn-managerd.sock`)
+  - Systemd service manages daemon lifecycle (auto-start on boot)
+- **CLI and TUI removed**: Application is now GUI-only (GTK4)
+  - Focused on Linux desktop VPN client use case
+  - Removed `--tui`, `--list`, `--connect`, `--disconnect`, `--status` flags
+  - JSON output (`--json`) also removed
+- **Package import paths changed**: Internal restructuring affects Go imports
+
+### Added
+- **vpn-managerd daemon** — Privileged operations service running as root
+  - Manages OpenVPN/WireGuard process lifecycle
+  - Handles firewall rules (iptables/nftables)
+  - Controls kill switch, DNS protection, IPv6 protection
+  - Secure Unix socket communication with GUI
+- **Systemd integration** — Daemon managed by systemd
+  - `vpn-managerd.service` installed to `/lib/systemd/system/`
+  - Auto-enabled and started on package installation
+  - Graceful stop on package removal/upgrade
+
+### Changed
+- **Screaming Architecture** — Restructured `vpn/` package into domain-focused subpackages:
+  - `vpn/health/` — Connection health monitoring with interface-based decoupling
+  - `vpn/profile/` — Profile management
+  - `vpn/security/` — KillSwitch, DNS protection, IPv6 protection
+  - `vpn/network/` — NetworkManager backend, quality monitoring
+  - `vpn/tunnel/` — Split tunneling (AppTunnel)
+- **Eliminated god packages** — Extracted monolithic `app/` to focused internal packages:
+  - `internal/errors/` — Error types and codes
+  - `internal/logger/` — Structured logging
+  - `internal/eventbus/` — Event system
+  - `internal/paths/` — System paths
+  - `internal/resilience/` — Panic recovery, circuit breaker
+  - `internal/vpn/types/` — Shared VPN types
+- **CI pipeline** — Now builds and verifies both GUI and daemon binaries
+
+### Removed
+- `pkg/cli/` — Command-line interface package
+- `pkg/tui/` — Terminal UI package (Bubble Tea)
+- `--tui`, `--list`, `--connect`, `--disconnect`, `--status`, `--json` flags
+- All `pkexec` fallback code paths
+
+### Migration Guide
+
+**For users updating via APT:**
+```bash
+sudo apt update && sudo apt upgrade
+# The postinst script automatically:
+# - Installs vpn-managerd to /usr/bin/
+# - Enables and starts vpn-managerd.service
+# - No manual steps required
+```
+
+**For manual installations:**
+```bash
+# Download and extract the tarball
+tar -xzf vpn-manager-2.0.0-linux-amd64.tar.gz
+cd vpn-manager-2.0.0
+sudo ./install.sh
+```
+
 ## [1.15.0] - 2026-04-09
 
 ### Added
@@ -413,7 +479,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop notifications
 - YAML-based configuration
 
-[Unreleased]: https://github.com/yllada/vpn-manager/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/yllada/vpn-manager/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/yllada/vpn-manager/compare/v1.15.0...v2.0.0
+[1.15.0]: https://github.com/yllada/vpn-manager/compare/v1.14.2...v1.15.0
+[1.14.2]: https://github.com/yllada/vpn-manager/compare/v1.14.0...v1.14.2
+[1.14.0]: https://github.com/yllada/vpn-manager/compare/v1.13.3...v1.14.0
+[1.13.3]: https://github.com/yllada/vpn-manager/compare/v1.13.2...v1.13.3
+[1.13.2]: https://github.com/yllada/vpn-manager/compare/v1.13.1...v1.13.2
+[1.13.1]: https://github.com/yllada/vpn-manager/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/yllada/vpn-manager/compare/v1.12.1...v1.13.0
 [1.12.1]: https://github.com/yllada/vpn-manager/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/yllada/vpn-manager/compare/v1.11.2...v1.12.0
