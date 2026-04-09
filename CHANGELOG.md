@@ -12,6 +12,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [1.15.0] - 2026-04-09
+
+### Added
+- **Tailscale LAN Gateway** — Share your VPN connection with other devices on your local network (contributed by [@JocLRojas](https://github.com/JocLRojas))
+  - Enable when connected to an exit node to let other LAN devices route through Tailscale
+  - Auto-detection of network interface and CIDR (supports /8, /16, /22, /24, etc.)
+  - Single pkexec prompt for all required iptables/routing rules
+  - Toggle in Preferences with real-time status indicator
+  - Built-in help dialog with device configuration instructions
+  - Automatic cleanup when disconnecting or disabling the feature
+  - Configures IP forwarding, policy routing (table 52), iptables FORWARD rules, and NAT/MASQUERADE
+
+### Security
+- **Critical**: Fixed symlink attack vulnerability in temp file operations
+  - Replaced hardcoded temp paths with `os.CreateTemp()` for random unpredictable names
+  - Prevents privilege escalation via symlink race condition in pkexec mv operations
+  - Affected files: killswitch.go, dnsprotection.go
+
+### Changed
+- **Dependencies**: Updated modernc.org/sqlite to latest version
+- **CI**: Updated GitHub Actions to latest versions
+
 ## [1.14.2] - 2026-04-05
 
 ### Fixed
