@@ -4,9 +4,13 @@
 package ui
 
 import (
+	"context"
+	"time"
+
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
@@ -27,7 +31,6 @@ type PreferencesDialog struct {
 	themeIDs     []string
 
 	// Tailscale settings
-	tailscaleEnabledRow    *adw.SwitchRow
 	tailscaleRoutesRow     *adw.SwitchRow
 	tailscaleDNSRow        *adw.SwitchRow
 	tailscaleLANGatewayRow *adw.SwitchRow
@@ -272,13 +275,6 @@ func (pd *PreferencesDialog) buildProvidersPage() *adw.PreferencesPage {
 	tailscaleGroup.SetTitle("Tailscale")
 	tailscaleGroup.SetDescription("Tailscale mesh VPN settings")
 
-	// Enable Tailscale row
-	pd.tailscaleEnabledRow = adw.NewSwitchRow()
-	pd.tailscaleEnabledRow.SetTitle("Enable Tailscale")
-	pd.tailscaleEnabledRow.SetSubtitle("Show Tailscale controls in the main window")
-	pd.tailscaleEnabledRow.SetActive(pd.config.Tailscale.Enabled)
-	tailscaleGroup.Add(pd.tailscaleEnabledRow)
-
 	// Accept Routes row
 	pd.tailscaleRoutesRow = adw.NewSwitchRow()
 	pd.tailscaleRoutesRow.SetTitle("Accept Routes")
@@ -350,10 +346,25 @@ func (pd *PreferencesDialog) savePreferences() {
 	pd.config.AutoReconnect = pd.reconnectRow.Active()
 
 	// Tailscale settings
-	pd.config.Tailscale.Enabled = pd.tailscaleEnabledRow.Active()
-	pd.config.Tailscale.AcceptRoutes = pd.tailscaleRoutesRow.Active()
-	pd.config.Tailscale.AcceptDNS = pd.tailscaleDNSRow.Active()
+	acceptRoutes := pd.tailscaleRoutesRow.Active()
+	acceptDNS := pd.tailscaleDNSRow.Active()
+	pd.config.Tailscale.AcceptRoutes = acceptRoutes
+	pd.config.Tailscale.AcceptDNS = acceptDNS
 	pd.config.Tailscale.ExitNodeAllowLANAccess = pd.tailscaleLANGatewayRow.Active()
+
+	// Apply Tailscale settings immediately if provider is available
+	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(app.ProviderTailscale); ok {
+		if tsProvider, ok := provider.(*tailscale.Provider); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := tsProvider.ApplySettings(ctx, tailscale.SetOptions{
+				AcceptRoutes: &acceptRoutes,
+				AcceptDNS:    &acceptDNS,
+			}); err != nil {
+				app.LogWarn("[Preferences] Could not apply Tailscale settings: %v", err)
+			}
+		}
+	}
 
 	// Theme
 	themeIdx := pd.themeRow.Selected()

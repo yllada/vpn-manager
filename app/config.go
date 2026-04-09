@@ -23,9 +23,6 @@ type TailscaleServer struct {
 // TailscaleConfig contains all Tailscale-specific settings.
 // Follows Tailscale CLI best practices and official documentation.
 type TailscaleConfig struct {
-	// Enabled shows/hides Tailscale in the UI.
-	Enabled bool `yaml:"enabled"`
-
 	// ── Control Server ──
 	// ControlServer is the active server: "cloud" for Tailscale Cloud or a custom URL.
 	ControlServer string `yaml:"control_server"`
@@ -118,7 +115,6 @@ func DefaultConfig() *Config {
 		AutoReconnect:     true,
 		Theme:             "auto",
 		Tailscale: TailscaleConfig{
-			Enabled:                true,
 			ControlServer:          "cloud",
 			CustomServers:          []TailscaleServer{},
 			AuthKey:                "",
