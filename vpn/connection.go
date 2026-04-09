@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -92,17 +91,15 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	conn.mu.Lock()
 	conn.Status = StatusDisconnecting
-	configPath := ""
 	useNM := false
 	nmConnName := ""
 	if conn.Profile != nil {
-		configPath = conn.Profile.ConfigPath
 		useNM = conn.Profile.UseNetworkManager
 		nmConnName = conn.Profile.NMConnectionName
 	}
 	conn.mu.Unlock()
 
-	// Signal the connection to stop
+	// Signal the connection to stop (this triggers monitorDaemonConnection to disconnect)
 	select {
 	case <-conn.stopChan:
 		// Already closed
@@ -113,73 +110,20 @@ func (m *Manager) Disconnect(profileID string) error {
 	// Use NetworkManager to disconnect if that was used for connection
 	if useNM && m.nmBackend.IsAvailable() && nmConnName != "" {
 		if err := m.nmBackend.Disconnect(nmConnName); err != nil {
-			app.LogDebug("vpn", "NM disconnect failed: %v, trying fallback", err)
+			app.LogDebug("vpn", "NM disconnect failed: %v, trying daemon", err)
 		}
-	} else {
-		// Terminate the OpenVPN process - it runs as root via pkexec, so we need pkexec to kill it
-		useOpenVPN3 := checkCommandExists("openvpn3")
+	}
 
-		if useOpenVPN3 {
-			// OpenVPN3: use session-manage to disconnect
-			if configPath != "" {
-				cmd := exec.Command("openvpn3", "session-manage", "--disconnect", "--config", configPath)
-				if err := cmd.Run(); err != nil {
-					app.LogWarn("vpn", "openvpn3 disconnect failed: %v", err)
-				}
-			}
-		} else {
-			// Classic OpenVPN: the process runs as root via pkexec
-			var pkillErr, killallErr error
-
-			if configPath != "" {
-				// Try to kill the specific OpenVPN process by pattern
-				// Using direct pkill without shell wrapper for security
-				pattern := fmt.Sprintf("openvpn.*%s", filepath.Base(configPath))
-				cmd := exec.Command("pkexec", "pkill", "-f", pattern)
-				pkillErr = cmd.Run()
-				if pkillErr != nil {
-					app.LogDebug("vpn", "pkill pattern failed: %v", pkillErr)
-				}
-			}
-
-			// Fallback: kill all openvpn processes
-			// This ensures cleanup even if the pattern match failed
-			cmd := exec.Command("pkexec", "killall", "-q", "openvpn")
-			killallErr = cmd.Run()
-			if killallErr != nil {
-				// Check if user cancelled the auth dialog
-				if exitErr, ok := killallErr.(*exec.ExitError); ok {
-					exitCode := exitErr.ExitCode()
-					if exitCode == 126 || exitCode == 127 {
-						app.LogWarn("vpn", "Authentication cancelled by user during disconnect")
-						return app.NewVPNError(app.ErrCodeAuthFailed, "disconnect cancelled by user")
-					}
-				}
-				// killall returns error if no process found, which is OK
-				app.LogDebug("vpn", "killall openvpn: %v", killallErr)
-			}
-
-			// Also kill the parent pkexec process (no pkexec needed - we own this process)
-			if conn.cmd != nil && conn.cmd.Process != nil {
-				_ = conn.cmd.Process.Kill()
-			}
+	// Disconnect via daemon (the daemon manages the OpenVPN process)
+	if app.IsDaemonAvailable() {
+		client := &app.OpenVPNClient{}
+		if err := client.Disconnect(profileID); err != nil {
+			app.LogWarn("vpn", "Daemon disconnect failed: %v", err)
 		}
 	}
 
 	// Wait a moment for cleanup
 	time.Sleep(CleanupDelay)
-
-	// Verify the VPN is actually stopped
-	tunIface := m.detectTunInterface()
-	if tunIface != "" {
-		// Check if openvpn process is still running
-		checkCmd := exec.Command("pgrep", "-x", "openvpn")
-		if checkErr := checkCmd.Run(); checkErr == nil {
-			// Process still running!
-			app.LogError("vpn", "VPN process still running after disconnect attempt")
-			return app.NewVPNError(app.ErrCodeProcessFailed, "VPN process still running after disconnect")
-		}
-	}
 
 	// Disable kill switch if no other connections remain
 	if len(m.connections) <= 1 {
@@ -371,157 +315,117 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 	}
 }
 
-// runConnection executes the VPN connection
+// runConnection executes the VPN connection via the daemon.
+// The daemon handles all privileged operations (no pkexec needed).
 func (m *Manager) runConnection(conn *Connection, username string, password string) {
 	app.LogDebug("vpn", "Starting connection to %s", conn.Profile.Name)
 	app.LogDebug("vpn", "Configuration file: %s", conn.Profile.ConfigPath)
 
-	// Create temporary credentials file
-	credFile, err := m.createCredentialsFile(username, password)
-	if err != nil {
-		app.LogError("vpn", "Could not create credentials file: %v", err)
-		m.handleConnectionError(conn, fmt.Errorf("failed to create credentials: %w", err))
-		return
-	}
-	app.LogDebug("vpn", "Credentials file created")
-
-	// Ensure cleanup of credentials file
-	defer func() {
-		if credFile != "" {
-			_ = os.Remove(credFile)
-			app.LogDebug("vpn", "Credentials file deleted")
-		}
-	}()
-
-	// Use openvpn3 if available, otherwise use classic openvpn
-	useOpenVPN3 := checkCommandExists("openvpn3")
-	app.LogDebug("vpn", "Using OpenVPN3: %v", useOpenVPN3)
-
-	var cmd *exec.Cmd
-	if useOpenVPN3 {
-		// OpenVPN3 uses a different approach
-		cmd = exec.Command("openvpn3", "session-start",
-			"--config", conn.Profile.ConfigPath)
-		app.LogDebug("vpn", "Command: openvpn3 session-start --config %s", conn.Profile.ConfigPath)
-	} else {
-		// Classic OpenVPN with credentials file
-		args := []string{
-			"--config", conn.Profile.ConfigPath,
-			"--auth-user-pass", credFile,
-			"--verb", "3",
-		}
-
-		// Split tunneling: in "include" mode, prevent OpenVPN from configuring the default route
-		// and add only specific routes using native OpenVPN options
-		if conn.Profile.SplitTunnelEnabled && conn.Profile.SplitTunnelMode == "include" {
-			app.LogDebug("vpn", "Split Tunneling INCLUDE mode activated - configuring specific routes")
-
-			// Prevent the server from pushing the default route
-			args = append(args, "--route-nopull")
-
-			// Explicitly filter redirect-gateway from server
-			args = append(args, "--pull-filter", "ignore", "redirect-gateway")
-
-			// Add each specific route using OpenVPN's --route option
-			// This automatically uses vpn_gateway as the gateway
-			for _, route := range conn.Profile.SplitTunnelRoutes {
-				route = strings.TrimSpace(route)
-				if route == "" {
-					continue
-				}
-
-				// Parse the route to extract network and mask
-				network, netmask := parseRouteForOpenVPN(route)
-				if network != "" {
-					app.LogDebug("vpn", "Adding OpenVPN route: %s %s", network, netmask)
-					args = append(args, "--route", network, netmask)
-				}
-			}
-		}
-
-		cmd = exec.Command("pkexec", append([]string{"openvpn"}, args...)...)
-		app.LogDebug("vpn", "Command: pkexec openvpn %v", args)
-	}
-
-	// Capture stdout and stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
+	// Check daemon availability
+	if !app.IsDaemonAvailable() {
+		err := fmt.Errorf("vpn-managerd daemon is not running. Install and start it with: sudo ./build/install-daemon.sh")
+		app.LogError("vpn", "%v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
 
-	stderr, err := cmd.StderrPipe()
+	client := &app.OpenVPNClient{}
+
+	params := app.OpenVPNConnectParams{
+		ProfileID:         conn.Profile.ID,
+		ConfigPath:        conn.Profile.ConfigPath,
+		Username:          username,
+		Password:          password,
+		SplitTunnelEnable: conn.Profile.SplitTunnelEnabled,
+		SplitTunnelMode:   conn.Profile.SplitTunnelMode,
+		SplitTunnelRoutes: conn.Profile.SplitTunnelRoutes,
+	}
+
+	result, err := client.Connect(params)
 	if err != nil {
+		app.LogError("vpn", "Daemon connection failed: %v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
 
-	// For OpenVPN3, we need stdin for credentials
-	var stdin io.WriteCloser
-	if useOpenVPN3 {
-		stdin, err = cmd.StdinPipe()
-		if err != nil {
-			m.handleConnectionError(conn, err)
+	app.LogInfo("vpn", "OpenVPN started via daemon, PID: %d", result.PID)
+
+	// Start monitoring the connection status via daemon
+	m.monitorDaemonConnection(conn)
+}
+
+// monitorDaemonConnection monitors an OpenVPN connection managed by the daemon.
+func (m *Manager) monitorDaemonConnection(conn *Connection) {
+	client := &app.OpenVPNClient{}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	profileID := conn.Profile.ID
+	wasConnected := false
+
+	for {
+		select {
+		case <-conn.stopChan:
+			// Disconnection requested
+			_ = client.Disconnect(profileID)
 			return
-		}
-	}
 
-	conn.mu.Lock()
-	conn.cmd = cmd
-	conn.mu.Unlock()
-
-	// Start the process
-	app.LogDebug("vpn", "Starting OpenVPN process...")
-	if err := cmd.Start(); err != nil {
-		app.LogError("vpn", "Could not start OpenVPN: %v", err)
-		m.handleConnectionError(conn, fmt.Errorf("failed to start openvpn: %w", err))
-		return
-	}
-	app.LogDebug("vpn", "OpenVPN process started with PID %d", cmd.Process.Pid)
-
-	// Remove credentials file after a longer delay for security
-	// (pkexec can add significant delay before OpenVPN actually starts)
-	if credFile != "" {
-		app.SafeGoWithName("vpn-cleanup-credentials", func() {
-			time.Sleep(CredentialCleanupDelay)
-			if err := os.Remove(credFile); err == nil {
-				app.LogDebug("vpn", "Credentials file removed for security")
+		case <-ticker.C:
+			status, err := client.Status(profileID)
+			if err != nil {
+				app.LogDebug("vpn", "Error getting daemon status: %v", err)
+				continue
 			}
-		})
-	}
 
-	// For OpenVPN3, send credentials via stdin
-	if useOpenVPN3 && stdin != nil {
-		app.SafeGoWithName("vpn-stdin-credentials", func() {
-			defer func() { _ = stdin.Close() }()
-			_, _ = fmt.Fprintf(stdin, "%s\n", username)
-			_, _ = fmt.Fprintf(stdin, "%s\n", password)
-		})
-	}
+			conn.mu.Lock()
+			switch status.Status {
+			case "connected":
+				if !wasConnected {
+					conn.Status = StatusConnected
+					conn.IPAddress = status.IPAddress
+					wasConnected = true
+					app.LogInfo("vpn", "Connected via daemon - IP: %s", status.IPAddress)
 
-	// Monitor output
-	app.SafeGoWithName("vpn-monitor-stdout", func() {
-		m.monitorOutput(conn, stdout)
-	})
-	app.SafeGoWithName("vpn-monitor-stderr", func() {
-		m.monitorOutput(conn, stderr)
-	})
+					// Emit connection established event
+					app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
+						ProfileID:   profileID,
+						ProfileName: conn.Profile.Name,
+						IPAddress:   status.IPAddress,
+					})
 
-	// Wait for completion
-	err = cmd.Wait()
+					// Enable post-connection features
+					conn.mu.Unlock()
+					m.enablePostConnectionFeatures(conn)
+					conn.mu.Lock()
+				}
 
-	conn.mu.Lock()
-	if conn.Status == StatusConnecting || conn.Status == StatusConnected {
-		if err != nil {
-			app.LogError("vpn", "OpenVPN terminated with error: %v", err)
-			conn.Status = StatusError
-			conn.LastError = err.Error()
-		} else {
-			app.LogDebug("vpn", "OpenVPN terminated normally")
-			conn.Status = StatusDisconnected
+			case "disconnected", "error":
+				if wasConnected || status.Status == "error" {
+					conn.Status = StatusDisconnected
+					if status.LastError != "" {
+						conn.LastError = status.LastError
+						conn.Status = StatusError
+					}
+					conn.mu.Unlock()
+
+					// Emit disconnection event
+					app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
+						ProfileID: profileID,
+					})
+
+					// Clean up
+					m.mu.Lock()
+					delete(m.connections, profileID)
+					m.mu.Unlock()
+					return
+				}
+
+			case "connecting":
+				conn.Status = StatusConnecting
+			}
+			conn.mu.Unlock()
 		}
 	}
-	conn.mu.Unlock()
 }
 
 // createCredentialsFile creates a temporary file with credentials

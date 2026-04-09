@@ -288,3 +288,197 @@ func RunWithPkexec(name string, args ...string) error {
 	}
 	return nil
 }
+
+// =============================================================================
+// OPENVPN CLIENT
+// =============================================================================
+
+// OpenVPNClient provides a client interface for OpenVPN operations via daemon.
+type OpenVPNClient struct{}
+
+// OpenVPNConnectParams contains parameters for connecting to OpenVPN.
+type OpenVPNConnectParams struct {
+	ProfileID         string   `json:"profile_id"`
+	ConfigPath        string   `json:"config_path"`
+	Username          string   `json:"username"`
+	Password          string   `json:"password"`
+	SplitTunnelEnable bool     `json:"split_tunnel_enabled"`
+	SplitTunnelMode   string   `json:"split_tunnel_mode"`
+	SplitTunnelRoutes []string `json:"split_tunnel_routes"`
+}
+
+// OpenVPNConnectResult contains the result of an OpenVPN connect operation.
+type OpenVPNConnectResult struct {
+	Success   bool   `json:"success"`
+	ProfileID string `json:"profile_id"`
+	PID       int    `json:"pid"`
+}
+
+// OpenVPNStatusResult contains the status of an OpenVPN connection.
+type OpenVPNStatusResult struct {
+	ProfileID   string   `json:"profile_id"`
+	Status      string   `json:"status"`
+	IPAddress   string   `json:"ip_address,omitempty"`
+	StartTime   string   `json:"start_time,omitempty"`
+	LastError   string   `json:"last_error,omitempty"`
+	OutputLines []string `json:"output_lines,omitempty"`
+}
+
+// Connect starts an OpenVPN connection via daemon.
+func (c *OpenVPNClient) Connect(params OpenVPNConnectParams) (*OpenVPNConnectResult, error) {
+	var result OpenVPNConnectResult
+
+	err := CallDaemon("openvpn.connect", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// ConnectWithContext starts an OpenVPN connection with context support.
+func (c *OpenVPNClient) ConnectWithContext(ctx context.Context, params OpenVPNConnectParams) (*OpenVPNConnectResult, error) {
+	var result OpenVPNConnectResult
+
+	err := CallDaemonWithContext(ctx, "openvpn.connect", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// Disconnect stops an OpenVPN connection.
+func (c *OpenVPNClient) Disconnect(profileID string) error {
+	var result map[string]bool
+
+	params := map[string]string{"profile_id": profileID}
+	return CallDaemon("openvpn.disconnect", params, &result, nil)
+}
+
+// DisconnectWithContext stops an OpenVPN connection with context support.
+func (c *OpenVPNClient) DisconnectWithContext(ctx context.Context, profileID string) error {
+	var result map[string]bool
+
+	params := map[string]string{"profile_id": profileID}
+	return CallDaemonWithContext(ctx, "openvpn.disconnect", params, &result, nil)
+}
+
+// Status returns the status of an OpenVPN connection.
+func (c *OpenVPNClient) Status(profileID string) (*OpenVPNStatusResult, error) {
+	var result OpenVPNStatusResult
+
+	params := map[string]string{"profile_id": profileID}
+	err := CallDaemon("openvpn.status", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// List returns all OpenVPN connections.
+func (c *OpenVPNClient) List() ([]OpenVPNStatusResult, error) {
+	var result []OpenVPNStatusResult
+
+	err := CallDaemon("openvpn.list", nil, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// =============================================================================
+// WIREGUARD CLIENT
+// =============================================================================
+
+// WireGuardClient provides a client interface for WireGuard operations via daemon.
+type WireGuardClient struct{}
+
+// WireGuardConnectParams contains parameters for bringing up a WireGuard interface.
+type WireGuardConnectParams struct {
+	InterfaceName string `json:"interface_name"`
+	ConfigPath    string `json:"config_path"`
+}
+
+// WireGuardConnectResult contains the result of a WireGuard connect operation.
+type WireGuardConnectResult struct {
+	Success       bool   `json:"success"`
+	InterfaceName string `json:"interface_name"`
+	IPAddress     string `json:"ip_address,omitempty"`
+}
+
+// WireGuardStatusResult contains the status of a WireGuard interface.
+type WireGuardStatusResult struct {
+	InterfaceName string `json:"interface_name"`
+	Status        string `json:"status"`
+	IPAddress     string `json:"ip_address,omitempty"`
+	StartTime     string `json:"start_time,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+}
+
+// Connect brings up a WireGuard interface via daemon.
+func (c *WireGuardClient) Connect(params WireGuardConnectParams) (*WireGuardConnectResult, error) {
+	var result WireGuardConnectResult
+
+	err := CallDaemon("wireguard.connect", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// ConnectWithContext brings up a WireGuard interface with context support.
+func (c *WireGuardClient) ConnectWithContext(ctx context.Context, params WireGuardConnectParams) (*WireGuardConnectResult, error) {
+	var result WireGuardConnectResult
+
+	err := CallDaemonWithContext(ctx, "wireguard.connect", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// Disconnect brings down a WireGuard interface.
+func (c *WireGuardClient) Disconnect(interfaceName string) error {
+	var result map[string]bool
+
+	params := map[string]string{"interface_name": interfaceName}
+	return CallDaemon("wireguard.disconnect", params, &result, nil)
+}
+
+// DisconnectWithContext brings down a WireGuard interface with context support.
+func (c *WireGuardClient) DisconnectWithContext(ctx context.Context, interfaceName string) error {
+	var result map[string]bool
+
+	params := map[string]string{"interface_name": interfaceName}
+	return CallDaemonWithContext(ctx, "wireguard.disconnect", params, &result, nil)
+}
+
+// Status returns the status of a WireGuard interface.
+func (c *WireGuardClient) Status(interfaceName string) (*WireGuardStatusResult, error) {
+	var result WireGuardStatusResult
+
+	params := map[string]string{"interface_name": interfaceName}
+	err := CallDaemon("wireguard.status", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// List returns all WireGuard interfaces.
+func (c *WireGuardClient) List() ([]WireGuardStatusResult, error) {
+	var result []WireGuardStatusResult
+
+	err := CallDaemon("wireguard.list", nil, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

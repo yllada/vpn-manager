@@ -2,6 +2,7 @@
 package daemon
 
 import (
+	"context"
 	"log"
 	"sync"
 
@@ -14,6 +15,9 @@ type HandlerFunc func(ctx *HandlerContext) (any, error)
 
 // HandlerContext provides context information to handlers.
 type HandlerContext struct {
+	// Context is the request context (for cancellation, deadlines).
+	Context context.Context
+
 	// Request is the incoming RPC request.
 	Request *protocol.Request
 

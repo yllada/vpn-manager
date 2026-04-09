@@ -4,9 +4,43 @@
 package privileged
 
 import (
+	"log"
+	"sync"
+
 	"github.com/yllada/vpn-manager/daemon"
 	"github.com/yllada/vpn-manager/daemon/privileged/firewall"
+	"github.com/yllada/vpn-manager/daemon/privileged/vpn"
 )
+
+// =============================================================================
+// VPN MANAGERS (SINGLETONS)
+// =============================================================================
+
+var (
+	openvpnManager   *vpn.OpenVPNManager
+	wireguardManager *vpn.WireGuardManager
+	vpnManagersOnce  sync.Once
+)
+
+// initVPNManagers initializes the VPN managers as singletons.
+func initVPNManagers(logger *log.Logger) {
+	vpnManagersOnce.Do(func() {
+		openvpnManager = vpn.NewOpenVPNManager(logger)
+		wireguardManager = vpn.NewWireGuardManager(logger)
+	})
+}
+
+// GetOpenVPNManager returns the OpenVPN manager singleton.
+func GetOpenVPNManager(logger *log.Logger) *vpn.OpenVPNManager {
+	initVPNManagers(logger)
+	return openvpnManager
+}
+
+// GetWireGuardManager returns the WireGuard manager singleton.
+func GetWireGuardManager(logger *log.Logger) *vpn.WireGuardManager {
+	initVPNManagers(logger)
+	return wireguardManager
+}
 
 // =============================================================================
 // KILL SWITCH HANDLERS
@@ -441,5 +475,163 @@ func GatewayStatusHandler(state *daemon.State) daemon.HandlerFunc {
 			"lan_network":    gwState.LANNetwork,
 			"rules_active":   rulesActive,
 		}, nil
+	}
+}
+
+// =============================================================================
+// OPENVPN HANDLERS
+// =============================================================================
+
+// OpenVPNConnectHandler returns a handler that starts an OpenVPN connection.
+func OpenVPNConnectHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params vpn.OpenVPNConnectParams
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		ctx.Logger.Printf("Starting OpenVPN connection for profile %s", params.ProfileID)
+
+		manager := GetOpenVPNManager(ctx.Logger)
+		result, err := manager.Connect(ctx.Context, params)
+		if err != nil {
+			return nil, err
+		}
+
+		// Update state
+		state.SetOpenVPNConnection(params.ProfileID, daemon.VPNConnectionState{
+			ProfileID:  params.ProfileID,
+			Status:     vpn.StatusConnecting,
+			ConfigPath: params.ConfigPath,
+		})
+
+		return result, nil
+	}
+}
+
+// OpenVPNDisconnectHandler returns a handler that stops an OpenVPN connection.
+func OpenVPNDisconnectHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params struct {
+			ProfileID string `json:"profile_id"`
+		}
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		ctx.Logger.Printf("Stopping OpenVPN connection for profile %s", params.ProfileID)
+
+		manager := GetOpenVPNManager(ctx.Logger)
+		if err := manager.Disconnect(params.ProfileID); err != nil {
+			return nil, err
+		}
+
+		// Update state
+		state.RemoveOpenVPNConnection(params.ProfileID)
+
+		return map[string]bool{"disconnected": true}, nil
+	}
+}
+
+// OpenVPNStatusHandler returns a handler that reports OpenVPN connection status.
+func OpenVPNStatusHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params struct {
+			ProfileID string `json:"profile_id"`
+		}
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		manager := GetOpenVPNManager(ctx.Logger)
+		return manager.Status(params.ProfileID)
+	}
+}
+
+// OpenVPNListHandler returns a handler that lists all OpenVPN connections.
+func OpenVPNListHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		manager := GetOpenVPNManager(ctx.Logger)
+		return manager.ListConnections(), nil
+	}
+}
+
+// =============================================================================
+// WIREGUARD HANDLERS
+// =============================================================================
+
+// WireGuardConnectHandler returns a handler that brings up a WireGuard interface.
+func WireGuardConnectHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params vpn.WireGuardConnectParams
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		ctx.Logger.Printf("Bringing up WireGuard interface with config %s", params.ConfigPath)
+
+		manager := GetWireGuardManager(ctx.Logger)
+		result, err := manager.Connect(ctx.Context, params)
+		if err != nil {
+			return nil, err
+		}
+
+		// Update state
+		state.SetWireGuardConnection(result.InterfaceName, daemon.VPNConnectionState{
+			ProfileID:     result.InterfaceName,
+			Status:        vpn.StatusConnected,
+			ConfigPath:    params.ConfigPath,
+			InterfaceName: result.InterfaceName,
+			IPAddress:     result.IPAddress,
+		})
+
+		return result, nil
+	}
+}
+
+// WireGuardDisconnectHandler returns a handler that brings down a WireGuard interface.
+func WireGuardDisconnectHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params struct {
+			InterfaceName string `json:"interface_name"`
+		}
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		ctx.Logger.Printf("Bringing down WireGuard interface %s", params.InterfaceName)
+
+		manager := GetWireGuardManager(ctx.Logger)
+		if err := manager.Disconnect(params.InterfaceName); err != nil {
+			return nil, err
+		}
+
+		// Update state
+		state.RemoveWireGuardConnection(params.InterfaceName)
+
+		return map[string]bool{"disconnected": true}, nil
+	}
+}
+
+// WireGuardStatusHandler returns a handler that reports WireGuard interface status.
+func WireGuardStatusHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params struct {
+			InterfaceName string `json:"interface_name"`
+		}
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		manager := GetWireGuardManager(ctx.Logger)
+		return manager.Status(params.InterfaceName)
+	}
+}
+
+// WireGuardListHandler returns a handler that lists all WireGuard interfaces.
+func WireGuardListHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		manager := GetWireGuardManager(ctx.Logger)
+		return manager.ListInterfaces(), nil
 	}
 }

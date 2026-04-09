@@ -26,6 +26,12 @@ type State struct {
 	// LAN gateway state
 	lanGateway LANGatewayState
 
+	// VPN connections (OpenVPN)
+	openvpnConnections map[string]VPNConnectionState
+
+	// VPN connections (WireGuard)
+	wireguardConnections map[string]VPNConnectionState
+
 	// Started timestamp
 	startedAt time.Time
 }
@@ -71,6 +77,17 @@ type LANGatewayState struct {
 	LANNetwork  string `json:"lan_network,omitempty"`
 }
 
+// VPNConnectionState represents a VPN connection managed by the daemon.
+type VPNConnectionState struct {
+	ProfileID     string `json:"profile_id"`
+	Status        string `json:"status"`
+	ConfigPath    string `json:"config_path,omitempty"`
+	InterfaceName string `json:"interface_name,omitempty"`
+	IPAddress     string `json:"ip_address,omitempty"`
+	StartedAt     string `json:"started_at,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+}
+
 // StateSnapshot is a read-only snapshot of all state.
 type StateSnapshot struct {
 	KillSwitch     KillSwitchState     `json:"kill_switch"`
@@ -98,6 +115,8 @@ func NewState() *State {
 			Mode: "include",
 			Apps: []string{},
 		},
+		openvpnConnections:   make(map[string]VPNConnectionState),
+		wireguardConnections: make(map[string]VPNConnectionState),
 	}
 }
 
@@ -229,4 +248,84 @@ func (s *State) SetLANGatewayEnabled(enabled bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lanGateway.Enabled = enabled
+}
+
+// =============================================================================
+// VPN CONNECTION STATE
+// =============================================================================
+
+// OpenVPN connection state management
+
+// SetOpenVPNConnection updates or adds an OpenVPN connection state.
+func (s *State) SetOpenVPNConnection(profileID string, state VPNConnectionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.openvpnConnections == nil {
+		s.openvpnConnections = make(map[string]VPNConnectionState)
+	}
+	s.openvpnConnections[profileID] = state
+}
+
+// GetOpenVPNConnection returns the state of an OpenVPN connection.
+func (s *State) GetOpenVPNConnection(profileID string) (VPNConnectionState, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state, ok := s.openvpnConnections[profileID]
+	return state, ok
+}
+
+// RemoveOpenVPNConnection removes an OpenVPN connection from state.
+func (s *State) RemoveOpenVPNConnection(profileID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.openvpnConnections, profileID)
+}
+
+// ListOpenVPNConnections returns all OpenVPN connections.
+func (s *State) ListOpenVPNConnections() []VPNConnectionState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	conns := make([]VPNConnectionState, 0, len(s.openvpnConnections))
+	for _, conn := range s.openvpnConnections {
+		conns = append(conns, conn)
+	}
+	return conns
+}
+
+// WireGuard connection state management
+
+// SetWireGuardConnection updates or adds a WireGuard connection state.
+func (s *State) SetWireGuardConnection(interfaceName string, state VPNConnectionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.wireguardConnections == nil {
+		s.wireguardConnections = make(map[string]VPNConnectionState)
+	}
+	s.wireguardConnections[interfaceName] = state
+}
+
+// GetWireGuardConnection returns the state of a WireGuard connection.
+func (s *State) GetWireGuardConnection(interfaceName string) (VPNConnectionState, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state, ok := s.wireguardConnections[interfaceName]
+	return state, ok
+}
+
+// RemoveWireGuardConnection removes a WireGuard connection from state.
+func (s *State) RemoveWireGuardConnection(interfaceName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.wireguardConnections, interfaceName)
+}
+
+// ListWireGuardConnections returns all WireGuard connections.
+func (s *State) ListWireGuardConnections() []VPNConnectionState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	conns := make([]VPNConnectionState, 0, len(s.wireguardConnections))
+	for _, conn := range s.wireguardConnections {
+		conns = append(conns, conn)
+	}
+	return conns
 }

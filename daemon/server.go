@@ -273,6 +273,7 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 
 	// Create handler context
 	ctx := &HandlerContext{
+		Context: context.Background(), // TODO: Use connection context with timeout
 		Request: req,
 		UID:     client.uid,
 		GID:     client.gid,

@@ -113,4 +113,16 @@ func registerPrivilegedHandlers(server *daemon.Server) {
 	handlers.Register("gateway.enable", privileged.GatewayEnableHandler(state))
 	handlers.Register("gateway.disable", privileged.GatewayDisableHandler(state))
 	handlers.Register("gateway.status", privileged.GatewayStatusHandler(state))
+
+	// OpenVPN handlers
+	handlers.Register("openvpn.connect", privileged.OpenVPNConnectHandler(state))
+	handlers.Register("openvpn.disconnect", privileged.OpenVPNDisconnectHandler(state))
+	handlers.Register("openvpn.status", privileged.OpenVPNStatusHandler(state))
+	handlers.Register("openvpn.list", privileged.OpenVPNListHandler(state))
+
+	// WireGuard handlers
+	handlers.Register("wireguard.connect", privileged.WireGuardConnectHandler(state))
+	handlers.Register("wireguard.disconnect", privileged.WireGuardDisconnectHandler(state))
+	handlers.Register("wireguard.status", privileged.WireGuardStatusHandler(state))
+	handlers.Register("wireguard.list", privileged.WireGuardListHandler(state))
 }
