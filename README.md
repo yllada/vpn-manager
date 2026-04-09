@@ -122,22 +122,33 @@ sudo dnf install ./vpn-manager-*.x86_64.rpm
 
 ### ⚠️ Important: Daemon Required
 
-VPN Manager requires the **vpn-managerd** daemon for privileged operations (kill switch, DNS protection, VPN connections). The daemon runs as a systemd service and handles all operations that require root access.
+VPN Manager uses a **daemon architecture** for security and better UX:
 
-**The packages (.deb/.rpm) automatically install and enable the daemon.**
+- **vpn-managerd** runs as a systemd service with root privileges
+- **vpn-manager** (GUI/CLI) runs as a normal user — no sudo needed
+- Communication via Unix socket (`/var/run/vpn-manager/vpn-managerd.sock`)
 
-If you build from source, install the daemon manually:
+The daemon handles all privileged operations: kill switch, DNS/IPv6 protection, VPN connections (OpenVPN, WireGuard), Tailscale CLI, and split tunneling.
+
+**Packages (.deb/.rpm) install and enable the daemon automatically.**
+
+<details>
+<summary>Daemon management commands</summary>
+
 ```bash
-cd build
-sudo ./install-daemon.sh
-```
-
-Verify the daemon is running:
-```bash
+# Check status
 sudo systemctl status vpn-managerd
-```
 
-See [build/DAEMON.md](build/DAEMON.md) for detailed documentation.
+# View logs
+sudo journalctl -u vpn-managerd -f
+
+# Restart daemon
+sudo systemctl restart vpn-managerd
+
+# Manual install (if building from source)
+cd build && sudo ./install-daemon.sh
+```
+</details>
 
 ### Build from Source
 
