@@ -17,6 +17,7 @@ import (
 
 	"github.com/yllada/vpn-manager/daemon"
 	"github.com/yllada/vpn-manager/daemon/privileged"
+	"github.com/yllada/vpn-manager/daemon/privileged/tailscale"
 	"github.com/yllada/vpn-manager/protocol"
 )
 
@@ -93,6 +94,7 @@ func registerPrivilegedHandlers(server *daemon.Server) {
 	handlers.Register("killswitch.enable", privileged.KillSwitchEnableHandler(state))
 	handlers.Register("killswitch.disable", privileged.KillSwitchDisableHandler(state))
 	handlers.Register("killswitch.status", privileged.KillSwitchStatusHandler(state))
+	handlers.Register("killswitch.block_all", privileged.KillSwitchBlockAllHandler(state))
 
 	// DNS protection handlers
 	handlers.Register("dns.enable", privileged.DNSEnableHandler(state))
@@ -125,4 +127,12 @@ func registerPrivilegedHandlers(server *daemon.Server) {
 	handlers.Register("wireguard.disconnect", privileged.WireGuardDisconnectHandler(state))
 	handlers.Register("wireguard.status", privileged.WireGuardStatusHandler(state))
 	handlers.Register("wireguard.list", privileged.WireGuardListHandler(state))
+
+	// Tailscale handlers
+	handlers.Register("tailscale.up", tailscale.UpHandler(state))
+	handlers.Register("tailscale.down", tailscale.DownHandler(state))
+	handlers.Register("tailscale.set", tailscale.SetHandler(state))
+	handlers.Register("tailscale.login", tailscale.LoginHandler(state))
+	handlers.Register("tailscale.logout", tailscale.LogoutHandler(state))
+	handlers.Register("tailscale.set_operator", tailscale.SetOperatorHandler(state))
 }

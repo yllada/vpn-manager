@@ -366,8 +366,7 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 	for {
 		select {
 		case <-conn.stopChan:
-			// Disconnection requested
-			_ = client.Disconnect(profileID)
+			// Disconnection requested - just exit, Disconnect() handles the daemon call
 			return
 
 		case <-ticker.C:

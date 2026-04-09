@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/yllada/vpn-manager/daemon"
+	"github.com/yllada/vpn-manager/daemon/privileged/apptunnel"
 	"github.com/yllada/vpn-manager/daemon/privileged/firewall"
 	"github.com/yllada/vpn-manager/daemon/privileged/vpn"
 )
@@ -19,7 +20,9 @@ import (
 var (
 	openvpnManager   *vpn.OpenVPNManager
 	wireguardManager *vpn.WireGuardManager
+	appTunnelManager *apptunnel.Manager
 	vpnManagersOnce  sync.Once
+	appTunnelOnce    sync.Once
 )
 
 // initVPNManagers initializes the VPN managers as singletons.
@@ -40,6 +43,14 @@ func GetOpenVPNManager(logger *log.Logger) *vpn.OpenVPNManager {
 func GetWireGuardManager(logger *log.Logger) *vpn.WireGuardManager {
 	initVPNManagers(logger)
 	return wireguardManager
+}
+
+// GetAppTunnelManager returns the app tunnel manager singleton.
+func GetAppTunnelManager() *apptunnel.Manager {
+	appTunnelOnce.Do(func() {
+		appTunnelManager = apptunnel.NewManager()
+	})
+	return appTunnelManager
 }
 
 // =============================================================================
@@ -122,6 +133,34 @@ func KillSwitchStatusHandler(state *daemon.State) daemon.HandlerFunc {
 			"allow_lan":    ksState.AllowLAN,
 			"backend":      ksState.Backend,
 			"rules_active": rulesActive,
+		}, nil
+	}
+}
+
+// KillSwitchBlockAllHandler returns a handler that enables a block-all kill switch.
+// This is used when VPN connection fails on an untrusted network.
+func KillSwitchBlockAllHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		ctx.Logger.Printf("Enabling block-all kill switch mode")
+
+		// Execute actual firewall operations
+		backend, err := firewall.EnableBlockAll()
+		if err != nil {
+			return nil, err
+		}
+
+		// Update state
+		state.SetKillSwitch(daemon.KillSwitchState{
+			Enabled:  true,
+			VPNIface: "lo", // Special marker for block-all mode
+			AllowLAN: false,
+			Backend:  string(backend),
+		})
+
+		return map[string]any{
+			"enabled": true,
+			"backend": string(backend),
+			"mode":    "block_all",
 		}, nil
 	}
 }
@@ -299,9 +338,13 @@ func IPv6StatusHandler(state *daemon.State) daemon.HandlerFunc {
 
 // TunnelSetupParams contains parameters for setting up split tunneling.
 type TunnelSetupParams struct {
-	Mode         string   `json:"mode"` // "include", "exclude"
-	Apps         []string `json:"apps"`
-	VPNInterface string   `json:"vpn_interface"`
+	Mode            string   `json:"mode"` // "include", "exclude"
+	Apps            []string `json:"apps"`
+	VPNInterface    string   `json:"vpn_interface"`
+	VPNGateway      string   `json:"vpn_gateway"`
+	SplitDNSEnabled bool     `json:"split_dns_enabled"`
+	VPNDNS          []string `json:"vpn_dns,omitempty"`
+	SystemDNS       string   `json:"system_dns,omitempty"`
 }
 
 // TunnelSetupHandler returns a handler that sets up split tunneling.
@@ -312,11 +355,21 @@ func TunnelSetupHandler(state *daemon.State) daemon.HandlerFunc {
 			return nil, err
 		}
 
-		ctx.Logger.Printf("Setting up split tunnel in %s mode for %d apps", params.Mode, len(params.Apps))
+		ctx.Logger.Printf("Setting up split tunnel in %s mode (interface: %s, gateway: %s)",
+			params.Mode, params.VPNInterface, params.VPNGateway)
 
-		// TODO: Implement actual cgroup and policy routing logic
-		// This requires more complex setup with cgroups v2 and policy routing
-		// For now, just update state
+		manager := GetAppTunnelManager()
+		result, err := manager.Enable(apptunnel.EnableParams{
+			Mode:            params.Mode,
+			VPNInterface:    params.VPNInterface,
+			VPNGateway:      params.VPNGateway,
+			SplitDNSEnabled: params.SplitDNSEnabled,
+			VPNDNS:          params.VPNDNS,
+			SystemDNS:       params.SystemDNS,
+		})
+		if err != nil {
+			return nil, err
+		}
 
 		// Update state
 		state.SetSplitTunnel(daemon.SplitTunnelState{
@@ -326,7 +379,7 @@ func TunnelSetupHandler(state *daemon.State) daemon.HandlerFunc {
 			VPNIface: params.VPNInterface,
 		})
 
-		return map[string]bool{"enabled": true}, nil
+		return result, nil
 	}
 }
 
@@ -335,7 +388,10 @@ func TunnelCleanupHandler(state *daemon.State) daemon.HandlerFunc {
 	return func(ctx *daemon.HandlerContext) (any, error) {
 		ctx.Logger.Printf("Cleaning up split tunnel")
 
-		// TODO: Implement actual cleanup logic
+		manager := GetAppTunnelManager()
+		if err := manager.Disable(); err != nil {
+			ctx.Logger.Printf("Warning: app tunnel cleanup had errors: %v", err)
+		}
 
 		// Update state
 		state.SetSplitTunnelEnabled(false)
@@ -347,7 +403,15 @@ func TunnelCleanupHandler(state *daemon.State) daemon.HandlerFunc {
 // TunnelStatusHandler returns a handler that reports split tunnel status.
 func TunnelStatusHandler(state *daemon.State) daemon.HandlerFunc {
 	return func(ctx *daemon.HandlerContext) (any, error) {
-		return state.GetSplitTunnel(), nil
+		manager := GetAppTunnelManager()
+		status := manager.GetStatus()
+
+		return map[string]any{
+			"enabled":       status.Enabled,
+			"mode":          status.Mode,
+			"vpn_interface": status.VPNInterface,
+			"cgroup_path":   status.CgroupPath,
+		}, nil
 	}
 }
 

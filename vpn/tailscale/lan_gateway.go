@@ -5,10 +5,7 @@ package tailscale
 import (
 	"context"
 	"fmt"
-	"net"
-	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/yllada/vpn-manager/app"
@@ -40,7 +37,7 @@ type LANGatewayConfig struct {
 // Requirements:
 //   - Tailscale must be running with exit node configured
 //   - `--exit-node-allow-lan-access` flag must be set
-//   - This function requires elevated privileges (will use pkexec if needed)
+//   - vpn-managerd daemon must be running for privileged operations
 //
 // What it does:
 //   - Enables IP forwarding
@@ -56,120 +53,40 @@ func (c *Client) ConfigureLANGateway(ctx context.Context) error {
 		return nil
 	}
 
-	// Try daemon first (preferred method)
-	if app.IsDaemonAvailable() {
-		client := &app.LANGatewayClient{}
-		result, err := client.EnableWithContext(ctx, app.GatewayEnableParams{
-			// Let daemon auto-detect WiFi interface and LAN network
-		})
-		if err == nil {
-			app.LogInfo("✅ LAN Gateway configured via daemon for %s via %s", result.LANNetwork, result.WiFiInterface)
-			return nil
-		}
-		app.LogInfo("[LAN Gateway] Daemon call failed, falling back to pkexec: %v", err)
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Fallback: Verify tailscale interface exists
-	cmd := exec.CommandContext(ctx, "ip", "link", "show", TailscaleInterface)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("tailscale interface not found - is Tailscale running?")
-	}
-
-	// Detect network configuration
-	cfg, err := c.detectNetworkConfig(ctx)
+	client := &app.LANGatewayClient{}
+	result, err := client.EnableWithContext(ctx, app.GatewayEnableParams{
+		// Let daemon auto-detect WiFi interface and LAN network
+	})
 	if err != nil {
-		return fmt.Errorf("failed to detect network config: %w", err)
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
-	app.LogInfo("Detected WiFi interface: %s, LAN network: %s", cfg.WiFiInterface, cfg.LANNetwork)
-
-	// Create a single script with ALL commands to minimize pkexec prompts
-	script := fmt.Sprintf(`#!/bin/bash
-set -e
-
-# Enable IP forwarding
-sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
-
-# Remove old rules (ignore errors)
-ip rule del from %s lookup 52 2>/dev/null || true
-iptables -D FORWARD -i %s -o %s -s %s -j ACCEPT 2>/dev/null || true
-iptables -D FORWARD -i %s -o %s -d %s -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-iptables -t nat -D POSTROUTING -s %s -o %s -j MASQUERADE 2>/dev/null || true
-
-# Add new rules
-ip rule add from %s lookup 52 priority 5260
-iptables -I FORWARD 1 -i %s -o %s -s %s -j ACCEPT
-iptables -I FORWARD 2 -i %s -o %s -d %s -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -t nat -I POSTROUTING 1 -s %s -o %s -j MASQUERADE
-
-echo "LAN Gateway configured successfully"
-`,
-		cfg.LANNetwork,                                        // ip rule del
-		cfg.WiFiInterface, TailscaleInterface, cfg.LANNetwork, // iptables -D FORWARD 1
-		TailscaleInterface, cfg.WiFiInterface, cfg.LANNetwork, // iptables -D FORWARD 2
-		cfg.LANNetwork, TailscaleInterface, // iptables -t nat -D
-		cfg.LANNetwork,                                        // ip rule add
-		cfg.WiFiInterface, TailscaleInterface, cfg.LANNetwork, // iptables -I FORWARD 1
-		TailscaleInterface, cfg.WiFiInterface, cfg.LANNetwork, // iptables -I FORWARD 2
-		cfg.LANNetwork, TailscaleInterface, // iptables -t nat -I
-	)
-
-	// Execute script with single pkexec
-	if err := c.executeScriptWithPkexec(ctx, script); err != nil {
-		return fmt.Errorf("failed to configure LAN Gateway: %w", err)
-	}
-
-	app.LogInfo("✅ LAN Gateway configured successfully for %s via %s", cfg.LANNetwork, cfg.WiFiInterface)
+	app.LogInfo("✅ LAN Gateway configured via daemon for %s via %s", result.LANNetwork, result.WiFiInterface)
 	return nil
 }
 
 // CleanupLANGateway removes all iptables and routing rules created by ConfigureLANGateway.
 // This should be called when disconnecting or disabling LAN gateway functionality.
+// Requires the vpn-managerd daemon to be running.
 func (c *Client) CleanupLANGateway(ctx context.Context) error {
 	app.LogInfo("Cleaning up LAN Gateway configuration")
 
-	// Try daemon first (preferred method)
-	if app.IsDaemonAvailable() {
-		client := &app.LANGatewayClient{}
-		if err := client.DisableWithContext(ctx); err == nil {
-			app.LogInfo("✅ LAN Gateway cleanup via daemon completed")
-			return nil
-		}
-		app.LogInfo("[LAN Gateway] Daemon cleanup failed, falling back to pkexec")
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Fallback: Detect network configuration
-	cfg, err := c.detectNetworkConfig(ctx)
-	if err != nil {
-		// If we can't detect config, log warning and skip cleanup
-		// The rules will remain until manual cleanup or reboot
-		app.LogWarn("Failed to detect network config for cleanup - skipping automatic cleanup")
-		app.LogInfo("To manually cleanup, run: sudo iptables -L FORWARD -n -v | grep tailscale0")
-		return nil // Don't return error - this is best-effort cleanup
+	client := &app.LANGatewayClient{}
+	if err := client.DisableWithContext(ctx); err != nil {
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
-	// Build cleanup script (single pkexec call)
-	script := fmt.Sprintf(`#!/bin/bash
-# Cleanup LAN Gateway rules (ignore errors for idempotency)
-ip rule del from %s lookup 52 2>/dev/null || true
-iptables -D FORWARD -i %s -o %s -s %s -j ACCEPT 2>/dev/null || true
-iptables -D FORWARD -i %s -o %s -d %s -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-iptables -t nat -D POSTROUTING -s %s -o %s -j MASQUERADE 2>/dev/null || true
-
-echo "LAN Gateway cleanup completed"
-`,
-		cfg.LANNetwork,                                        // ip rule del
-		cfg.WiFiInterface, TailscaleInterface, cfg.LANNetwork, // iptables -D FORWARD 1
-		TailscaleInterface, cfg.WiFiInterface, cfg.LANNetwork, // iptables -D FORWARD 2
-		cfg.LANNetwork, TailscaleInterface, // iptables -t nat -D
-	)
-
-	// Execute cleanup script with single pkexec
-	if err := c.executeScriptWithPkexec(ctx, script); err != nil {
-		return fmt.Errorf("failed to cleanup LAN Gateway: %w", err)
-	}
-
-	app.LogInfo("✅ LAN Gateway configuration cleaned up")
+	app.LogInfo("✅ LAN Gateway cleanup via daemon completed")
 	return nil
 }
 
@@ -196,158 +113,6 @@ func (c *Client) IsLANGatewayActive(ctx context.Context) bool {
 	}
 
 	return hasRule
-}
-
-// detectNetworkConfig auto-detects the WiFi interface and LAN network.
-func (c *Client) detectNetworkConfig(ctx context.Context) (*LANGatewayConfig, error) {
-	// Detect WiFi interface (using default route)
-	wifiIface, err := c.detectWiFiInterface(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect WiFi interface: %w", err)
-	}
-
-	// Validate interface name before use (security: prevent shell injection)
-	if !isValidInterfaceName(wifiIface) {
-		return nil, fmt.Errorf("detected interface name contains invalid characters: %s", wifiIface)
-	}
-
-	// Detect LAN network from interface
-	lanNetwork, err := c.detectLANNetwork(ctx, wifiIface)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect LAN network: %w", err)
-	}
-
-	// Validate CIDR format before use (security: prevent shell injection)
-	if !isValidCIDR(lanNetwork) {
-		return nil, fmt.Errorf("detected network CIDR contains invalid characters: %s", lanNetwork)
-	}
-
-	return &LANGatewayConfig{
-		WiFiInterface: wifiIface,
-		LANNetwork:    lanNetwork,
-	}, nil
-}
-
-// detectWiFiInterface detects the active network interface used for internet access.
-// Returns interface name like "wlp1s0", "wlan0", "enp3s0", etc.
-func (c *Client) detectWiFiInterface(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "ip", "route", "show", "default")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to run 'ip route': %w", err)
-	}
-
-	// Parse: "default via 192.168.0.1 dev wlp1s0 proto dhcp metric 600"
-	// Extract interface name after "dev"
-	re := regexp.MustCompile(`dev\s+(\S+)`)
-	matches := re.FindStringSubmatch(string(output))
-	if len(matches) < 2 {
-		return "", fmt.Errorf("could not detect network interface - is WiFi/Ethernet connected?")
-	}
-
-	return matches[1], nil
-}
-
-// detectLANNetwork detects the LAN network CIDR for the given interface.
-// Returns network in CIDR notation like "192.168.0.0/24".
-func (c *Client) detectLANNetwork(ctx context.Context, iface string) (string, error) {
-	cmd := exec.CommandContext(ctx, "ip", "-o", "-f", "inet", "addr", "show", iface)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get IP address for %s: %w", iface, err)
-	}
-
-	// Parse: "2: wlp1s0    inet 192.168.0.105/24 brd 192.168.0.255 scope global dynamic noprefixroute wlp1s0"
-	// Extract CIDR notation (192.168.0.105/24)
-	re := regexp.MustCompile(`inet\s+(\d+\.\d+\.\d+\.\d+/\d+)`)
-	matches := re.FindStringSubmatch(string(output))
-	if len(matches) < 2 {
-		return "", fmt.Errorf("no IP address found on interface %s - is it connected?", iface)
-	}
-
-	ipCIDR := matches[1]
-
-	// Use net.ParseCIDR for proper network address calculation (works for ANY subnet mask)
-	_, ipnet, err := net.ParseCIDR(ipCIDR)
-	if err != nil {
-		return "", fmt.Errorf("invalid CIDR format %s: %w", ipCIDR, err)
-	}
-
-	// Return the network address in proper CIDR notation
-	// Example: 192.168.1.105/16 → 192.168.0.0/16
-	// Example: 172.16.50.10/22 → 172.16.48.0/22
-	return ipnet.String(), nil
-}
-
-// executeScriptWithPkexec runs a bash script with elevated privileges.
-// For iptables/sysctl commands, we ALWAYS need root, so we use pkexec directly.
-// The benefit of this approach is consolidating all commands in ONE pkexec call.
-func (c *Client) executeScriptWithPkexec(ctx context.Context, script string) error {
-	app.LogInfo("[LAN Gateway] Executing privileged script with pkexec")
-
-	// Create a temporary script file with a descriptive shebang
-	// This makes the pkexec dialog show a cleaner message
-	tmpfile, err := os.CreateTemp("", "vpn-manager-lan-gateway-*.sh")
-	if err != nil {
-		return fmt.Errorf("failed to create temp script: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpfile.Name()) }()
-
-	// Write script with descriptive header
-	header := "#!/bin/bash\n# VPN Manager: Configure network routing for LAN Gateway\nset -e\n\n"
-	if _, err := tmpfile.WriteString(header + script); err != nil {
-		_ = tmpfile.Close()
-		return fmt.Errorf("failed to write temp script: %w", err)
-	}
-	_ = tmpfile.Close()
-
-	// Make executable
-	if err := os.Chmod(tmpfile.Name(), 0755); err != nil {
-		return fmt.Errorf("failed to make script executable: %w", err)
-	}
-
-	// Execute with pkexec
-	cmd := exec.CommandContext(ctx, "pkexec", tmpfile.Name())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("script execution failed: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-
-	app.LogInfo("[LAN Gateway] Script executed successfully: %s", strings.TrimSpace(string(output)))
-	return nil
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// INPUT VALIDATION HELPERS (Security: prevent shell injection)
-// ═══════════════════════════════════════════════════════════════════════════
-
-// isValidInterfaceName validates network interface names (alphanumeric, underscore, hyphen only).
-// This prevents shell injection via malicious interface names in iptables/ip commands.
-func isValidInterfaceName(name string) bool {
-	if name == "" || len(name) > 15 {
-		return false
-	}
-	for _, c := range name {
-		isLower := c >= 'a' && c <= 'z'
-		isUpper := c >= 'A' && c <= 'Z'
-		isDigit := c >= '0' && c <= '9'
-		isValid := isLower || isUpper || isDigit || c == '_' || c == '-'
-		if !isValid {
-			return false
-		}
-	}
-	return true
-}
-
-// isValidCIDR validates CIDR notation (digits, dots, slash only).
-// This prevents shell injection via malicious CIDR strings in iptables/ip commands.
-func isValidCIDR(cidr string) bool {
-	if cidr == "" {
-		return false
-	}
-	// Additional validation: must parse as valid CIDR
-	_, _, err := net.ParseCIDR(cidr)
-	return err == nil
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/yllada/vpn-manager/app"
 )
 
 // AppTunnelMode defines how apps are routed.
@@ -177,7 +179,7 @@ func (at *AppTunnel) SetSplitDNS(enabled bool, vpnDNS []string, systemDNS string
 
 // Enable activates per-app tunneling for the given VPN interface.
 func (at *AppTunnel) Enable(vpnInterface, vpnGateway string) error {
-	// Security: validate inputs before using them in shell scripts
+	// Security: validate inputs before using them
 	if !isValidInterfaceName(vpnInterface) {
 		return fmt.Errorf("invalid VPN interface name: %s", vpnInterface)
 	}
@@ -212,99 +214,37 @@ func (at *AppTunnel) Enable(vpnInterface, vpnGateway string) error {
 	at.vpnInterface = vpnInterface
 	at.vpnGateway = vpnGateway
 
-	// Build batched script for all privileged operations (single pkexec)
-	script := at.buildEnableScript()
-	if err := runPrivilegedScript(script); err != nil {
-		return fmt.Errorf("failed to enable app tunneling: %w", err)
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
+	}
+
+	client := &app.SplitTunnelClient{}
+	_, err := client.Setup(app.TunnelSetupParams{
+		Mode:            string(at.mode),
+		Apps:            at.getAppExecutables(),
+		VPNInterface:    vpnInterface,
+		VPNGateway:      vpnGateway,
+		SplitDNSEnabled: at.splitDNSEnabled,
+		VPNDNS:          at.vpnDNS,
+		SystemDNS:       at.systemDNS,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to enable app tunneling via daemon: %w", err)
 	}
 
 	at.enabled = true
-	log.Printf("AppTunnel: Enabled for interface %s (mode: %s)", vpnInterface, at.mode)
+	log.Printf("AppTunnel: Enabled for interface %s (mode: %s) via daemon", vpnInterface, at.mode)
 	return nil
 }
 
-// buildEnableScript builds a bash script for all enable operations.
-func (at *AppTunnel) buildEnableScript() string {
-	var script strings.Builder
-	script.WriteString("set -e\n") // Exit on error
-
-	// Cgroup setup
-	if at.IsCgroupV2() {
-		script.WriteString(fmt.Sprintf("mkdir -p %s\n", at.cgroupPath))
-		controllersPath := filepath.Dir(at.cgroupPath) + "/cgroup.subtree_control"
-		script.WriteString(fmt.Sprintf("echo '+cpu +memory' > %s 2>/dev/null || true\n", controllersPath))
-	} else {
-		cgroupPath := "/sys/fs/cgroup/net_cls/vpn_tunnel"
-		script.WriteString(fmt.Sprintf("mkdir -p %s\n", cgroupPath))
-		classIDPath := cgroupPath + "/net_cls.classid"
-		script.WriteString(fmt.Sprintf("echo %d > %s\n", at.classID, classIDPath))
-		at.cgroupPath = cgroupPath
+// getAppExecutables returns the list of app executables.
+func (at *AppTunnel) getAppExecutables() []string {
+	executables := make([]string, len(at.apps))
+	for i, app := range at.apps {
+		executables[i] = app.Executable
 	}
-
-	// Iptables setup
-	if at.IsCgroupV2() {
-		script.WriteString(fmt.Sprintf(
-			"iptables -t mangle -A OUTPUT -m cgroup --path %s -j MARK --set-mark 0x%x\n",
-			at.cgroupPath, at.fwmark))
-	} else {
-		script.WriteString(fmt.Sprintf(
-			"iptables -t mangle -A OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x\n",
-			at.classID, at.fwmark))
-	}
-
-	// Routing setup - mode-aware logic
-	// Always create the VPN routing table with the VPN gateway
-	script.WriteString(fmt.Sprintf(
-		"ip route add default via %s dev %s table %d 2>/dev/null || ip route replace default via %s dev %s table %d\n",
-		at.vpnGateway, at.vpnInterface, at.routingTable,
-		at.vpnGateway, at.vpnInterface, at.routingTable))
-
-	if at.mode == AppTunnelExclude {
-		// Exclude mode: marked packets BYPASS VPN (use main table for normal routing)
-		// Unmarked packets use system default which goes through VPN
-		script.WriteString(fmt.Sprintf(
-			"ip rule add fwmark 0x%x lookup main priority 100 2>/dev/null || true\n",
-			at.fwmark))
-	} else {
-		// Include mode: marked packets USE VPN (route through custom table with VPN gateway)
-		// Unmarked packets use system default (no VPN)
-		script.WriteString(fmt.Sprintf(
-			"ip rule add fwmark 0x%x table %d 2>/dev/null || true\n",
-			at.fwmark, at.routingTable))
-	}
-
-	// DNS Split Tunneling rules
-	// These iptables rules control which DNS server marked packets use
-	if at.splitDNSEnabled {
-		if at.mode == AppTunnelExclude {
-			// Exclude mode + SplitDNS: marked apps should use system DNS (bypass VPN DNS)
-			// Since marked packets already bypass VPN via routing, DNS queries to VPN DNS
-			// would fail. We DNAT their DNS to system resolver.
-			// This ensures apps that bypass VPN can still resolve DNS properly.
-			if at.systemDNS != "" {
-				script.WriteString(fmt.Sprintf(
-					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53\n",
-					at.fwmark, at.systemDNS))
-				script.WriteString(fmt.Sprintf(
-					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53\n",
-					at.fwmark, at.systemDNS))
-			}
-		} else {
-			// Include mode + SplitDNS: marked apps should use VPN DNS
-			// DNAT DNS traffic from marked packets to VPN DNS server
-			if len(at.vpnDNS) > 0 {
-				vpnDNSServer := at.vpnDNS[0] // Use first VPN DNS server
-				script.WriteString(fmt.Sprintf(
-					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53\n",
-					at.fwmark, vpnDNSServer))
-				script.WriteString(fmt.Sprintf(
-					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53\n",
-					at.fwmark, vpnDNSServer))
-			}
-		}
-	}
-
-	return script.String()
+	return executables
 }
 
 // Disable deactivates per-app tunneling.
@@ -316,9 +256,18 @@ func (at *AppTunnel) Disable() error {
 		return nil
 	}
 
-	// Build batched script for cleanup (single pkexec)
-	script := at.buildDisableScript()
-	if err := runPrivilegedScript(script); err != nil {
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		log.Printf("AppTunnel: Warning - daemon not available for cleanup")
+		// Still reset state
+		at.enabled = false
+		at.vpnInterface = ""
+		at.vpnGateway = ""
+		return nil
+	}
+
+	client := &app.SplitTunnelClient{}
+	if err := client.Cleanup(); err != nil {
 		log.Printf("AppTunnel: Warning during disable: %v", err)
 		// Continue anyway to reset state
 	}
@@ -327,69 +276,8 @@ func (at *AppTunnel) Disable() error {
 	at.vpnInterface = ""
 	at.vpnGateway = ""
 
-	log.Printf("AppTunnel: Disabled")
+	log.Printf("AppTunnel: Disabled via daemon")
 	return nil
-}
-
-// buildDisableScript builds a bash script for all disable operations.
-func (at *AppTunnel) buildDisableScript() string {
-	var script strings.Builder
-	// Don't exit on error for cleanup - try all commands
-	script.WriteString("#!/bin/bash\n")
-
-	// Cleanup routing - remove both possible rules (include and exclude mode)
-	// Remove include mode rule (fwmark -> custom table)
-	script.WriteString(fmt.Sprintf(
-		"ip rule del fwmark 0x%x table %d 2>/dev/null || true\n",
-		at.fwmark, at.routingTable))
-	// Remove exclude mode rule (fwmark -> main table with priority)
-	script.WriteString(fmt.Sprintf(
-		"ip rule del fwmark 0x%x lookup main priority 100 2>/dev/null || true\n",
-		at.fwmark))
-	// Flush the custom routing table
-	script.WriteString(fmt.Sprintf(
-		"ip route flush table %d 2>/dev/null || true\n",
-		at.routingTable))
-
-	// Cleanup iptables
-	if at.IsCgroupV2() {
-		script.WriteString(fmt.Sprintf(
-			"iptables -t mangle -D OUTPUT -m cgroup --path %s -j MARK --set-mark 0x%x 2>/dev/null || true\n",
-			at.cgroupPath, at.fwmark))
-	} else {
-		script.WriteString(fmt.Sprintf(
-			"iptables -t mangle -D OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x 2>/dev/null || true\n",
-			at.classID, at.fwmark))
-	}
-
-	// Cleanup DNS split tunneling NAT rules (remove all possible combinations)
-	// Remove system DNS DNAT rule (exclude mode)
-	if at.systemDNS != "" {
-		script.WriteString(fmt.Sprintf(
-			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			at.fwmark, at.systemDNS))
-		script.WriteString(fmt.Sprintf(
-			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			at.fwmark, at.systemDNS))
-	}
-	// Remove VPN DNS DNAT rules (include mode)
-	for _, vpnDNS := range at.vpnDNS {
-		script.WriteString(fmt.Sprintf(
-			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			at.fwmark, vpnDNS))
-		script.WriteString(fmt.Sprintf(
-			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			at.fwmark, vpnDNS))
-	}
-
-	// Cleanup cgroup - move processes to root cgroup first
-	procsPath := at.cgroupPath + "/cgroup.procs"
-	script.WriteString(fmt.Sprintf(
-		"for pid in $(cat %s 2>/dev/null); do echo $pid > /sys/fs/cgroup/cgroup.procs 2>/dev/null || true; done\n",
-		procsPath))
-	script.WriteString(fmt.Sprintf("rmdir %s 2>/dev/null || true\n", at.cgroupPath))
-
-	return script.String()
 }
 
 // IsEnabled returns whether app tunneling is currently active.
@@ -658,16 +546,6 @@ func isValidIPAddress(ip string) bool {
 		}
 	}
 	return true
-}
-
-// runPrivilegedScript runs a bash script with elevated privileges (single pkexec call).
-func runPrivilegedScript(script string) error {
-	cmd := exec.Command("pkexec", "bash", "-c", script)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("script failed: %v - %s", err, strings.TrimSpace(string(output)))
-	}
-	return nil
 }
 
 // Status returns a human-readable status of the app tunnel.

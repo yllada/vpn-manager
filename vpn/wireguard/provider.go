@@ -109,7 +109,7 @@ func (c *Client) detectBinary() {
 		c.wgPath = path
 	}
 
-	// Check if we need sudo/pkexec
+	// Check if we're running as root (daemon handles privileged ops)
 	c.requiresSudo = os.Geteuid() != 0
 }
 
@@ -197,28 +197,29 @@ func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
 
 	configPath := conn.Profile.ConfigPath
 
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		app.LogDebug("wireguard", "Connection failed: vpn-managerd daemon is not running")
+		conn.mu.Lock()
+		conn.Status = StatusError
+		conn.LastError = "vpn-managerd daemon is not running"
+		conn.mu.Unlock()
+		return
+	}
+
+	client := &app.WireGuardClient{}
+
 	// First, try to bring down any existing interface with the same name
 	// (handles case where previous connection wasn't properly cleaned up)
-	var downCmd *exec.Cmd
-	if p.client.requiresSudo {
-		downCmd = exec.Command("pkexec", p.client.wgQuickPath, "down", configPath)
-	} else {
-		downCmd = exec.Command(p.client.wgQuickPath, "down", configPath)
-	}
-	// Ignore errors - interface might not exist
-	_ = downCmd.Run()
+	_ = client.DisconnectWithContext(ctx, conn.InterfaceID)
 
-	// Use wg-quick up
-	var cmd *exec.Cmd
-	if p.client.requiresSudo {
-		cmd = exec.Command("pkexec", p.client.wgQuickPath, "up", configPath)
-	} else {
-		cmd = exec.Command(p.client.wgQuickPath, "up", configPath)
-	}
-
-	output, err := cmd.CombinedOutput()
+	// Bring up the interface via daemon
+	result, err := client.ConnectWithContext(ctx, app.WireGuardConnectParams{
+		InterfaceName: conn.InterfaceID,
+		ConfigPath:    configPath,
+	})
 	if err != nil {
-		app.LogDebug("wireguard", "Connection failed: %v\n%s", err, output)
+		app.LogDebug("wireguard", "Connection failed: %v", err)
 		conn.mu.Lock()
 		conn.Status = StatusError
 		conn.LastError = fmt.Sprintf("Failed to connect: %v", err)
@@ -226,19 +227,24 @@ func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
 		return
 	}
 
-	app.LogDebug("wireguard", "Connected successfully to %s", conn.Profile.Name())
+	app.LogDebug("wireguard", "Connected successfully to %s via daemon", conn.Profile.Name())
 
 	conn.mu.Lock()
 	conn.Status = StatusConnected
+	if result.IPAddress != "" {
+		conn.IPAddress = result.IPAddress
+	}
 	conn.mu.Unlock()
 
 	// Wait a moment for interface to be fully up
 	time.Sleep(500 * time.Millisecond)
 
-	// Extract IP address from interface
-	app.SafeGoWithName("wireguard-update-info", func() {
-		p.updateConnectionInfo(conn)
-	})
+	// Extract IP address from interface if not already set
+	if conn.IPAddress == "" {
+		app.SafeGoWithName("wireguard-update-info", func() {
+			p.updateConnectionInfo(conn)
+		})
+	}
 
 	// Monitor connection status
 	app.SafeGoWithName("wireguard-monitor", func() {
@@ -369,19 +375,14 @@ func (p *Provider) disconnectOne(conn *Connection) {
 		close(conn.stopChan)
 	})
 
-	// Use wg-quick down
-	var cmd *exec.Cmd
-	configPath := conn.Profile.ConfigPath
-
-	if p.client.requiresSudo {
-		cmd = exec.Command("pkexec", p.client.wgQuickPath, "down", configPath)
+	// Use daemon for privileged operations
+	if app.IsDaemonAvailable() {
+		client := &app.WireGuardClient{}
+		if err := client.Disconnect(conn.InterfaceID); err != nil {
+			app.LogDebug("wireguard", "Disconnect warning: %v", err)
+		}
 	} else {
-		cmd = exec.Command(p.client.wgQuickPath, "down", configPath)
-	}
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		app.LogDebug("wireguard", "Disconnect warning: %v\n%s", err, output)
+		app.LogDebug("wireguard", "Disconnect warning: daemon not available")
 	}
 
 	conn.mu.Lock()
@@ -609,13 +610,22 @@ func (p *Provider) ListActiveInterfaces() ([]string, error) {
 		return nil, fmt.Errorf("wg command not found")
 	}
 
-	var cmd *exec.Cmd
-	if p.client.requiresSudo {
-		cmd = exec.Command("pkexec", p.client.wgPath, "show", "interfaces")
-	} else {
-		cmd = exec.Command(p.client.wgPath, "show", "interfaces")
+	// Use daemon to list interfaces (it has root access)
+	if app.IsDaemonAvailable() {
+		client := &app.WireGuardClient{}
+		results, err := client.List()
+		if err != nil {
+			return nil, err
+		}
+		interfaces := make([]string, len(results))
+		for i, r := range results {
+			interfaces[i] = r.InterfaceName
+		}
+		return interfaces, nil
 	}
 
+	// Fallback: try without elevated privileges (may fail)
+	cmd := exec.Command(p.client.wgPath, "show", "interfaces")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err

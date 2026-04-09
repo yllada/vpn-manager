@@ -26,6 +26,9 @@ type State struct {
 	// LAN gateway state
 	lanGateway LANGatewayState
 
+	// Tailscale state
+	tailscale TailscaleState
+
 	// VPN connections (OpenVPN)
 	openvpnConnections map[string]VPNConnectionState
 
@@ -75,6 +78,15 @@ type LANGatewayState struct {
 	WiFiIface   string `json:"wifi_iface,omitempty"`
 	TailscaleIP string `json:"tailscale_ip,omitempty"`
 	LANNetwork  string `json:"lan_network,omitempty"`
+}
+
+// TailscaleState represents Tailscale connection state.
+type TailscaleState struct {
+	Connected              bool   `json:"connected"`
+	ExitNode               string `json:"exit_node,omitempty"`
+	ExitNodeAllowLANAccess bool   `json:"exit_node_allow_lan_access"`
+	LoginServer            string `json:"login_server,omitempty"` // For Headscale
+	Operator               string `json:"operator,omitempty"`
 }
 
 // VPNConnectionState represents a VPN connection managed by the daemon.
@@ -328,4 +340,29 @@ func (s *State) ListWireGuardConnections() []VPNConnectionState {
 		conns = append(conns, conn)
 	}
 	return conns
+}
+
+// =============================================================================
+// TAILSCALE STATE
+// =============================================================================
+
+// GetTailscale returns a copy of the Tailscale state.
+func (s *State) GetTailscale() TailscaleState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tailscale
+}
+
+// SetTailscale updates the Tailscale state.
+func (s *State) SetTailscale(state TailscaleState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tailscale = state
+}
+
+// SetTailscaleConnected updates the Tailscale connected flag.
+func (s *State) SetTailscaleConnected(connected bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tailscale.Connected = connected
 }

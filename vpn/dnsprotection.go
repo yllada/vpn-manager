@@ -287,20 +287,9 @@ func (dp *DNSProtection) enableResolvConf(dnsServers []string) error {
 		content += fmt.Sprintf("nameserver %s\n", dns)
 	}
 
-	// Write with elevated privileges
-	tmpFile := app.TempResolvConfPath
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write temp resolv.conf: %w", err)
-	}
-
-	// Use pkexec to copy to /etc
-	cmd := exec.Command("pkexec", "cp", tmpFile, resolvPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update resolv.conf: %w: %s", err, output)
-	}
-
-	_ = os.Remove(tmpFile)
-	return nil
+	// Direct modification of /etc/resolv.conf requires root privileges.
+	// This operation should be done via the daemon.
+	return fmt.Errorf("resolv.conf modification requires vpn-managerd daemon (use systemd-resolved instead)")
 }
 
 func (dp *DNSProtection) disableResolvConf() error {
@@ -308,14 +297,9 @@ func (dp *DNSProtection) disableResolvConf() error {
 		return nil // No backup to restore
 	}
 
-	// Restore backup
-	cmd := exec.Command("pkexec", "cp", dp.backupPath, app.ResolvConfPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to restore resolv.conf: %w: %s", err, output)
-	}
-
-	_ = os.Remove(dp.backupPath)
-	return nil
+	// Restore of /etc/resolv.conf requires root privileges.
+	// This operation should be done via the daemon.
+	return fmt.Errorf("resolv.conf restoration requires vpn-managerd daemon (use systemd-resolved instead)")
 }
 
 func (dp *DNSProtection) backupResolvConf(path string) error {
@@ -348,16 +332,12 @@ func (dp *DNSProtection) backupResolvConf(path string) error {
 // ═══════════════════════════════════════════════════════════════════════════
 
 func (dp *DNSProtection) blockAlternativeDNS() error {
-	// Block DNS-over-TLS (port 853) using iptables
+	// Blocking DNS-over-TLS (port 853) requires daemon for privileged operations
 	if dp.config.BlockDNSOverTLS {
-		cmds := [][]string{
-			{"iptables", "-A", "OUTPUT", "-p", "tcp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
-			{"iptables", "-A", "OUTPUT", "-p", "udp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
+		if !app.IsDaemonAvailable() {
+			log.Printf("DNSProtection: Warning: cannot block DoT without daemon")
 		}
-		for _, args := range cmds {
-			cmd := exec.Command("pkexec", args...)
-			_ = cmd.Run() // Ignore errors, might already exist
-		}
+		// DoT blocking is handled by daemon when DNS protection is enabled
 	}
 
 	// Block DoH requires blocking HTTPS to specific hosts
@@ -370,16 +350,8 @@ func (dp *DNSProtection) blockAlternativeDNS() error {
 }
 
 func (dp *DNSProtection) unblockAlternativeDNS() error {
-	// Remove our iptables rules
-	cmds := [][]string{
-		{"iptables", "-D", "OUTPUT", "-p", "tcp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
-		{"iptables", "-D", "OUTPUT", "-p", "udp", "--dport", DNSOverTLSPortStr, "-j", "DROP"},
-	}
-	for _, args := range cmds {
-		cmd := exec.Command("pkexec", args...)
-		_ = cmd.Run() // Ignore errors
-	}
-
+	// Unblocking DoT is handled by daemon when DNS protection is disabled
+	// Nothing to do here - daemon manages the firewall rules
 	return nil
 }
 
@@ -686,6 +658,7 @@ func (dp *DNSProtection) getCurrentDNSUnlocked() ([]string, error) {
 // EnableFirewallDNS blocks DNS (port 53) on all interfaces except the VPN interface.
 // This is a fallback method when systemd-resolved is not available.
 // Uses iptables to create rules that DROP DNS packets not going through the VPN.
+// Requires the vpn-managerd daemon to be running.
 func (dp *DNSProtection) EnableFirewallDNS(vpnInterface string) error {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
@@ -696,84 +669,29 @@ func (dp *DNSProtection) EnableFirewallDNS(vpnInterface string) error {
 
 	dp.vpnInterface = vpnInterface
 
-	// Try daemon first (preferred method)
-	if app.IsDaemonAvailable() {
-		client := &app.DNSProtectionClient{}
-		if err := client.Enable(app.DNSEnableParams{
-			VPNInterface: vpnInterface,
-			Servers:      dp.vpnDNS,
-			BlockDoT:     dp.config.BlockDNSOverTLS,
-			LeakBlocking: true,
-		}); err == nil {
-			dp.firewallMode = true
-			log.Printf("DNSProtection: Firewall DNS enabled via daemon (interface: %s)", vpnInterface)
-			_ = dp.SaveState()
-			return nil
-		}
-		log.Printf("DNSProtection: Daemon call failed, falling back to pkexec")
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Fallback: Check if iptables is available
-	if _, err := exec.LookPath("iptables"); err != nil {
-		return fmt.Errorf("iptables not available: %w", err)
-	}
-
-	// Create our custom chain for DNS rules
-	if err := dp.runFirewallCmd("iptables", "-N", dp.firewallChain); err != nil {
-		// Chain might already exist, try flushing it
-		_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
-	}
-
-	// Allow DNS through VPN interface
-	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
-		"-o", vpnInterface, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("failed to add VPN DNS UDP rule: %w", err)
-	}
-
-	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
-		"-o", vpnInterface, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("failed to add VPN DNS TCP rule: %w", err)
-	}
-
-	// Allow DNS to localhost (systemd-resolved stub)
-	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
-		"-o", "lo", "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
-		log.Printf("DNSProtection: Warning: failed to add localhost DNS UDP rule: %v", err)
-	}
-
-	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
-		"-o", "lo", "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT"); err != nil {
-		log.Printf("DNSProtection: Warning: failed to add localhost DNS TCP rule: %v", err)
-	}
-
-	// Block all other DNS (the catch-all)
-	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
-		"-p", "udp", "--dport", DNSPortStr, "-j", "DROP"); err != nil {
-		return fmt.Errorf("failed to add DNS UDP drop rule: %w", err)
-	}
-
-	if err := dp.runFirewallCmd("iptables", "-A", dp.firewallChain,
-		"-p", "tcp", "--dport", DNSPortStr, "-j", "DROP"); err != nil {
-		return fmt.Errorf("failed to add DNS TCP drop rule: %w", err)
-	}
-
-	// Insert our chain into OUTPUT at position 1 (before other rules)
-	if err := dp.runFirewallCmd("iptables", "-I", "OUTPUT", "1", "-j", dp.firewallChain); err != nil {
-		// Clean up on failure
-		_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
-		_ = dp.runFirewallCmd("iptables", "-X", dp.firewallChain)
-		return fmt.Errorf("failed to insert DNS chain into OUTPUT: %w", err)
+	client := &app.DNSProtectionClient{}
+	if err := client.Enable(app.DNSEnableParams{
+		VPNInterface: vpnInterface,
+		Servers:      dp.vpnDNS,
+		BlockDoT:     dp.config.BlockDNSOverTLS,
+		LeakBlocking: true,
+	}); err != nil {
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
 	dp.firewallMode = true
-	log.Printf("DNSProtection: Firewall DNS enforcement enabled (interface: %s)", vpnInterface)
-
-	// Save state for crash recovery
+	log.Printf("DNSProtection: Firewall DNS enabled via daemon (interface: %s)", vpnInterface)
 	_ = dp.SaveState()
 	return nil
 }
 
 // DisableFirewallDNS removes the DNS firewall rules.
+// Requires the vpn-managerd daemon to be running.
 func (dp *DNSProtection) DisableFirewallDNS() error {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
@@ -782,29 +700,18 @@ func (dp *DNSProtection) DisableFirewallDNS() error {
 		return nil
 	}
 
-	// Try daemon first (preferred method)
-	if app.IsDaemonAvailable() {
-		client := &app.DNSProtectionClient{}
-		if err := client.Disable(); err == nil {
-			dp.firewallMode = false
-			log.Printf("DNSProtection: Firewall DNS disabled via daemon")
-			_ = dp.SaveState()
-			return nil
-		}
-		log.Printf("DNSProtection: Daemon disable failed, falling back to pkexec")
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Fallback: Remove our chain from OUTPUT
-	_ = dp.runFirewallCmd("iptables", "-D", "OUTPUT", "-j", dp.firewallChain)
-
-	// Flush and delete our chain
-	_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
-	_ = dp.runFirewallCmd("iptables", "-X", dp.firewallChain)
+	client := &app.DNSProtectionClient{}
+	if err := client.Disable(); err != nil {
+		return fmt.Errorf("daemon call failed: %w", err)
+	}
 
 	dp.firewallMode = false
-	log.Printf("DNSProtection: Firewall DNS enforcement disabled")
-
-	// Update state
+	log.Printf("DNSProtection: Firewall DNS disabled via daemon")
 	_ = dp.SaveState()
 	return nil
 }
@@ -814,17 +721,6 @@ func (dp *DNSProtection) IsFirewallModeEnabled() bool {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	return dp.firewallMode
-}
-
-// runFirewallCmd executes a firewall command with pkexec for elevated privileges.
-func (dp *DNSProtection) runFirewallCmd(name string, args ...string) error {
-	fullArgs := append([]string{name}, args...)
-	cmd := exec.Command("pkexec", fullArgs...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %v - %s", name, strings.Join(args, " "), err, string(output))
-	}
-	return nil
 }
 
 // checkFirewallRulesExist verifies if our DNS firewall rules are in place.
@@ -966,15 +862,15 @@ func (dp *DNSProtection) disableStrictModeInternal() error {
 }
 
 // disableFirewallDNSInternal disables firewall DNS without locking (for pause).
+// Uses daemon for privileged operations.
 func (dp *DNSProtection) disableFirewallDNSInternal() error {
-	// Remove our chain from OUTPUT
-	_ = dp.runFirewallCmd("iptables", "-D", "OUTPUT", "-j", dp.firewallChain)
+	// Use daemon for privileged operations
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
+	}
 
-	// Flush and delete our chain
-	_ = dp.runFirewallCmd("iptables", "-F", dp.firewallChain)
-	_ = dp.runFirewallCmd("iptables", "-X", dp.firewallChain)
-
-	return nil
+	client := &app.DNSProtectionClient{}
+	return client.Disable()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1049,45 +945,19 @@ func (dp *DNSProtection) SaveState() error {
 	return nil
 }
 
-// writeDNSStateFile writes data to a file with proper permissions.
+// writeDNSStateFile writes data to a file.
+// The state directory should have appropriate permissions for the user.
 func writeDNSStateFile(path string, data []byte) error {
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		// Try with pkexec if direct creation fails
-		cmd := exec.Command("pkexec", "mkdir", "-p", dir)
-		if _, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to create state directory: %w", err)
-		}
+		return fmt.Errorf("failed to create state directory %s: %w", dir, err)
 	}
 
-	// Try direct write first (if we have permissions)
-	if err := os.WriteFile(path, data, 0600); err == nil {
-		return nil
+	// Write file directly
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("failed to write state file %s: %w", path, err)
 	}
-
-	// Fall back to pkexec for elevated write
-	// Security: Use random temp file name to prevent symlink attacks
-	tmpfile, err := os.CreateTemp("", "vpn-manager-dns-state-*.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpfile.Name()
-	_ = tmpfile.Close() // Close immediately, we only need the path
-
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	cmd := exec.Command("pkexec", "mv", tmpPath, path)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("pkexec mv failed: %w: %s", err, string(output))
-	}
-
-	// Set proper permissions
-	cmd = exec.Command("pkexec", "chmod", "600", path)
-	_ = cmd.Run() // Best effort
 
 	return nil
 }
@@ -1183,16 +1053,8 @@ func (dp *DNSProtection) ClearState() error {
 		return nil
 	}
 
-	// Try direct removal first
-	if err := os.Remove(statePath); err == nil {
-		log.Printf("DNSProtection: State file cleared")
-		return nil
-	}
-
-	// Fall back to pkexec for elevated removal
-	cmd := exec.Command("pkexec", "rm", "-f", statePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to remove state file: %w: %s", err, string(output))
+	if err := os.Remove(statePath); err != nil {
+		return fmt.Errorf("failed to remove state file %s: %w", statePath, err)
 	}
 
 	log.Printf("DNSProtection: State file cleared")

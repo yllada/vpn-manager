@@ -172,7 +172,7 @@ func (mw *MainWindow) createTailscalePage() {
 		// Only prompts for password once if not already configured
 		app.SafeGoWithName("tailscale-ensure-operator", func() {
 			if err := provider.EnsureOperator(); err != nil {
-				// Log but don't fail - user can still use pkexec fallback
+				// Log but don't fail - user can still use daemon
 				app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
 			}
 		})

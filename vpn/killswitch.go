@@ -113,6 +113,7 @@ func (ks *KillSwitch) IsEnabled() bool {
 }
 
 // Enable activates the kill switch for the specified VPN interface.
+// Requires the vpn-managerd daemon to be running.
 func (ks *KillSwitch) Enable(vpnInterface string, vpnServerIP string) error {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
@@ -128,50 +129,26 @@ func (ks *KillSwitch) Enable(vpnInterface string, vpnServerIP string) error {
 	ks.vpnIface = vpnInterface
 	ks.vpnServerIP = vpnServerIP
 
-	// Try daemon first (preferred method)
-	if app.IsDaemonAvailable() {
-		client := &app.KillSwitchClient{}
-		result, err := client.Enable(app.KillSwitchEnableParams{
-			VPNInterface: vpnInterface,
-			VPNServerIP:  vpnServerIP,
-			AllowLAN:     ks.allowLAN,
-			LANRanges:    ks.lanRanges,
-		})
-		if err == nil {
-			ks.enabled = true
-			ks.backend = result.Backend
-			log.Printf("KillSwitch: Enabled via daemon for interface %s (backend: %s, allowLAN: %v)",
-				vpnInterface, result.Backend, ks.allowLAN)
-			return nil
-		}
-		log.Printf("KillSwitch: Daemon call failed, falling back to pkexec: %v", err)
+	// Use daemon for privileged operations
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Fallback: direct execution via pkexec (legacy mode)
-	// Build allowed IPs list based on LAN access setting
-	allowedIPs := []string{vpnServerIP}
-	if ks.allowLAN {
-		allowedIPs = append(allowedIPs, ks.lanRanges...)
-	}
-	// Always add loopback
-	allowedIPs = append(allowedIPs, "127.0.0.0/8")
-
-	var err error
-	switch ks.backend {
-	case "iptables":
-		err = ks.enableIptables(vpnInterface, allowedIPs)
-	case "nftables":
-		err = ks.enableNftables(vpnInterface, allowedIPs)
-	default:
-		err = fmt.Errorf("unknown backend: %s", ks.backend)
-	}
-
+	client := &app.KillSwitchClient{}
+	result, err := client.Enable(app.KillSwitchEnableParams{
+		VPNInterface: vpnInterface,
+		VPNServerIP:  vpnServerIP,
+		AllowLAN:     ks.allowLAN,
+		LANRanges:    ks.lanRanges,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
 	ks.enabled = true
-	log.Printf("KillSwitch: Enabled for interface %s (backend: %s, allowLAN: %v)", vpnInterface, ks.backend, ks.allowLAN)
+	ks.backend = result.Backend
+	log.Printf("KillSwitch: Enabled via daemon for interface %s (backend: %s, allowLAN: %v)",
+		vpnInterface, result.Backend, ks.allowLAN)
 	return nil
 }
 
@@ -238,151 +215,26 @@ func (ks *KillSwitch) Disable() error {
 }
 
 // disable is the internal method that actually disables the kill switch.
+// Requires the vpn-managerd daemon to be running.
 func (ks *KillSwitch) disable() error {
 	if !ks.enabled {
 		return nil
 	}
 
-	// Try daemon first (preferred method)
-	if app.IsDaemonAvailable() {
-		client := &app.KillSwitchClient{}
-		if err := client.Disable(); err == nil {
-			ks.enabled = false
-			ks.vpnIface = ""
-			log.Printf("KillSwitch: Disabled via daemon")
-			return nil
-		}
-		log.Printf("KillSwitch: Daemon disable failed, falling back to pkexec")
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Fallback: direct execution via pkexec
-	var err error
-	switch ks.backend {
-	case "iptables":
-		err = ks.disableIptables()
-	case "nftables":
-		err = ks.disableNftables()
-	}
-
-	if err != nil {
-		return err
+	client := &app.KillSwitchClient{}
+	if err := client.Disable(); err != nil {
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
 	ks.enabled = false
 	ks.vpnIface = ""
-	log.Printf("KillSwitch: Disabled")
+	log.Printf("KillSwitch: Disabled via daemon")
 	return nil
-}
-
-// enableIptables creates iptables rules for the kill switch.
-func (ks *KillSwitch) enableIptables(vpnIface string, allowedIPs []string) error {
-	// Create custom chain
-	if err := ks.runCmd("iptables", "-N", ks.chainName); err != nil {
-		// Chain might already exist, try flushing
-		_ = ks.runCmd("iptables", "-F", ks.chainName)
-	}
-
-	// Allow established connections
-	if err := ks.runCmd("iptables", "-A", ks.chainName, "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("iptables: failed to add established rule: %w", err)
-	}
-
-	// Allow traffic through VPN interface
-	if err := ks.runCmd("iptables", "-A", ks.chainName, "-o", vpnIface, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("iptables: failed to add VPN interface rule: %w", err)
-	}
-
-	// Allow local networks and VPN server
-	for _, ip := range allowedIPs {
-		if ip == "" {
-			continue
-		}
-		if err := ks.runCmd("iptables", "-A", ks.chainName, "-d", ip, "-j", "ACCEPT"); err != nil {
-			log.Printf("KillSwitch: Warning: failed to add allowed IP %s: %v", ip, err)
-		}
-	}
-
-	// Allow DNS (important for VPN server resolution)
-	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT")
-	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT")
-
-	// Block everything else
-	if err := ks.runCmd("iptables", "-A", ks.chainName, "-j", "DROP"); err != nil {
-		return fmt.Errorf("iptables: failed to add drop rule: %w", err)
-	}
-
-	// Insert chain into OUTPUT
-	if err := ks.runCmd("iptables", "-I", "OUTPUT", "1", "-j", ks.chainName); err != nil {
-		return fmt.Errorf("iptables: failed to insert chain: %w", err)
-	}
-
-	return nil
-}
-
-// disableIptables removes iptables rules for the kill switch.
-func (ks *KillSwitch) disableIptables() error {
-	// Remove from OUTPUT chain
-	_ = ks.runCmd("iptables", "-D", "OUTPUT", "-j", ks.chainName)
-
-	// Flush and delete custom chain
-	_ = ks.runCmd("iptables", "-F", ks.chainName)
-	_ = ks.runCmd("iptables", "-X", ks.chainName)
-
-	return nil
-}
-
-// enableNftables creates nftables rules for the kill switch.
-func (ks *KillSwitch) enableNftables(vpnIface string, allowedIPs []string) error {
-	// Create table and chain (ignore error - table might already exist)
-	_ = ks.runCmd("nft", "add", "table", "inet", NftablesTableName)
-
-	// Create output chain with drop policy
-	chainCmd := fmt.Sprintf("add chain inet %s output { type filter hook output priority 0; policy drop; }", NftablesTableName)
-	if err := ks.runCmd("nft", chainCmd); err != nil {
-		// Try to flush if exists
-		_ = ks.runCmd("nft", "flush", "chain", "inet", NftablesTableName, "output")
-	}
-
-	// Allow established connections
-	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"ct", "state", "established,related", "accept"); err != nil {
-		return fmt.Errorf("nftables: failed to add established rule: %w", err)
-	}
-
-	// Allow loopback
-	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"oifname", "lo", "accept"); err != nil {
-		return fmt.Errorf("nftables: failed to add loopback rule: %w", err)
-	}
-
-	// Allow VPN interface
-	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"oifname", vpnIface, "accept"); err != nil {
-		return fmt.Errorf("nftables: failed to add VPN interface rule: %w", err)
-	}
-
-	// Allow specific IPs
-	for _, ip := range allowedIPs {
-		if ip == "" {
-			continue
-		}
-		_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-			"ip", "daddr", ip, "accept")
-	}
-
-	// Allow DNS
-	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"udp", "dport", DNSPortStr, "accept")
-	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"tcp", "dport", DNSPortStr, "accept")
-
-	return nil
-}
-
-// disableNftables removes nftables rules for the kill switch.
-func (ks *KillSwitch) disableNftables() error {
-	// Delete the entire table
-	return ks.runCmd("nft", "delete", "table", "inet", NftablesTableName)
 }
 
 // AddAllowedIP adds an IP to the kill switch whitelist.
@@ -390,18 +242,6 @@ func (ks *KillSwitch) AddAllowedIP(ip string) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 	ks.allowedIPs = append(ks.allowedIPs, ip)
-}
-
-// runCmd executes a command with pkexec for elevated privileges.
-func (ks *KillSwitch) runCmd(name string, args ...string) error {
-	// Use pkexec for privilege escalation
-	fullArgs := append([]string{name}, args...)
-	cmd := exec.Command("pkexec", fullArgs...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %v - %s", name, strings.Join(args, " "), err, string(output))
-	}
-	return nil
 }
 
 // Status returns a human-readable status of the kill switch.
@@ -424,6 +264,7 @@ func (ks *KillSwitch) Status() string {
 // This is used when VPN connection fails on an untrusted network and
 // BlockOnUntrustedFailure is enabled. It blocks all outbound traffic
 // except local networks and DNS.
+// Requires the vpn-managerd daemon to be running.
 func (ks *KillSwitch) EnableBlockAll() error {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
@@ -432,114 +273,22 @@ func (ks *KillSwitch) EnableBlockAll() error {
 		return fmt.Errorf("no firewall backend available")
 	}
 
-	// Use loopback as the "allowed" interface (effectively blocking all real traffic)
-	ks.vpnIface = "lo"
-
-	var err error
-	switch ks.backend {
-	case "iptables":
-		err = ks.enableBlockAllIptables()
-	case "nftables":
-		err = ks.enableBlockAllNftables()
-	default:
-		err = fmt.Errorf("unknown backend: %s", ks.backend)
+	// Use daemon for privileged operations (required)
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
+	client := &app.KillSwitchClient{}
+	result, err := client.EnableBlockAll()
 	if err != nil {
-		return err
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
+	// Use loopback as the "allowed" interface marker (blocking all real traffic)
+	ks.vpnIface = "lo"
 	ks.enabled = true
-	log.Printf("KillSwitch: Block-all mode enabled (backend: %s)", ks.backend)
-	return nil
-}
-
-// enableBlockAllIptables creates iptables rules to block all outbound traffic.
-func (ks *KillSwitch) enableBlockAllIptables() error {
-	// Create custom chain
-	if err := ks.runCmd("iptables", "-N", ks.chainName); err != nil {
-		// Chain might already exist, try flushing
-		_ = ks.runCmd("iptables", "-F", ks.chainName)
-	}
-
-	// Allow established connections (needed for existing connections to close gracefully)
-	if err := ks.runCmd("iptables", "-A", ks.chainName, "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("iptables: failed to add established rule: %w", err)
-	}
-
-	// Allow loopback
-	if err := ks.runCmd("iptables", "-A", ks.chainName, "-o", "lo", "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("iptables: failed to add loopback rule: %w", err)
-	}
-
-	// Allow local networks (RFC 1918)
-	for _, ip := range ks.allowedIPs {
-		if ip == "" {
-			continue
-		}
-		if err := ks.runCmd("iptables", "-A", ks.chainName, "-d", ip, "-j", "ACCEPT"); err != nil {
-			log.Printf("KillSwitch: Warning: failed to add allowed IP %s: %v", ip, err)
-		}
-	}
-
-	// Allow DNS (essential for showing error messages, etc.)
-	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT")
-	_ = ks.runCmd("iptables", "-A", ks.chainName, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT")
-
-	// Block everything else
-	if err := ks.runCmd("iptables", "-A", ks.chainName, "-j", "DROP"); err != nil {
-		return fmt.Errorf("iptables: failed to add drop rule: %w", err)
-	}
-
-	// Insert chain into OUTPUT
-	if err := ks.runCmd("iptables", "-I", "OUTPUT", "1", "-j", ks.chainName); err != nil {
-		return fmt.Errorf("iptables: failed to insert chain: %w", err)
-	}
-
-	return nil
-}
-
-// enableBlockAllNftables creates nftables rules to block all outbound traffic.
-func (ks *KillSwitch) enableBlockAllNftables() error {
-	// Create table (ignore error - table might already exist)
-	_ = ks.runCmd("nft", "add", "table", "inet", NftablesTableName)
-
-	// Delete existing chain if present
-	_ = ks.runCmd("nft", "delete", "chain", "inet", NftablesTableName, "output")
-
-	// Create output chain with drop policy
-	chainCmd := fmt.Sprintf("add chain inet %s output { type filter hook output priority 0; policy drop; }", NftablesTableName)
-	if err := ks.runCmd("nft", chainCmd); err != nil {
-		return fmt.Errorf("nftables: failed to create output chain: %w", err)
-	}
-
-	// Allow established connections
-	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"ct", "state", "established,related", "accept"); err != nil {
-		return fmt.Errorf("nftables: failed to add established rule: %w", err)
-	}
-
-	// Allow loopback
-	if err := ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"oifname", "lo", "accept"); err != nil {
-		return fmt.Errorf("nftables: failed to add loopback rule: %w", err)
-	}
-
-	// Allow specific IPs (local networks)
-	for _, ip := range ks.allowedIPs {
-		if ip == "" {
-			continue
-		}
-		_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-			"ip", "daddr", ip, "accept")
-	}
-
-	// Allow DNS
-	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"udp", "dport", DNSPortStr, "accept")
-	_ = ks.runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"tcp", "dport", DNSPortStr, "accept")
-
+	ks.backend = result.Backend
+	log.Printf("KillSwitch: Block-all mode enabled via daemon (backend: %s)", result.Backend)
 	return nil
 }
 
@@ -643,47 +392,19 @@ func (ks *KillSwitch) SaveState() error {
 	return nil
 }
 
-// writeStateFile writes data to a file, attempting direct write first,
-// then falling back to pkexec for elevated privileges if needed.
+// writeStateFile writes data to a file.
+// The state directory should have appropriate permissions for the user.
 func writeStateFile(path string, data []byte) error {
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		// Try with pkexec if direct creation fails
-		cmd := exec.Command("pkexec", "mkdir", "-p", dir)
-		if _, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to create state directory: %w", err)
-		}
+		return fmt.Errorf("failed to create state directory %s: %w", dir, err)
 	}
 
-	// Try direct write first (if we have permissions)
-	if err := os.WriteFile(path, data, 0600); err == nil {
-		return nil
+	// Write file directly
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("failed to write state file %s: %w", path, err)
 	}
-
-	// Fall back to pkexec for elevated write
-	// Write to a temp file in /tmp first, then move with pkexec
-	// Security: Use random temp file name to prevent symlink attacks
-	tmpfile, err := os.CreateTemp("", "vpn-manager-ks-state-*.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpfile.Name()
-	tmpfile.Close() // Close immediately, we only need the path
-
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	cmd := exec.Command("pkexec", "mv", tmpPath, path)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("pkexec mv failed: %w: %s", err, string(output))
-	}
-
-	// Set proper permissions
-	cmd = exec.Command("pkexec", "chmod", "600", path)
-	_ = cmd.Run() // Best effort
 
 	return nil
 }
@@ -805,16 +526,8 @@ func (ks *KillSwitch) ClearState() error {
 		return nil
 	}
 
-	// Try direct removal first
-	if err := os.Remove(statePath); err == nil {
-		log.Printf("KillSwitch: State file cleared")
-		return nil
-	}
-
-	// Fall back to pkexec for elevated removal
-	cmd := exec.Command("pkexec", "rm", "-f", statePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to remove state file: %w: %s", err, string(output))
+	if err := os.Remove(statePath); err != nil {
+		return fmt.Errorf("failed to remove state file %s: %w", statePath, err)
 	}
 
 	log.Printf("KillSwitch: State file cleared")
@@ -848,7 +561,7 @@ WantedBy=multi-user.target
 // InstallSystemdService installs the kill switch persistence service.
 // This enables the kill switch to be restored on system boot, ensuring
 // protection is maintained even after reboots.
-// Requires root privileges (will use pkexec for elevation).
+// Requires root privileges (via daemon).
 func (ks *KillSwitch) InstallSystemdService() error {
 	// Check if systemd is available
 	if !isSystemdAvailable() {
@@ -865,7 +578,7 @@ func (ks *KillSwitch) InstallSystemdService() error {
 	serviceContent := fmt.Sprintf(killSwitchServiceTemplate, binaryPath, binaryPath)
 	servicePath := filepath.Join(SystemdServiceDir, KillSwitchServiceName+".service")
 
-	// Write service file via pkexec
+	// Write service file (requires root)
 	if err := writeSystemdServiceFile(servicePath, serviceContent); err != nil {
 		return fmt.Errorf("failed to write service file: %w", err)
 	}
@@ -981,58 +694,31 @@ func findVPNManagerBinary() string {
 	return ""
 }
 
-// writeSystemdServiceFile writes a systemd service file using pkexec for privilege escalation.
+// writeSystemdServiceFile writes a systemd service file.
+// This operation requires the vpn-managerd daemon to be running.
 func writeSystemdServiceFile(path, content string) error {
-	// Write to temp file first
-	// Security: Use random temp file name to prevent symlink attacks
-	tmpfile, err := os.CreateTemp("", "vpn-manager-service-*.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpfile.Name()
-	tmpfile.Close() // Close immediately, we only need the path
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Move to final location with pkexec
-	cmd := exec.Command("pkexec", "mv", tmpPath, path)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("pkexec mv failed: %w: %s", err, string(output))
-	}
-
-	// Set proper permissions (644 for service files)
-	cmd = exec.Command("pkexec", "chmod", "644", path)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("chmod failed: %w: %s", err, string(output))
-	}
-
-	return nil
+	// Writing systemd service files requires root privileges
+	// This should be done via the daemon in future versions
+	return fmt.Errorf("systemd service management requires daemon support (not yet implemented)")
 }
 
-// removeSystemdServiceFile removes a systemd service file using pkexec.
+// removeSystemdServiceFile removes a systemd service file.
+// This operation requires the vpn-managerd daemon to be running.
 func removeSystemdServiceFile(path string) error {
 	// Check if file exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil // Already removed
 	}
 
-	cmd := exec.Command("pkexec", "rm", "-f", path)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("pkexec rm failed: %w: %s", err, string(output))
-	}
-
-	return nil
+	// Removing systemd service files requires root privileges
+	// This should be done via the daemon in future versions
+	return fmt.Errorf("systemd service management requires daemon support (not yet implemented)")
 }
 
-// runSystemctl executes a systemctl command with pkexec for privilege escalation.
+// runSystemctl executes a systemctl command.
+// This operation requires the vpn-managerd daemon to be running.
 func runSystemctl(args ...string) error {
-	fullArgs := append([]string{"systemctl"}, args...)
-	cmd := exec.Command("pkexec", fullArgs...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl %s failed: %w: %s", strings.Join(args, " "), err, string(output))
-	}
-	return nil
+	// systemctl commands that modify state require root privileges
+	// This should be done via the daemon in future versions
+	return fmt.Errorf("systemd service management requires daemon support (not yet implemented)")
 }

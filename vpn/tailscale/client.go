@@ -186,10 +186,9 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 	if err != nil {
 		outputStr := string(output)
 		outputLower := strings.ToLower(outputStr)
-		// Check for access denied - need elevated privileges
+		// Check for access denied - need elevated privileges via daemon
 		if strings.Contains(outputLower, "access denied") {
-			// Try with pkexec for elevated privileges
-			return c.upWithPkexec(ctx, args[1:]) // Skip "up" as we'll add it in upWithPkexec
+			return c.upViaDaemon(ctx, opts)
 		}
 		return fmt.Errorf("tailscale up failed: %w: %s", err, outputStr)
 	}
@@ -197,18 +196,29 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 	return nil
 }
 
-// upWithPkexec attempts tailscale up using pkexec for elevated privileges.
-func (c *Client) upWithPkexec(ctx context.Context, extraArgs []string) error {
-	args := []string{c.binaryPath, "up"}
-	args = append(args, extraArgs...)
-
-	cmd := exec.CommandContext(ctx, "pkexec", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tailscale up (pkexec) failed: %w: %s", err, string(output))
+// upViaDaemon runs tailscale up via the daemon for elevated privileges.
+func (c *Client) upViaDaemon(ctx context.Context, opts UpOptions) error {
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("tailscale up requires elevated privileges and daemon is not running")
 	}
 
-	return nil
+	client := &app.TailscaleClient{}
+	_, err := client.UpWithContext(ctx, app.TailscaleUpParams{
+		ExitNode:               opts.ExitNode,
+		ExitNodeAllowLANAccess: opts.ExitNodeAllowLANAccess,
+		AcceptRoutes:           opts.AcceptRoutes,
+		AcceptDNS:              opts.AcceptDNS,
+		ShieldsUp:              opts.ShieldsUp,
+		AuthKey:                opts.AuthKey,
+		LoginServer:            opts.LoginServer,
+		Hostname:               opts.Hostname,
+		AdvertiseTags:          opts.AdvertiseTags,
+		AdvertiseExitNode:      opts.AdvertiseExitNode,
+		SSH:                    opts.SSH,
+		StatefulFiltering:      opts.StatefulFiltering,
+		Operator:               opts.Operator,
+	})
+	return err
 }
 
 // Down disconnects from Tailscale.
@@ -221,10 +231,9 @@ func (c *Client) Down(ctx context.Context) error {
 	if err != nil {
 		outputStr := string(output)
 		outputLower := strings.ToLower(outputStr)
-		// Check for access denied - need elevated privileges
+		// Check for access denied - need elevated privileges via daemon
 		if strings.Contains(outputLower, "access denied") {
-			// Try with pkexec for elevated privileges
-			return c.downWithPkexec(ctx)
+			return c.downViaDaemon(ctx)
 		}
 		return fmt.Errorf("tailscale down failed: %w: %s", err, outputStr)
 	}
@@ -232,18 +241,17 @@ func (c *Client) Down(ctx context.Context) error {
 	return nil
 }
 
-// downWithPkexec attempts tailscale down using pkexec for elevated privileges.
-func (c *Client) downWithPkexec(ctx context.Context) error {
+// downViaDaemon runs tailscale down via the daemon for elevated privileges.
+func (c *Client) downViaDaemon(ctx context.Context) error {
 	// Clean up LAN Gateway rules before disconnecting
 	_ = c.CleanupLANGateway(ctx)
 
-	cmd := exec.CommandContext(ctx, "pkexec", c.binaryPath, "down")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tailscale down (pkexec) failed: %w: %s", err, string(output))
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("tailscale down requires elevated privileges and daemon is not running")
 	}
 
-	return nil
+	client := &app.TailscaleClient{}
+	return client.DownWithContext(ctx)
 }
 
 // UpWithServer connects to Tailscale using a specific control server.
@@ -349,12 +357,11 @@ func (c *Client) Set(ctx context.Context, opts SetOptions) error {
 	if err != nil {
 		outputStr := string(output)
 		outputLower := strings.ToLower(outputStr)
-		// Check for access denied - need elevated privileges
+		// Check for access denied - need elevated privileges via daemon
 		if strings.Contains(outputLower, "access denied") ||
 			strings.Contains(outputLower, "permission denied") ||
 			strings.Contains(outputLower, "operation not permitted") {
-			// Try with pkexec for elevated privileges
-			return c.setWithPkexec(ctx, args[1:]) // Skip "set" as we'll add it in setWithPkexec
+			return c.setViaDaemon(ctx, opts)
 		}
 		return fmt.Errorf("tailscale set failed: %w: %s", err, outputStr)
 	}
@@ -362,18 +369,25 @@ func (c *Client) Set(ctx context.Context, opts SetOptions) error {
 	return nil
 }
 
-// setWithPkexec attempts tailscale set using pkexec for elevated privileges.
-func (c *Client) setWithPkexec(ctx context.Context, extraArgs []string) error {
-	args := []string{c.binaryPath, "set"}
-	args = append(args, extraArgs...)
-
-	cmd := exec.CommandContext(ctx, "pkexec", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tailscale set (pkexec) failed: %w: %s", err, string(output))
+// setViaDaemon runs tailscale set via the daemon for elevated privileges.
+func (c *Client) setViaDaemon(ctx context.Context, opts SetOptions) error {
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("tailscale set requires elevated privileges and daemon is not running")
 	}
 
-	return nil
+	client := &app.TailscaleClient{}
+	_, err := client.SetWithContext(ctx, app.TailscaleSetParams{
+		ShieldsUp:              opts.ShieldsUp,
+		AcceptRoutes:           opts.AcceptRoutes,
+		AcceptDNS:              opts.AcceptDNS,
+		ExitNode:               opts.ExitNode,
+		ExitNodeAllowLANAccess: opts.ExitNodeAllowLANAccess,
+		AdvertiseExitNode:      opts.AdvertiseExitNode,
+		Hostname:               opts.Hostname,
+		StatefulFiltering:      opts.StatefulFiltering,
+		AutoUpdate:             opts.AutoUpdate,
+	})
+	return err
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -479,7 +493,7 @@ func (c *Client) GetCurrentOperator(ctx context.Context) string {
 }
 
 // SetOperator configures the specified user as the Tailscale operator.
-// This requires elevated privileges (will use pkexec) but only needs to be done once.
+// This requires elevated privileges (via daemon) but only needs to be done once.
 // After this, the user can run tailscale commands without password prompts.
 func (c *Client) SetOperator(ctx context.Context, username string) error {
 	if username == "" {
@@ -490,7 +504,7 @@ func (c *Client) SetOperator(ctx context.Context, username string) error {
 		}
 	}
 
-	// Try without pkexec first (in case already has permission)
+	// Try without elevated privileges first (in case already has permission)
 	cmd := exec.CommandContext(ctx, c.binaryPath, "set", "--operator="+username)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
@@ -503,14 +517,13 @@ func (c *Client) SetOperator(ctx context.Context, username string) error {
 		return fmt.Errorf("set operator failed: %w: %s", err, string(output))
 	}
 
-	// Need elevated privileges - use pkexec
-	cmd = exec.CommandContext(ctx, "pkexec", c.binaryPath, "set", "--operator="+username)
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("set operator (pkexec) failed: %w: %s", err, string(output))
+	// Need elevated privileges - use daemon
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("tailscale set operator requires elevated privileges and daemon is not running")
 	}
 
-	return nil
+	client := &app.TailscaleClient{}
+	return client.SetOperatorWithContext(ctx, username)
 }
 
 // EnsureOperator ensures the current user is configured as operator.

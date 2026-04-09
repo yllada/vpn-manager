@@ -1,13 +1,11 @@
 // Package app provides client wrappers for daemon privileged operations.
 // These functions provide a clean API for vpn/* modules to delegate operations
-// to the daemon, with fallback to pkexec for backward compatibility.
+// to the daemon. The daemon must be running for privileged operations to work.
 package app
 
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 )
 
 // =============================================================================
@@ -15,7 +13,7 @@ import (
 // =============================================================================
 
 // KillSwitchClient provides a client interface for kill switch operations.
-// It delegates to the daemon if available, otherwise falls back to pkexec.
+// It delegates to the daemon for privileged operations.
 type KillSwitchClient struct{}
 
 // KillSwitchEnableParams matches daemon/privileged.KillSwitchEnableParams
@@ -32,12 +30,11 @@ type KillSwitchEnableResult struct {
 	Backend string `json:"backend,omitempty"`
 }
 
-// Enable enables the kill switch via daemon or pkexec fallback.
+// Enable enables the kill switch via daemon.
 func (c *KillSwitchClient) Enable(params KillSwitchEnableParams) (*KillSwitchEnableResult, error) {
 	var result KillSwitchEnableResult
 
 	err := CallDaemon("killswitch.enable", params, &result, func() error {
-		// Fallback: execute pkexec directly (legacy mode)
 		return fmt.Errorf("daemon unavailable, kill switch requires daemon for proper operation")
 	})
 
@@ -67,6 +64,22 @@ func (c *KillSwitchClient) Status() (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+// EnableBlockAll enables a block-all kill switch (blocks all non-local traffic).
+// This is used when VPN connection fails on an untrusted network.
+func (c *KillSwitchClient) EnableBlockAll() (*KillSwitchEnableResult, error) {
+	var result KillSwitchEnableResult
+
+	err := CallDaemon("killswitch.block_all", nil, &result, func() error {
+		return fmt.Errorf("daemon unavailable, kill switch requires daemon for proper operation")
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 // =============================================================================
@@ -240,18 +253,48 @@ type SplitTunnelClient struct{}
 
 // TunnelSetupParams matches daemon/privileged.TunnelSetupParams
 type TunnelSetupParams struct {
-	Mode         string   `json:"mode"` // "include", "exclude"
-	Apps         []string `json:"apps"`
-	VPNInterface string   `json:"vpn_interface"`
+	Mode            string   `json:"mode"` // "include", "exclude"
+	Apps            []string `json:"apps"`
+	VPNInterface    string   `json:"vpn_interface"`
+	VPNGateway      string   `json:"vpn_gateway"`
+	SplitDNSEnabled bool     `json:"split_dns_enabled"`
+	VPNDNS          []string `json:"vpn_dns,omitempty"`
+	SystemDNS       string   `json:"system_dns,omitempty"`
 }
 
-// Setup configures split tunneling.
-func (c *SplitTunnelClient) Setup(params TunnelSetupParams) error {
-	var result map[string]bool
+// TunnelSetupResult contains the result of tunnel setup.
+type TunnelSetupResult struct {
+	Enabled    bool   `json:"enabled"`
+	CgroupPath string `json:"cgroup_path"`
+	Mode       string `json:"mode"`
+}
 
-	return CallDaemon("tunnel.setup", params, &result, func() error {
+// Setup configures split tunneling via daemon.
+func (c *SplitTunnelClient) Setup(params TunnelSetupParams) (*TunnelSetupResult, error) {
+	var result TunnelSetupResult
+
+	err := CallDaemon("tunnel.setup", params, &result, func() error {
 		return fmt.Errorf("daemon unavailable, split tunnel requires daemon for proper operation")
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// SetupWithContext configures split tunneling with context support.
+func (c *SplitTunnelClient) SetupWithContext(ctx context.Context, params TunnelSetupParams) (*TunnelSetupResult, error) {
+	var result TunnelSetupResult
+
+	err := CallDaemonWithContext(ctx, "tunnel.setup", params, &result, func() error {
+		return fmt.Errorf("daemon unavailable, split tunnel requires daemon for proper operation")
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 // Cleanup removes split tunnel configuration.
@@ -271,22 +314,6 @@ func (c *SplitTunnelClient) Status() (map[string]any, error) {
 	}
 
 	return result, nil
-}
-
-// =============================================================================
-// PKEXEC FALLBACK HELPER
-// =============================================================================
-
-// RunWithPkexec executes a command with pkexec for privilege escalation.
-// This is the legacy method, used when daemon is not available.
-func RunWithPkexec(name string, args ...string) error {
-	fullArgs := append([]string{name}, args...)
-	cmd := exec.Command("pkexec", fullArgs...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %v - %s", name, strings.Join(args, " "), err, string(output))
-	}
-	return nil
 }
 
 // =============================================================================
@@ -481,4 +508,192 @@ func (c *WireGuardClient) List() ([]WireGuardStatusResult, error) {
 	}
 
 	return result, nil
+}
+
+// =============================================================================
+// TAILSCALE CLIENT
+// =============================================================================
+
+// TailscaleClient provides a client interface for Tailscale operations via daemon.
+type TailscaleClient struct{}
+
+// TailscaleUpParams contains parameters for tailscale up.
+type TailscaleUpParams struct {
+	// Connection options
+	ExitNode               string `json:"exit_node,omitempty"`
+	ExitNodeAllowLANAccess bool   `json:"exit_node_allow_lan_access"`
+	AcceptRoutes           bool   `json:"accept_routes"`
+	AcceptDNS              bool   `json:"accept_dns"`
+	ShieldsUp              bool   `json:"shields_up"`
+
+	// Authentication
+	AuthKey     string `json:"auth_key,omitempty"`
+	LoginServer string `json:"login_server,omitempty"` // For Headscale
+
+	// Identity
+	Hostname      string   `json:"hostname,omitempty"`
+	AdvertiseTags []string `json:"advertise_tags,omitempty"`
+
+	// Features
+	AdvertiseExitNode bool `json:"advertise_exit_node"`
+	SSH               bool `json:"ssh"`
+	StatefulFiltering bool `json:"stateful_filtering"`
+
+	// Operator
+	Operator string `json:"operator,omitempty"`
+}
+
+// TailscaleUpResult contains the result of tailscale up.
+type TailscaleUpResult struct {
+	Success bool   `json:"success"`
+	Output  string `json:"output,omitempty"`
+}
+
+// TailscaleSetParams contains parameters for tailscale set.
+type TailscaleSetParams struct {
+	ShieldsUp              *bool   `json:"shields_up,omitempty"`
+	AcceptRoutes           *bool   `json:"accept_routes,omitempty"`
+	AcceptDNS              *bool   `json:"accept_dns,omitempty"`
+	ExitNode               *string `json:"exit_node,omitempty"`
+	ExitNodeAllowLANAccess *bool   `json:"exit_node_allow_lan_access,omitempty"`
+	AdvertiseExitNode      *bool   `json:"advertise_exit_node,omitempty"`
+	Hostname               *string `json:"hostname,omitempty"`
+	StatefulFiltering      *bool   `json:"stateful_filtering,omitempty"`
+	AutoUpdate             *bool   `json:"auto_update,omitempty"`
+	Operator               *string `json:"operator,omitempty"`
+}
+
+// TailscaleSetResult contains the result of tailscale set.
+type TailscaleSetResult struct {
+	Success bool   `json:"success"`
+	Output  string `json:"output,omitempty"`
+}
+
+// TailscaleLoginParams contains parameters for tailscale login.
+type TailscaleLoginParams struct {
+	AuthKey     string `json:"auth_key,omitempty"`
+	LoginServer string `json:"login_server,omitempty"` // For Headscale
+}
+
+// TailscaleLoginResult contains the result of tailscale login.
+type TailscaleLoginResult struct {
+	Success bool   `json:"success"`
+	AuthURL string `json:"auth_url,omitempty"` // URL to open for browser auth
+	Output  string `json:"output,omitempty"`
+}
+
+// Up runs tailscale up via daemon.
+func (c *TailscaleClient) Up(params TailscaleUpParams) (*TailscaleUpResult, error) {
+	var result TailscaleUpResult
+
+	err := CallDaemon("tailscale.up", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// UpWithContext runs tailscale up with context support.
+func (c *TailscaleClient) UpWithContext(ctx context.Context, params TailscaleUpParams) (*TailscaleUpResult, error) {
+	var result TailscaleUpResult
+
+	err := CallDaemonWithContext(ctx, "tailscale.up", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// Down runs tailscale down via daemon.
+func (c *TailscaleClient) Down() error {
+	var result map[string]bool
+
+	return CallDaemon("tailscale.down", nil, &result, nil)
+}
+
+// DownWithContext runs tailscale down with context support.
+func (c *TailscaleClient) DownWithContext(ctx context.Context) error {
+	var result map[string]bool
+
+	return CallDaemonWithContext(ctx, "tailscale.down", nil, &result, nil)
+}
+
+// Set runs tailscale set via daemon.
+func (c *TailscaleClient) Set(params TailscaleSetParams) (*TailscaleSetResult, error) {
+	var result TailscaleSetResult
+
+	err := CallDaemon("tailscale.set", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// SetWithContext runs tailscale set with context support.
+func (c *TailscaleClient) SetWithContext(ctx context.Context, params TailscaleSetParams) (*TailscaleSetResult, error) {
+	var result TailscaleSetResult
+
+	err := CallDaemonWithContext(ctx, "tailscale.set", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// Login runs tailscale login via daemon.
+func (c *TailscaleClient) Login(params TailscaleLoginParams) (*TailscaleLoginResult, error) {
+	var result TailscaleLoginResult
+
+	err := CallDaemon("tailscale.login", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// LoginWithContext runs tailscale login with context support.
+func (c *TailscaleClient) LoginWithContext(ctx context.Context, params TailscaleLoginParams) (*TailscaleLoginResult, error) {
+	var result TailscaleLoginResult
+
+	err := CallDaemonWithContext(ctx, "tailscale.login", params, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// Logout runs tailscale logout via daemon.
+func (c *TailscaleClient) Logout() error {
+	var result map[string]bool
+
+	return CallDaemon("tailscale.logout", nil, &result, nil)
+}
+
+// LogoutWithContext runs tailscale logout with context support.
+func (c *TailscaleClient) LogoutWithContext(ctx context.Context) error {
+	var result map[string]bool
+
+	return CallDaemonWithContext(ctx, "tailscale.logout", nil, &result, nil)
+}
+
+// SetOperator configures the tailscale operator via daemon.
+func (c *TailscaleClient) SetOperator(username string) error {
+	var result map[string]any
+
+	params := map[string]string{"username": username}
+	return CallDaemon("tailscale.set_operator", params, &result, nil)
+}
+
+// SetOperatorWithContext configures the tailscale operator with context support.
+func (c *TailscaleClient) SetOperatorWithContext(ctx context.Context, username string) error {
+	var result map[string]any
+
+	params := map[string]string{"username": username}
+	return CallDaemonWithContext(ctx, "tailscale.set_operator", params, &result, nil)
 }

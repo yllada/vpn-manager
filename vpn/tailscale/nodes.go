@@ -236,12 +236,11 @@ func (c *Client) SetExitNode(ctx context.Context, nodeID string) error {
 	if err != nil {
 		outputStr := string(output)
 		outputLower := strings.ToLower(outputStr)
-		// Check for access denied - need elevated privileges
+		// Check for access denied - need elevated privileges via daemon
 		if strings.Contains(outputLower, "access denied") ||
 			strings.Contains(outputLower, "permission denied") ||
 			strings.Contains(outputLower, "operation not permitted") {
-			// Try with pkexec for elevated privileges
-			return c.setExitNodeWithPkexec(ctx, nodeID)
+			return c.setExitNodeViaDaemon(ctx, nodeID)
 		}
 		return fmt.Errorf("failed to set exit node: %w: %s", err, outputStr)
 	}
@@ -249,17 +248,18 @@ func (c *Client) SetExitNode(ctx context.Context, nodeID string) error {
 	return nil
 }
 
-// setExitNodeWithPkexec attempts to set exit node using pkexec for elevated privileges.
-func (c *Client) setExitNodeWithPkexec(ctx context.Context, nodeID string) error {
-	args := []string{c.binaryPath, "set", "--exit-node=" + nodeID}
-
-	cmd := exec.CommandContext(ctx, "pkexec", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tailscale set exit-node (pkexec) failed: %w: %s", err, string(output))
+// setExitNodeViaDaemon sets the exit node via the daemon for elevated privileges.
+func (c *Client) setExitNodeViaDaemon(ctx context.Context, nodeID string) error {
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("tailscale set exit-node requires elevated privileges and daemon is not running")
 	}
 
-	return nil
+	client := &app.TailscaleClient{}
+	exitNode := nodeID
+	_, err := client.SetWithContext(ctx, app.TailscaleSetParams{
+		ExitNode: &exitNode,
+	})
+	return err
 }
 
 // SetExitNodeWithOptions sets the exit node with additional options.
@@ -285,12 +285,11 @@ func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allo
 	if err != nil {
 		outputStr := string(output)
 		outputLower := strings.ToLower(outputStr)
-		// Check for access denied - need elevated privileges
+		// Check for access denied - need elevated privileges via daemon
 		if strings.Contains(outputLower, "access denied") ||
 			strings.Contains(outputLower, "permission denied") ||
 			strings.Contains(outputLower, "operation not permitted") {
-			// Try with pkexec for elevated privileges
-			err = c.setExitNodeWithOptionsPkexec(ctx, nodeID, allowLANAccess)
+			err = c.setExitNodeWithOptionsViaDaemon(ctx, nodeID, allowLANAccess)
 			if err != nil {
 				return err
 			}
@@ -319,40 +318,19 @@ func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allo
 	return nil
 }
 
-// setExitNodeWithOptionsPkexec attempts to set exit node with options using pkexec.
-func (c *Client) setExitNodeWithOptionsPkexec(ctx context.Context, nodeID string, allowLANAccess bool) error {
-	args := []string{c.binaryPath, "set", "--exit-node=" + nodeID}
-
-	if allowLANAccess {
-		args = append(args, "--exit-node-allow-lan-access=true")
-	} else {
-		args = append(args, "--exit-node-allow-lan-access=false")
+// setExitNodeWithOptionsViaDaemon sets exit node with options via the daemon.
+func (c *Client) setExitNodeWithOptionsViaDaemon(ctx context.Context, nodeID string, allowLANAccess bool) error {
+	if !app.IsDaemonAvailable() {
+		return fmt.Errorf("tailscale set exit-node requires elevated privileges and daemon is not running")
 	}
 
-	cmd := exec.CommandContext(ctx, "pkexec", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tailscale set exit-node (pkexec) failed: %w: %s", err, string(output))
-	}
-
-	// If allowLANAccess is enabled, configure network rules for LAN gateway
-	if allowLANAccess {
-		app.LogInfo("[LAN Gateway] Attempting to configure LAN Gateway...")
-		if err := c.ConfigureLANGateway(ctx); err != nil {
-			// Log warning but don't fail - Tailscale flag is already set
-			// User may not want to use this machine as a gateway
-			app.LogWarn("[LAN Gateway] Failed to configure LAN Gateway: %v", err)
-			app.LogWarn("[LAN Gateway] Tailscale exit node with LAN access is active, but network rules may need manual configuration.")
-		} else {
-			app.LogInfo("[LAN Gateway] LAN Gateway configured successfully")
-		}
-	} else {
-		// Clean up any existing LAN gateway rules
-		app.LogInfo("[LAN Gateway] Cleaning up LAN Gateway rules...")
-		_ = c.CleanupLANGateway(ctx)
-	}
-
-	return nil
+	client := &app.TailscaleClient{}
+	exitNode := nodeID
+	_, err := client.SetWithContext(ctx, app.TailscaleSetParams{
+		ExitNode:               &exitNode,
+		ExitNodeAllowLANAccess: &allowLANAccess,
+	})
+	return err
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
