@@ -97,9 +97,47 @@ Automatically manage your VPN connection based on network trust levels:
 
 - **GTK4 4.14+**
 - **libadwaita 1.5+**
-- **Go 1.21+**
+- **Go 1.21+** (only for building from source)
 - Linux (Ubuntu 24.04+, Fedora 40+, Arch)
 - OpenVPN, WireGuard, or Tailscale installed
+
+### Quick Install (Recommended)
+
+**Ubuntu/Debian:**
+```bash
+# Add repository (one-time setup)
+curl -fsSL https://yllada.github.io/vpn-manager/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/vpn-manager.gpg
+echo "deb [signed-by=/usr/share/keyrings/vpn-manager.gpg] https://yllada.github.io/vpn-manager/apt stable main" | sudo tee /etc/apt/sources.list.d/vpn-manager.list
+
+# Install
+sudo apt update && sudo apt install vpn-manager
+```
+
+**Fedora/RHEL:**
+```bash
+# Download latest .rpm from releases
+wget https://github.com/yllada/vpn-manager/releases/latest/download/vpn-manager-*.x86_64.rpm
+sudo dnf install ./vpn-manager-*.x86_64.rpm
+```
+
+### ⚠️ Important: Daemon Required
+
+VPN Manager requires the **vpn-managerd** daemon for privileged operations (kill switch, DNS protection, VPN connections). The daemon runs as a systemd service and handles all operations that require root access.
+
+**The packages (.deb/.rpm) automatically install and enable the daemon.**
+
+If you build from source, install the daemon manually:
+```bash
+cd build
+sudo ./install-daemon.sh
+```
+
+Verify the daemon is running:
+```bash
+sudo systemctl status vpn-managerd
+```
+
+See [build/DAEMON.md](build/DAEMON.md) for detailed documentation.
 
 ### Build from Source
 
@@ -111,6 +149,9 @@ sudo apt install golang gcc libgtk-4-dev libadwaita-1-dev
 git clone https://github.com/yllada/vpn-manager.git
 cd vpn-manager
 go build -o vpn-manager .
+
+# Install the daemon (REQUIRED)
+cd build && sudo ./install-daemon.sh && cd ..
 
 # Run
 ./vpn-manager

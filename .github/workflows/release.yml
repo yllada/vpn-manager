@@ -221,7 +221,7 @@ jobs:
       #     #   exit 1
       #     # fi
 
-      - name: Build binary
+      - name: Build binaries
         env:
           GOFLAGS: "-buildvcs=false"
         run: |
@@ -230,7 +230,7 @@ jobs:
           
           echo "🔨 Building ${{ env.APP_NAME }} v${{ env.VERSION }}..."
           
-          # Use all available CPUs for parallel compilation
+          # Build main application
           CGO_ENABLED=1 go build \
             -trimpath \
             -ldflags="-s -w \
@@ -240,9 +240,22 @@ jobs:
             -o "${{ env.APP_NAME }}" \
             .
           
-          # Verify binary
+          # Verify main binary
           file "${{ env.APP_NAME }}"
           ./${{ env.APP_NAME }} --version || true
+          
+          echo "🔨 Building vpn-managerd daemon..."
+          
+          # Build daemon
+          CGO_ENABLED=1 go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "vpn-managerd" \
+            ./cmd/vpn-managerd
+          
+          # Verify daemon binary
+          file "vpn-managerd"
+          echo "✅ Both binaries built successfully"
 
       - name: Create distribution directory
         run: mkdir -p dist
@@ -252,10 +265,17 @@ jobs:
           TARBALL_DIR="${{ env.APP_NAME }}-${{ env.VERSION }}"
           mkdir -p "dist/${TARBALL_DIR}"
           
-          # Copy files
+          # Copy binaries
           cp "${{ env.APP_NAME }}" "dist/${TARBALL_DIR}/"
+          cp "vpn-managerd" "dist/${TARBALL_DIR}/"
+          
+          # Copy documentation and assets
           cp README.md LICENSE "dist/${TARBALL_DIR}/" 2>/dev/null || true
           cp -r assets "dist/${TARBALL_DIR}/" 2>/dev/null || true
+          
+          # Copy systemd service file
+          mkdir -p "dist/${TARBALL_DIR}/systemd"
+          cp build/systemd/vpn-managerd.service "dist/${TARBALL_DIR}/systemd/"
           
           # Create install script
           cat > "dist/${TARBALL_DIR}/install.sh" << 'INSTALL_EOF'
@@ -271,8 +291,14 @@ jobs:
             SUDO=""
           fi
           
-          # Install binary
+          # Install main binary
           $SUDO install -Dm755 vpn-manager /usr/local/bin/vpn-manager
+          
+          # Install daemon binary
+          $SUDO install -Dm755 vpn-managerd /usr/bin/vpn-managerd
+          
+          # Install systemd service
+          $SUDO install -Dm644 systemd/vpn-managerd.service /etc/systemd/system/vpn-managerd.service
           
           # Install desktop file
           if [[ -f assets/vpn-manager.desktop ]]; then
@@ -285,7 +311,13 @@ jobs:
             $SUDO gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
           fi
           
+          # Enable and start daemon
+          $SUDO systemctl daemon-reload
+          $SUDO systemctl enable vpn-managerd
+          $SUDO systemctl start vpn-managerd
+          
           echo "✅ VPN Manager installed successfully!"
+          echo "   The vpn-managerd daemon has been enabled and started."
           echo "   Run: vpn-manager"
           INSTALL_EOF
           chmod +x "dist/${TARBALL_DIR}/install.sh"
@@ -298,8 +330,8 @@ jobs:
       - name: Build DEB package
         run: |
           chmod +x scripts/build-deb.sh
-          # Pass pre-built binary to avoid recompilation
-          ./scripts/build-deb.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}"
+          # Pass pre-built binaries to avoid recompilation
+          ./scripts/build-deb.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}" "./vpn-managerd"
           
           # Move DEB to dist directory for consistency
           mv "${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" dist/ 2>/dev/null || \
@@ -311,8 +343,8 @@ jobs:
       - name: Build RPM package
         run: |
           chmod +x scripts/build-rpm.sh
-          # Pass pre-built binary to avoid recompilation
-          ./scripts/build-rpm.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}"
+          # Pass pre-built binaries to avoid recompilation
+          ./scripts/build-rpm.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}" "./vpn-managerd"
           
           # Move RPM to dist directory for consistency
           mv "${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm" dist/ 2>/dev/null || \
