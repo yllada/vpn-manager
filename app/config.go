@@ -23,6 +23,11 @@ type TailscaleServer struct {
 // TailscaleConfig contains all Tailscale-specific settings.
 // Follows Tailscale CLI best practices and official documentation.
 type TailscaleConfig struct {
+	// ── Deprecated (kept for backward compatibility) ──
+	// Enabled is deprecated and ignored. Kept to avoid YAML parse errors
+	// when loading old config files. Will be removed in a future version.
+	Enabled *bool `yaml:"enabled,omitempty"`
+
 	// ── Control Server ──
 	// ControlServer is the active server: "cloud" for Tailscale Cloud or a custom URL.
 	ControlServer string `yaml:"control_server"`
