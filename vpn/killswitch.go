@@ -128,6 +128,26 @@ func (ks *KillSwitch) Enable(vpnInterface string, vpnServerIP string) error {
 	ks.vpnIface = vpnInterface
 	ks.vpnServerIP = vpnServerIP
 
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.KillSwitchClient{}
+		result, err := client.Enable(app.KillSwitchEnableParams{
+			VPNInterface: vpnInterface,
+			VPNServerIP:  vpnServerIP,
+			AllowLAN:     ks.allowLAN,
+			LANRanges:    ks.lanRanges,
+		})
+		if err == nil {
+			ks.enabled = true
+			ks.backend = result.Backend
+			log.Printf("KillSwitch: Enabled via daemon for interface %s (backend: %s, allowLAN: %v)",
+				vpnInterface, result.Backend, ks.allowLAN)
+			return nil
+		}
+		log.Printf("KillSwitch: Daemon call failed, falling back to pkexec: %v", err)
+	}
+
+	// Fallback: direct execution via pkexec (legacy mode)
 	// Build allowed IPs list based on LAN access setting
 	allowedIPs := []string{vpnServerIP}
 	if ks.allowLAN {
@@ -223,6 +243,19 @@ func (ks *KillSwitch) disable() error {
 		return nil
 	}
 
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.KillSwitchClient{}
+		if err := client.Disable(); err == nil {
+			ks.enabled = false
+			ks.vpnIface = ""
+			log.Printf("KillSwitch: Disabled via daemon")
+			return nil
+		}
+		log.Printf("KillSwitch: Daemon disable failed, falling back to pkexec")
+	}
+
+	// Fallback: direct execution via pkexec
 	var err error
 	switch ks.backend {
 	case "iptables":

@@ -694,12 +694,29 @@ func (dp *DNSProtection) EnableFirewallDNS(vpnInterface string) error {
 		return fmt.Errorf("DNS protection is paused, resume before enabling firewall DNS")
 	}
 
-	// Check if iptables is available
+	dp.vpnInterface = vpnInterface
+
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.DNSProtectionClient{}
+		if err := client.Enable(app.DNSEnableParams{
+			VPNInterface: vpnInterface,
+			Servers:      dp.vpnDNS,
+			BlockDoT:     dp.config.BlockDNSOverTLS,
+			LeakBlocking: true,
+		}); err == nil {
+			dp.firewallMode = true
+			log.Printf("DNSProtection: Firewall DNS enabled via daemon (interface: %s)", vpnInterface)
+			_ = dp.SaveState()
+			return nil
+		}
+		log.Printf("DNSProtection: Daemon call failed, falling back to pkexec")
+	}
+
+	// Fallback: Check if iptables is available
 	if _, err := exec.LookPath("iptables"); err != nil {
 		return fmt.Errorf("iptables not available: %w", err)
 	}
-
-	dp.vpnInterface = vpnInterface
 
 	// Create our custom chain for DNS rules
 	if err := dp.runFirewallCmd("iptables", "-N", dp.firewallChain); err != nil {
@@ -765,7 +782,19 @@ func (dp *DNSProtection) DisableFirewallDNS() error {
 		return nil
 	}
 
-	// Remove our chain from OUTPUT
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.DNSProtectionClient{}
+		if err := client.Disable(); err == nil {
+			dp.firewallMode = false
+			log.Printf("DNSProtection: Firewall DNS disabled via daemon")
+			_ = dp.SaveState()
+			return nil
+		}
+		log.Printf("DNSProtection: Daemon disable failed, falling back to pkexec")
+	}
+
+	// Fallback: Remove our chain from OUTPUT
 	_ = dp.runFirewallCmd("iptables", "-D", "OUTPUT", "-j", dp.firewallChain)
 
 	// Flush and delete our chain

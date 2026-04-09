@@ -50,13 +50,26 @@ type LANGatewayConfig struct {
 func (c *Client) ConfigureLANGateway(ctx context.Context) error {
 	app.LogInfo("Configuring LAN Gateway for Tailscale exit node")
 
-	// Check if rules are already active - avoid unnecessary pkexec prompts
+	// Check if rules are already active - avoid unnecessary operations
 	if c.IsLANGatewayActive(ctx) {
 		app.LogInfo("[LAN Gateway] Rules already active, skipping configuration")
 		return nil
 	}
 
-	// Verify tailscale interface exists
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.LANGatewayClient{}
+		result, err := client.EnableWithContext(ctx, app.GatewayEnableParams{
+			// Let daemon auto-detect WiFi interface and LAN network
+		})
+		if err == nil {
+			app.LogInfo("✅ LAN Gateway configured via daemon for %s via %s", result.LANNetwork, result.WiFiInterface)
+			return nil
+		}
+		app.LogInfo("[LAN Gateway] Daemon call failed, falling back to pkexec: %v", err)
+	}
+
+	// Fallback: Verify tailscale interface exists
 	cmd := exec.CommandContext(ctx, "ip", "link", "show", TailscaleInterface)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("tailscale interface not found - is Tailscale running?")
@@ -115,7 +128,17 @@ echo "LAN Gateway configured successfully"
 func (c *Client) CleanupLANGateway(ctx context.Context) error {
 	app.LogInfo("Cleaning up LAN Gateway configuration")
 
-	// Detect network configuration
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.LANGatewayClient{}
+		if err := client.DisableWithContext(ctx); err == nil {
+			app.LogInfo("✅ LAN Gateway cleanup via daemon completed")
+			return nil
+		}
+		app.LogInfo("[LAN Gateway] Daemon cleanup failed, falling back to pkexec")
+	}
+
+	// Fallback: Detect network configuration
 	cfg, err := c.detectNetworkConfig(ctx)
 	if err != nil {
 		// If we can't detect config, log warning and skip cleanup

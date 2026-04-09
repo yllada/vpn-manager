@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"github.com/yllada/vpn-manager/app"
 )
 
 // IPv6Mode defines how IPv6 is handled during VPN connections.
@@ -119,6 +121,21 @@ func (ip6 *IPv6Protection) Enable(vpnInterface string, vpnSupportsIPv6 bool) err
 	}
 
 	if shouldBlock {
+		// Try daemon first (preferred method)
+		if app.IsDaemonAvailable() {
+			client := &app.IPv6ProtectionClient{}
+			if err := client.Enable(app.IPv6EnableParams{
+				Mode:        string(ip6.config.Mode),
+				BlockWebRTC: ip6.config.BlockWebRTC,
+			}); err == nil {
+				ip6.enabled = true
+				log.Printf("IPv6Protection: Enabled via daemon (mode: %s)", ip6.config.Mode)
+				return nil
+			}
+			log.Printf("IPv6Protection: Daemon call failed, falling back to pkexec")
+		}
+
+		// Fallback to direct blocking
 		if err := ip6.blockIPv6(); err != nil {
 			return err
 		}
@@ -137,7 +154,18 @@ func (ip6 *IPv6Protection) Disable() error {
 		return nil
 	}
 
-	// Restore original settings
+	// Try daemon first (preferred method)
+	if app.IsDaemonAvailable() {
+		client := &app.IPv6ProtectionClient{}
+		if err := client.Disable(); err == nil {
+			ip6.enabled = false
+			log.Printf("IPv6Protection: Disabled via daemon")
+			return nil
+		}
+		log.Printf("IPv6Protection: Daemon disable failed, falling back to pkexec")
+	}
+
+	// Fallback: Restore original settings
 	if err := ip6.restoreIPv6(); err != nil {
 		log.Printf("IPv6Protection: Warning: failed to restore settings: %v", err)
 	}
