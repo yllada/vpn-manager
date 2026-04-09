@@ -630,7 +630,14 @@ func writeStateFile(path string, data []byte) error {
 
 	// Fall back to pkexec for elevated write
 	// Write to a temp file in /tmp first, then move with pkexec
-	tmpPath := "/tmp/vpn-manager-ks-state.tmp"
+	// Security: Use random temp file name to prevent symlink attacks
+	tmpfile, err := os.CreateTemp("", "vpn-manager-ks-state-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpfile.Name()
+	tmpfile.Close() // Close immediately, we only need the path
+
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
@@ -944,11 +951,18 @@ func findVPNManagerBinary() string {
 // writeSystemdServiceFile writes a systemd service file using pkexec for privilege escalation.
 func writeSystemdServiceFile(path, content string) error {
 	// Write to temp file first
-	tmpPath := "/tmp/vpn-manager-service.tmp"
+	// Security: Use random temp file name to prevent symlink attacks
+	tmpfile, err := os.CreateTemp("", "vpn-manager-service-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpfile.Name()
+	tmpfile.Close() // Close immediately, we only need the path
+	defer func() { _ = os.Remove(tmpPath) }()
+
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	defer func() { _ = os.Remove(tmpPath) }()
 
 	// Move to final location with pkexec
 	cmd := exec.Command("pkexec", "mv", tmpPath, path)

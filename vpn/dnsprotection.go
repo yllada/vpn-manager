@@ -1038,7 +1038,14 @@ func writeDNSStateFile(path string, data []byte) error {
 	}
 
 	// Fall back to pkexec for elevated write
-	tmpPath := "/tmp/vpn-manager-dns-state.tmp"
+	// Security: Use random temp file name to prevent symlink attacks
+	tmpfile, err := os.CreateTemp("", "vpn-manager-dns-state-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpfile.Name()
+	tmpfile.Close() // Close immediately, we only need the path
+
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
