@@ -3,12 +3,12 @@
 # Script to package VPN Manager as .rpm (Fedora/RHEL/CentOS)
 # =============================================================================
 # Usage: 
-#   ./scripts/build-rpm.sh [version]              # Build from source
-#   ./scripts/build-rpm.sh [version] [binary]     # Use pre-built binary (faster)
+#   ./scripts/build-rpm.sh [version]                      # Build from source
+#   ./scripts/build-rpm.sh [version] [binary] [daemon]    # Use pre-built binaries
 #
 # Examples:
-#   ./scripts/build-rpm.sh 1.0.2                  # Compile and package
-#   ./scripts/build-rpm.sh 1.0.2 ./vpn-manager    # Package existing binary
+#   ./scripts/build-rpm.sh 1.0.2                          # Compile and package
+#   ./scripts/build-rpm.sh 1.0.2 ./vpn-manager ./vpn-managerd  # Package existing binaries
 #
 # Requirements:
 #   - rpm-build package (dnf install rpm-build)
@@ -18,7 +18,9 @@ set -euo pipefail
 
 VERSION="${1:-1.0.0}"
 PREBUILT_BINARY="${2:-}"
+PREBUILT_DAEMON="${3:-}"
 PKG_NAME="vpn-manager"
+DAEMON_NAME="vpn-managerd"
 ARCH="x86_64"
 RELEASE="1"
 
@@ -37,17 +39,9 @@ mkdir -p "${BUILD_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 SOURCE_DIR="${BUILD_DIR}/SOURCES/${PKG_NAME}-${VERSION}"
 mkdir -p "${SOURCE_DIR}"
 
-# Get or build the binary
-cd "${PROJECT_DIR}"
-
-if [[ -n "$PREBUILT_BINARY" && -f "$PREBUILT_BINARY" ]]; then
-    echo "📦 Using pre-built binary: $PREBUILT_BINARY"
-    cp "$PREBUILT_BINARY" "${SOURCE_DIR}/${PKG_NAME}"
-else
-    echo "📦 Compiling binary from source..."
-    
-    # Detect Go location
-    GO_BIN=$(command -v go 2>/dev/null || echo "")
+# Detect Go location (needed if building from source)
+find_go() {
+    local GO_BIN=$(command -v go 2>/dev/null || echo "")
     if [[ -z "$GO_BIN" ]]; then
         for path in /usr/local/go/bin/go /usr/bin/go /snap/bin/go ~/go/bin/go; do
             if [[ -x "$path" ]]; then
@@ -56,10 +50,23 @@ else
             fi
         done
     fi
+    echo "$GO_BIN"
+}
+
+# Get or build the binaries
+cd "${PROJECT_DIR}"
+
+# Build or copy main binary
+if [[ -n "$PREBUILT_BINARY" && -f "$PREBUILT_BINARY" ]]; then
+    echo "📦 Using pre-built binary: $PREBUILT_BINARY"
+    cp "$PREBUILT_BINARY" "${SOURCE_DIR}/${PKG_NAME}"
+else
+    echo "📦 Compiling main binary from source..."
     
+    GO_BIN=$(find_go)
     if [[ -z "$GO_BIN" || ! -x "$GO_BIN" ]]; then
         echo "❌ Error: Go not found. Install Go or provide pre-built binary."
-        echo "   Usage: $0 $VERSION /path/to/vpn-manager"
+        echo "   Usage: $0 $VERSION /path/to/vpn-manager /path/to/vpn-managerd"
         exit 1
     fi
     
@@ -69,7 +76,27 @@ else
         -trimpath \
         -ldflags="-s -w -X main.appVersion=${VERSION}" \
         -o "${SOURCE_DIR}/${PKG_NAME}" \
-        .
+        ./cmd/vpn-manager
+fi
+
+# Build or copy daemon binary
+if [[ -n "$PREBUILT_DAEMON" && -f "$PREBUILT_DAEMON" ]]; then
+    echo "📦 Using pre-built daemon: $PREBUILT_DAEMON"
+    cp "$PREBUILT_DAEMON" "${SOURCE_DIR}/${DAEMON_NAME}"
+else
+    echo "📦 Compiling daemon from source..."
+    
+    GO_BIN=$(find_go)
+    if [[ -z "$GO_BIN" || ! -x "$GO_BIN" ]]; then
+        echo "❌ Error: Go not found. Install Go or provide pre-built daemon."
+        exit 1
+    fi
+    
+    CGO_ENABLED=1 "$GO_BIN" build \
+        -trimpath \
+        -ldflags="-s -w" \
+        -o "${SOURCE_DIR}/${DAEMON_NAME}" \
+        ./cmd/vpn-managerd
 fi
 
 # Copy assets to source directory
@@ -79,6 +106,9 @@ cp "${PROJECT_DIR}/assets/icons/vpn-manager.svg" "${SOURCE_DIR}/"
 cp "${PROJECT_DIR}/README.md" "${SOURCE_DIR}/"
 cp "${PROJECT_DIR}/LICENSE" "${SOURCE_DIR}/" 2>/dev/null || \
     echo "MIT License" > "${SOURCE_DIR}/LICENSE"
+
+# Copy systemd service file
+cp "${PROJECT_DIR}/build/systemd/vpn-managerd.service" "${SOURCE_DIR}/"
 
 # Copy hicolor icons if they exist
 if [ -d "${PROJECT_DIR}/assets/icons/hicolor" ]; then
@@ -107,23 +137,35 @@ Source0:        %{name}-%{version}.tar.gz
 # Dependencies
 Requires:       gtk4 >= 4.10
 Requires:       libadwaita >= 1.3
-Requires:       (openvpn or openvpn3)
-Recommends:     polkit
+Requires:       systemd
+Recommends:     (openvpn or openvpn3)
+Recommends:     wireguard-tools
+Recommends:     tailscale
 
 # Build requirements (for rpmbuild itself)
 BuildRequires:  desktop-file-utils
+BuildRequires:  systemd-rpm-macros
 
 %description
-VPN Manager is a modern OpenVPN/WireGuard/Tailscale client with GTK4 interface.
-Features profile management, secure credential storage, system tray integration,
-traffic statistics, kill switch, and split tunneling support.
+VPN Manager is a modern VPN client with GTK4 interface supporting
+OpenVPN, WireGuard, and Tailscale. Features include profile management,
+secure credential storage, system tray integration, traffic statistics,
+kill switch, DNS/IPv6 leak protection, and split tunneling.
+
+Includes vpn-managerd daemon for privileged operations.
 
 %prep
 %setup -q
 
 %install
-# Binary
+# Main binary
 install -Dm755 %{name} %{buildroot}%{_bindir}/%{name}
+
+# Daemon binary
+install -Dm755 ${DAEMON_NAME} %{buildroot}%{_bindir}/${DAEMON_NAME}
+
+# Systemd service
+install -Dm644 ${DAEMON_NAME}.service %{buildroot}%{_unitdir}/${DAEMON_NAME}.service
 
 # Desktop file
 install -Dm644 %{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
@@ -151,6 +193,12 @@ if [ -x /usr/bin/update-desktop-database ]; then
     /usr/bin/update-desktop-database %{_datadir}/applications &>/dev/null || :
 fi
 
+# Enable and start daemon
+%systemd_post ${DAEMON_NAME}.service
+
+%preun
+%systemd_preun ${DAEMON_NAME}.service
+
 %postun
 # Update icon cache on uninstall
 if [ \$1 -eq 0 ]; then
@@ -159,10 +207,14 @@ if [ \$1 -eq 0 ]; then
     fi
 fi
 
+%systemd_postun_with_restart ${DAEMON_NAME}.service
+
 %files
 %license LICENSE
 %doc README.md
 %{_bindir}/%{name}
+%{_bindir}/${DAEMON_NAME}
+%{_unitdir}/${DAEMON_NAME}.service
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_docdir}/%{name}/
@@ -170,6 +222,7 @@ fi
 %changelog
 * $(date '+%a %b %d %Y') VPN Manager Team <yadian.llada@gmail.com> - ${VERSION}-${RELEASE}
 - Release ${VERSION}
+- Includes vpn-managerd daemon for privileged operations
 EOF
 
 # Build the RPM
@@ -195,6 +248,11 @@ if [[ -n "$RPM_FILE" && -f "$RPM_FILE" ]]; then
     
     echo ""
     echo "✅ Package created: ${PROJECT_DIR}/${FINAL_NAME}"
+    echo ""
+    echo "Contents:"
+    echo "  - /usr/bin/vpn-manager (GUI/CLI application)"
+    echo "  - /usr/bin/vpn-managerd (privileged operations daemon)"
+    echo "  - /usr/lib/systemd/system/vpn-managerd.service"
     echo ""
     echo "Para instalar:"
     echo "  sudo dnf install ./${FINAL_NAME}"

@@ -1,0 +1,36 @@
+[Unit]
+Description=VPN Manager Daemon - Privileged operations service
+Documentation=https://github.com/yllada/vpn-manager
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/vpn-managerd
+Restart=on-failure
+RestartSec=5
+
+# Run as root (required for iptables, sysctl, etc.)
+User=root
+Group=root
+
+# Security hardening (what we CAN restrict)
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=full
+
+# Cannot restrict these - daemon needs full access for firewall operations
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectControlGroups=false
+
+# Socket directory
+RuntimeDirectory=vpn-manager
+RuntimeDirectoryMode=0755
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpn-managerd
+
+[Install]
+WantedBy=multi-user.target

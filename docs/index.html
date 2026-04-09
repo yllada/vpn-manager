@@ -897,6 +897,9 @@
 <span class="text-gnome">cd</span> vpn-manager
 <span class="text-gnome">go</span> build -o vpn-manager .
 
+<span class="text-slate-400 dark:text-slate-500"># Install daemon (REQUIRED)</span>
+<span class="text-gnome">cd</span> build && <span class="text-gnome">sudo</span> ./install-daemon.sh && <span class="text-gnome">cd</span> ..
+
 <span class="text-slate-400 dark:text-slate-500"># Install system-wide (optional)</span>
 <span class="text-gnome">sudo</span> cp vpn-manager /usr/local/bin/
 <span class="text-gnome">sudo</span> cp assets/vpn-manager.desktop /usr/share/applications/
@@ -904,6 +907,9 @@
 <span class="text-slate-400 dark:text-slate-500"># Run</span>
 ./vpn-manager</code></pre>
             </div>
+            <p class="text-sm text-slate-500 mt-4 text-center">
+              <span class="text-amber-500 font-medium">⚠️ Important:</span> The daemon is required for VPN Manager to function.
+            </p>
           </div>
           
           <!-- Requirements note -->
@@ -930,6 +936,10 @@
               <li class="flex items-center gap-2">
                 <span class="w-1.5 h-1.5 bg-gnome rounded-full"></span>
                 Linux: Ubuntu 24.04+, Fedora 40+, or Arch
+              </li>
+              <li class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                <strong>vpn-managerd daemon</strong> (included in packages, required for operation)
               </li>
             </ul>
           </div>
@@ -1069,7 +1079,7 @@
               </svg>
             </summary>
             <div class="px-6 pb-6 pt-2 text-slate-600 dark:text-slate-300">
-              <p>VPN Manager runs as a <strong>normal user</strong> application. When elevated privileges are needed (like configuring network interfaces or the kill switch), it uses <code class="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-sm">pkexec</code> to request permission through your desktop's authentication dialog.</p>
+              <p>VPN Manager runs as a <strong>normal user</strong> application. Privileged operations (like configuring network interfaces or the kill switch) are handled by a separate <strong>daemon</strong> (<code class="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-sm">vpn-managerd</code>) that runs as a systemd service.</p>
               <p class="mt-3">This means:</p>
               <ul class="mt-2 space-y-1">
                 <li class="flex items-center gap-2">
@@ -1078,13 +1088,18 @@
                 </li>
                 <li class="flex items-center gap-2">
                   <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                  <span>Graphical password prompt when needed</span>
+                  <span>No password prompts during normal use</span>
                 </li>
                 <li class="flex items-center gap-2">
                   <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                  <span>Follows GNOME security best practices</span>
+                  <span>Secure privilege separation (daemon-client architecture)</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                  <span>Follows Linux security best practices</span>
                 </li>
               </ul>
+              <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">The daemon is installed automatically with the .deb/.rpm packages and handles all VPN connections, kill switch, DNS protection, and more.</p>
             </div>
           </details>
           

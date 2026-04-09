@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // Profile represents a WireGuard VPN profile.
@@ -266,8 +266,8 @@ func (p *Profile) Name() string {
 }
 
 // Type returns the provider type this profile belongs to.
-func (p *Profile) Type() app.VPNProviderType {
-	return app.ProviderWireGuard
+func (p *Profile) Type() vpntypes.VPNProviderType {
+	return vpntypes.ProviderWireGuard
 }
 
 // IsConnected returns true if this profile currently has an active connection.

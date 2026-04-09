@@ -14,7 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/daemon"
+	vpnerrors "github.com/yllada/vpn-manager/internal/errors"
+	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // Provider implements the VPNProvider interface for WireGuard connections.
@@ -56,16 +60,16 @@ func (c *Connection) GetStatus() ConnectionStatus {
 	return c.Status
 }
 
-// ConnectionStatus is an alias for app.ConnectionStatus.
-type ConnectionStatus = app.ConnectionStatus
+// ConnectionStatus is an alias for vpntypes.ConnectionStatus.
+type ConnectionStatus = vpntypes.ConnectionStatus
 
-// Status constants aliased from app package.
+// Status constants aliased from vpntypes package.
 const (
-	StatusDisconnected  = app.StatusDisconnected
-	StatusConnecting    = app.StatusConnecting
-	StatusConnected     = app.StatusConnected
-	StatusDisconnecting = app.StatusDisconnecting
-	StatusError         = app.StatusError
+	StatusDisconnected  = vpntypes.StatusDisconnected
+	StatusConnecting    = vpntypes.StatusConnecting
+	StatusConnected     = vpntypes.StatusConnected
+	StatusDisconnecting = vpntypes.StatusDisconnecting
+	StatusError         = vpntypes.StatusError
 )
 
 // Client wraps WireGuard CLI operations.
@@ -83,7 +87,7 @@ func NewProvider() *Provider {
 
 	// Ensure profile directory exists
 	if err := os.MkdirAll(profileDir, 0700); err != nil {
-		app.LogDebug("wireguard", "Failed to create profile directory: %v", err)
+		logger.LogDebug("wireguard", "Failed to create profile directory: %v", err)
 	}
 
 	client := &Client{}
@@ -109,13 +113,13 @@ func (c *Client) detectBinary() {
 		c.wgPath = path
 	}
 
-	// Check if we need sudo/pkexec
+	// Check if we're running as root (daemon handles privileged ops)
 	c.requiresSudo = os.Geteuid() != 0
 }
 
 // Type returns the provider type.
-func (p *Provider) Type() app.VPNProviderType {
-	return app.ProviderWireGuard
+func (p *Provider) Type() vpntypes.VPNProviderType {
+	return vpntypes.ProviderWireGuard
 }
 
 // Name returns the provider display name.
@@ -154,14 +158,14 @@ func (p *Provider) Version() (string, error) {
 }
 
 // Connect initiates a WireGuard connection.
-func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app.AuthInfo) error {
+func (p *Provider) Connect(ctx context.Context, profile vpntypes.VPNProfile, auth vpntypes.AuthInfo) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// Check for existing connection
 	if conn, exists := p.connections[profile.ID()]; exists {
 		if conn.Status == StatusConnected || conn.Status == StatusConnecting {
-			return app.ErrAlreadyConnected
+			return vpnerrors.ErrAlreadyConnected
 		}
 	}
 
@@ -184,7 +188,7 @@ func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app
 	p.connections[profile.ID()] = conn
 
 	// Start connection
-	app.SafeGoWithName("wireguard-run-connection", func() {
+	resilience.SafeGoWithName("wireguard-run-connection", func() {
 		p.runConnection(ctx, conn)
 	})
 
@@ -193,32 +197,33 @@ func (p *Provider) Connect(ctx context.Context, profile app.VPNProfile, auth app
 
 // runConnection manages the WireGuard connection lifecycle.
 func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
-	app.LogDebug("wireguard", "Connecting to %s...", conn.Profile.Name())
+	logger.LogDebug("wireguard", "Connecting to %s...", conn.Profile.Name())
 
 	configPath := conn.Profile.ConfigPath
 
+	// Use daemon for privileged operations (required)
+	if !daemon.IsDaemonAvailable() {
+		logger.LogDebug("wireguard", "Connection failed: vpn-managerd daemon is not running")
+		conn.mu.Lock()
+		conn.Status = StatusError
+		conn.LastError = "vpn-managerd daemon is not running"
+		conn.mu.Unlock()
+		return
+	}
+
+	client := &daemon.WireGuardClient{}
+
 	// First, try to bring down any existing interface with the same name
 	// (handles case where previous connection wasn't properly cleaned up)
-	var downCmd *exec.Cmd
-	if p.client.requiresSudo {
-		downCmd = exec.Command("pkexec", p.client.wgQuickPath, "down", configPath)
-	} else {
-		downCmd = exec.Command(p.client.wgQuickPath, "down", configPath)
-	}
-	// Ignore errors - interface might not exist
-	_ = downCmd.Run()
+	_ = client.DisconnectWithContext(ctx, conn.InterfaceID)
 
-	// Use wg-quick up
-	var cmd *exec.Cmd
-	if p.client.requiresSudo {
-		cmd = exec.Command("pkexec", p.client.wgQuickPath, "up", configPath)
-	} else {
-		cmd = exec.Command(p.client.wgQuickPath, "up", configPath)
-	}
-
-	output, err := cmd.CombinedOutput()
+	// Bring up the interface via daemon
+	result, err := client.ConnectWithContext(ctx, daemon.WireGuardConnectParams{
+		InterfaceName: conn.InterfaceID,
+		ConfigPath:    configPath,
+	})
 	if err != nil {
-		app.LogDebug("wireguard", "Connection failed: %v\n%s", err, output)
+		logger.LogDebug("wireguard", "Connection failed: %v", err)
 		conn.mu.Lock()
 		conn.Status = StatusError
 		conn.LastError = fmt.Sprintf("Failed to connect: %v", err)
@@ -226,22 +231,27 @@ func (p *Provider) runConnection(ctx context.Context, conn *Connection) {
 		return
 	}
 
-	app.LogDebug("wireguard", "Connected successfully to %s", conn.Profile.Name())
+	logger.LogDebug("wireguard", "Connected successfully to %s via daemon", conn.Profile.Name())
 
 	conn.mu.Lock()
 	conn.Status = StatusConnected
+	if result.IPAddress != "" {
+		conn.IPAddress = result.IPAddress
+	}
 	conn.mu.Unlock()
 
 	// Wait a moment for interface to be fully up
 	time.Sleep(500 * time.Millisecond)
 
-	// Extract IP address from interface
-	app.SafeGoWithName("wireguard-update-info", func() {
-		p.updateConnectionInfo(conn)
-	})
+	// Extract IP address from interface if not already set
+	if conn.IPAddress == "" {
+		resilience.SafeGoWithName("wireguard-update-info", func() {
+			p.updateConnectionInfo(conn)
+		})
+	}
 
 	// Monitor connection status
-	app.SafeGoWithName("wireguard-monitor", func() {
+	resilience.SafeGoWithName("wireguard-monitor", func() {
 		p.monitorConnection(ctx, conn)
 	})
 }
@@ -252,7 +262,7 @@ func (p *Provider) updateConnectionInfo(conn *Connection) {
 	cmd := exec.Command("ip", "-4", "addr", "show", conn.InterfaceID)
 	output, err := cmd.Output()
 	if err != nil {
-		app.LogDebug("wireguard", "Failed to get interface info: %v", err)
+		logger.LogDebug("wireguard", "Failed to get interface info: %v", err)
 		return
 	}
 
@@ -268,7 +278,7 @@ func (p *Provider) updateConnectionInfo(conn *Connection) {
 				conn.mu.Lock()
 				conn.IPAddress = ip
 				conn.mu.Unlock()
-				app.LogDebug("wireguard", "Interface %s has IP %s", conn.InterfaceID, ip)
+				logger.LogDebug("wireguard", "Interface %s has IP %s", conn.InterfaceID, ip)
 				return
 			}
 		}
@@ -305,7 +315,7 @@ func (p *Provider) updateStats(conn *Connection) {
 		conn.mu.RUnlock()
 
 		if status == StatusConnected {
-			app.LogDebug("wireguard", "Interface %s appears to be down", ifaceName)
+			logger.LogDebug("wireguard", "Interface %s appears to be down", ifaceName)
 			conn.mu.Lock()
 			conn.Status = StatusDisconnected
 			conn.mu.Unlock()
@@ -335,7 +345,7 @@ func (p *Provider) updateStats(conn *Connection) {
 }
 
 // Disconnect terminates a WireGuard connection.
-func (p *Provider) Disconnect(ctx context.Context, profile app.VPNProfile) error {
+func (p *Provider) Disconnect(ctx context.Context, profile vpntypes.VPNProfile) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -350,7 +360,7 @@ func (p *Provider) Disconnect(ctx context.Context, profile app.VPNProfile) error
 
 	conn, exists := p.connections[profile.ID()]
 	if !exists {
-		return app.ErrNotConnected
+		return vpnerrors.ErrNotConnected
 	}
 
 	p.disconnectOne(conn)
@@ -369,35 +379,30 @@ func (p *Provider) disconnectOne(conn *Connection) {
 		close(conn.stopChan)
 	})
 
-	// Use wg-quick down
-	var cmd *exec.Cmd
-	configPath := conn.Profile.ConfigPath
-
-	if p.client.requiresSudo {
-		cmd = exec.Command("pkexec", p.client.wgQuickPath, "down", configPath)
+	// Use daemon for privileged operations
+	if daemon.IsDaemonAvailable() {
+		client := &daemon.WireGuardClient{}
+		if err := client.Disconnect(conn.InterfaceID); err != nil {
+			logger.LogDebug("wireguard", "Disconnect warning: %v", err)
+		}
 	} else {
-		cmd = exec.Command(p.client.wgQuickPath, "down", configPath)
-	}
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		app.LogDebug("wireguard", "Disconnect warning: %v\n%s", err, output)
+		logger.LogDebug("wireguard", "Disconnect warning: daemon not available")
 	}
 
 	conn.mu.Lock()
 	conn.Status = StatusDisconnected
 	conn.mu.Unlock()
 
-	app.LogDebug("wireguard", "Disconnected from %s", conn.Profile.Name())
+	logger.LogDebug("wireguard", "Disconnected from %s", conn.Profile.Name())
 }
 
 // Status returns the provider status.
-func (p *Provider) Status(ctx context.Context) (*app.ProviderStatus, error) {
+func (p *Provider) Status(ctx context.Context) (*vpntypes.ProviderStatus, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	status := &app.ProviderStatus{
-		Provider:  app.ProviderWireGuard,
+	status := &vpntypes.ProviderStatus{
+		Provider:  vpntypes.ProviderWireGuard,
 		Connected: false,
 	}
 
@@ -416,7 +421,7 @@ func (p *Provider) Status(ctx context.Context) (*app.ProviderStatus, error) {
 			status.Connected = true
 			status.BackendState = "Connected"
 			status.CurrentProfile = profileID
-			status.ConnectionInfo = &app.ConnectionInfo{
+			status.ConnectionInfo = &vpntypes.ConnectionInfo{
 				LocalIP:        localIP,
 				RemoteIP:       remoteIP,
 				ConnectedSince: startTime,
@@ -439,13 +444,13 @@ func (p *Provider) Status(ctx context.Context) (*app.ProviderStatus, error) {
 }
 
 // GetProfiles returns all WireGuard profiles.
-func (p *Provider) GetProfiles(ctx context.Context) ([]app.VPNProfile, error) {
+func (p *Provider) GetProfiles(ctx context.Context) ([]vpntypes.VPNProfile, error) {
 	profiles, err := p.LoadProfiles()
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]app.VPNProfile, len(profiles))
+	result := make([]vpntypes.VPNProfile, len(profiles))
 	for i, prof := range profiles {
 		result[i] = prof
 	}
@@ -472,7 +477,7 @@ func (p *Provider) LoadProfiles() ([]*Profile, error) {
 		configPath := filepath.Join(p.profileDir, entry.Name())
 		profile, err := LoadProfile(configPath)
 		if err != nil {
-			app.LogDebug("wireguard", "Failed to load profile %s: %v", entry.Name(), err)
+			logger.LogDebug("wireguard", "Failed to load profile %s: %v", entry.Name(), err)
 			continue
 		}
 
@@ -523,7 +528,7 @@ func (p *Provider) ImportProfile(configPath string) (*Profile, error) {
 	profile.ConfigPath = destPath
 	profile.InterfaceName = strings.TrimSuffix(safeName, ".conf")
 
-	app.LogDebug("wireguard", "Imported profile %s (sanitized: %s)", profile.Name(), safeName)
+	logger.LogDebug("wireguard", "Imported profile %s (sanitized: %s)", profile.Name(), safeName)
 	return profile, nil
 }
 
@@ -574,7 +579,7 @@ func (p *Provider) DeleteProfile(profileID string) error {
 			}
 			// Delete metadata file (ignore error if doesn't exist)
 			_ = os.Remove(profile.metadataPath())
-			app.LogDebug("wireguard", "Deleted profile %s", profile.Name())
+			logger.LogDebug("wireguard", "Deleted profile %s", profile.Name())
 			return nil
 		}
 	}
@@ -583,13 +588,13 @@ func (p *Provider) DeleteProfile(profileID string) error {
 }
 
 // SupportsFeature checks if the provider supports a specific feature.
-func (p *Provider) SupportsFeature(feature app.ProviderFeature) bool {
+func (p *Provider) SupportsFeature(feature vpntypes.ProviderFeature) bool {
 	switch feature {
-	case app.FeatureKillSwitch:
+	case vpntypes.FeatureKillSwitch:
 		return true // WireGuard can use kill switch
-	case app.FeatureAutoConnect:
+	case vpntypes.FeatureAutoConnect:
 		return true
-	case app.FeatureSplitTunnel:
+	case vpntypes.FeatureSplitTunnel:
 		return true // WireGuard supports split tunneling via AllowedIPs
 	default:
 		return false
@@ -609,13 +614,22 @@ func (p *Provider) ListActiveInterfaces() ([]string, error) {
 		return nil, fmt.Errorf("wg command not found")
 	}
 
-	var cmd *exec.Cmd
-	if p.client.requiresSudo {
-		cmd = exec.Command("pkexec", p.client.wgPath, "show", "interfaces")
-	} else {
-		cmd = exec.Command(p.client.wgPath, "show", "interfaces")
+	// Use daemon to list interfaces (it has root access)
+	if daemon.IsDaemonAvailable() {
+		client := &daemon.WireGuardClient{}
+		results, err := client.List()
+		if err != nil {
+			return nil, err
+		}
+		interfaces := make([]string, len(results))
+		for i, r := range results {
+			interfaces[i] = r.InterfaceName
+		}
+		return interfaces, nil
 	}
 
+	// Fallback: try without elevated privileges (may fail)
+	cmd := exec.Command(p.client.wgPath, "show", "interfaces")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err

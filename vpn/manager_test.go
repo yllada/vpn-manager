@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yllada/vpn-manager/app"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/vpn/profile"
 )
 
 func TestNewManager(t *testing.T) {
@@ -204,29 +205,29 @@ func TestNormalizeNetworkRoute_IPv6(t *testing.T) {
 	}
 }
 
-// mockProvider implements app.VPNProvider for testing
+// mockProvider implements vpntypes.VPNProvider for testing
 type mockProvider struct {
-	providerType app.VPNProviderType
+	providerType vpntypes.VPNProviderType
 	name         string
 }
 
-func (m *mockProvider) Type() app.VPNProviderType { return m.providerType }
-func (m *mockProvider) Name() string              { return m.name }
-func (m *mockProvider) IsAvailable() bool         { return true }
-func (m *mockProvider) Version() (string, error)  { return "1.0.0", nil }
-func (m *mockProvider) Connect(ctx context.Context, profile app.VPNProfile, auth app.AuthInfo) error {
+func (m *mockProvider) Type() vpntypes.VPNProviderType { return m.providerType }
+func (m *mockProvider) Name() string                   { return m.name }
+func (m *mockProvider) IsAvailable() bool              { return true }
+func (m *mockProvider) Version() (string, error)       { return "1.0.0", nil }
+func (m *mockProvider) Connect(ctx context.Context, profile vpntypes.VPNProfile, auth vpntypes.AuthInfo) error {
 	return nil
 }
-func (m *mockProvider) Disconnect(ctx context.Context, profile app.VPNProfile) error {
+func (m *mockProvider) Disconnect(ctx context.Context, profile vpntypes.VPNProfile) error {
 	return nil
 }
-func (m *mockProvider) Status(ctx context.Context) (*app.ProviderStatus, error) {
-	return &app.ProviderStatus{Provider: m.providerType}, nil
+func (m *mockProvider) Status(ctx context.Context) (*vpntypes.ProviderStatus, error) {
+	return &vpntypes.ProviderStatus{Provider: m.providerType}, nil
 }
-func (m *mockProvider) GetProfiles(ctx context.Context) ([]app.VPNProfile, error) {
+func (m *mockProvider) GetProfiles(ctx context.Context) ([]vpntypes.VPNProfile, error) {
 	return nil, nil
 }
-func (m *mockProvider) SupportsFeature(f app.ProviderFeature) bool {
+func (m *mockProvider) SupportsFeature(f vpntypes.ProviderFeature) bool {
 	return false
 }
 
@@ -237,13 +238,13 @@ func TestManager_RegisterAndGetProvider(t *testing.T) {
 	}
 
 	mock := &mockProvider{
-		providerType: app.VPNProviderType("test"),
+		providerType: vpntypes.VPNProviderType("test"),
 		name:         "Test Provider",
 	}
 
 	m.RegisterProvider(mock)
 
-	provider, ok := m.GetProvider(app.VPNProviderType("test"))
+	provider, ok := m.GetProvider(vpntypes.VPNProviderType("test"))
 	if !ok {
 		t.Error("GetProvider should find registered provider")
 	}
@@ -258,7 +259,7 @@ func TestManager_GetProviderNotFound(t *testing.T) {
 		t.Fatalf("NewManager failed: %v", err)
 	}
 
-	_, ok := m.GetProvider(app.VPNProviderType("nonexistent"))
+	_, ok := m.GetProvider(vpntypes.VPNProviderType("nonexistent"))
 	if ok {
 		t.Error("GetProvider should return false for unregistered provider")
 	}
@@ -280,7 +281,7 @@ func TestManager_AvailableProviders(t *testing.T) {
 
 func TestConnection_Fields(t *testing.T) {
 	conn := &Connection{
-		Profile: &Profile{
+		Profile: &profile.Profile{
 			ID:   "test-profile",
 			Name: "Test",
 		},

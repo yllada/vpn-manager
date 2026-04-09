@@ -20,6 +20,11 @@ bin/
 *.AppImage
 *.flatpak
 build/
+# Daemon installation scripts (keep these)
+!build/install-daemon.sh
+!build/uninstall-daemon.sh
+!build/systemd/
+!build/systemd/**
 
 # =============================================================================
 # Archivos de prueba y cobertura

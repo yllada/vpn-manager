@@ -1,44 +1,13 @@
 // Package vpn provides VPN connection management functionality.
-// This file contains VPN-specific constants for health checks, DNS, and networking.
+// This file contains VPN-specific constants for DNS, networking, firewall, etc.
+// Health check constants are in vpn/health/constants.go.
 package vpn
 
 import "time"
 
 // =============================================================================
-// HEALTH CHECK CONSTANTS
-// =============================================================================
-
-const (
-	// DefaultHealthCheckInterval is how often to check connection health.
-	DefaultHealthCheckInterval = 30 * time.Second
-
-	// DefaultHealthCheckTimeout is the timeout for individual health check probes.
-	DefaultHealthCheckTimeout = 5 * time.Second
-
-	// DefaultHealthFailureThreshold is consecutive failures before marking unhealthy.
-	DefaultHealthFailureThreshold = 3
-
-	// DefaultMaxReconnectAttempts is the maximum reconnection attempts (0 = unlimited).
-	DefaultMaxReconnectAttempts = 5
-
-	// DefaultReconnectDelay is the delay before attempting to reconnect.
-	DefaultReconnectDelay = 5 * time.Second
-
-	// PostDisconnectDelay is the delay after disconnect before proceeding.
-	PostDisconnectDelay = 1 * time.Second
-)
-
-// =============================================================================
 // DNS SERVERS
 // =============================================================================
-
-// DefaultTestHosts are DNS servers used for health check connectivity tests.
-// Format: "IP:port" for TCP connection testing.
-var DefaultTestHosts = []string{
-	"8.8.8.8:53",        // Google DNS
-	"1.1.1.1:53",        // Cloudflare DNS
-	"208.67.222.222:53", // OpenDNS
-}
 
 const (
 	// DefaultVPNGatewayDNS is the typical VPN gateway DNS server.

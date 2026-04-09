@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // GetConnection gets information about a connection
@@ -40,11 +40,11 @@ func (m *Manager) ListConnections() []*Connection {
 func (m *Manager) applySplitTunnelRoutes(conn *Connection) {
 	profile := conn.Profile
 	if !profile.SplitTunnelEnabled || len(profile.SplitTunnelRoutes) == 0 {
-		app.LogDebug("vpn", "Split tunneling not configured or no routes")
+		logger.LogDebug("vpn", "Split tunneling not configured or no routes")
 		return
 	}
 
-	app.LogDebug("vpn", "Applying Split Tunneling configuration (mode: %s)", profile.SplitTunnelMode)
+	logger.LogDebug("vpn", "Applying Split Tunneling configuration (mode: %s)", profile.SplitTunnelMode)
 
 	// Wait for VPN interface to be ready (with retries)
 	var tunInterface string
@@ -53,21 +53,21 @@ func (m *Manager) applySplitTunnelRoutes(conn *Connection) {
 		if tunInterface != "" {
 			break
 		}
-		app.LogDebug("vpn", "Waiting for tun interface... attempt %d/10", i+1)
+		logger.LogDebug("vpn", "Waiting for tun interface... attempt %d/10", i+1)
 		time.Sleep(500 * time.Millisecond)
 	}
 	if tunInterface == "" {
-		app.LogError("vpn", "Could not detect tun interface after 5 seconds")
+		logger.LogError("vpn", "Could not detect tun interface after 5 seconds")
 		return
 	}
-	app.LogDebug("vpn", "VPN interface detected: %s", tunInterface)
+	logger.LogDebug("vpn", "VPN interface detected: %s", tunInterface)
 
 	// Wait a bit more for routes to be configured
 	time.Sleep(1 * time.Second)
 
 	// Get VPN gateway (tunnel peer IP)
 	vpnGateway := m.getVPNGateway(tunInterface)
-	app.LogDebug("vpn", "VPN Gateway: %s", vpnGateway)
+	logger.LogDebug("vpn", "VPN Gateway: %s", vpnGateway)
 
 	switch profile.SplitTunnelMode {
 	case "include":
@@ -77,7 +77,7 @@ func (m *Manager) applySplitTunnelRoutes(conn *Connection) {
 		// Everything goes through VPN except specified routes
 		m.applySplitTunnelExcludeMode(conn, tunInterface, vpnGateway)
 	default:
-		app.LogError("vpn", "Unknown split tunneling mode: %s", profile.SplitTunnelMode)
+		logger.LogError("vpn", "Unknown split tunneling mode: %s", profile.SplitTunnelMode)
 	}
 }
 
@@ -95,7 +95,7 @@ func (m *Manager) detectTunInterface() string {
 				if len(fields) >= 2 {
 					name := strings.TrimSuffix(fields[1], ":")
 					if strings.HasPrefix(name, "tun") {
-						app.LogDebug("vpn", "Detected interface: %s", name)
+						logger.LogDebug("vpn", "Detected interface: %s", name)
 						return name
 					}
 				}
@@ -108,7 +108,7 @@ func (m *Manager) detectTunInterface() string {
 	if err == nil {
 		for _, f := range files {
 			if strings.HasPrefix(f.Name(), "tun") {
-				app.LogDebug("vpn", "Detected interface via sysfs: %s", f.Name())
+				logger.LogDebug("vpn", "Detected interface via sysfs: %s", f.Name())
 				return f.Name()
 			}
 		}
@@ -145,7 +145,7 @@ func (m *Manager) getVPNGateway(tunInterface string) string {
 	}
 
 	outputStr := string(output)
-	app.LogDebug("vpn", "Interface info %s:\n%s", tunInterface, outputStr)
+	logger.LogDebug("vpn", "Interface info %s:\n%s", tunInterface, outputStr)
 
 	lines := strings.Split(outputStr, "\n")
 	for _, line := range lines {
@@ -156,7 +156,7 @@ func (m *Manager) getVPNGateway(tunInterface string) string {
 				for i, field := range fields {
 					if field == "peer" && i+1 < len(fields) {
 						peerIP := strings.Split(fields[i+1], "/")[0]
-						app.LogDebug("vpn", "Peer IP found: %s", peerIP)
+						logger.LogDebug("vpn", "Peer IP found: %s", peerIP)
 						return peerIP
 					}
 				}
@@ -180,7 +180,7 @@ func (m *Manager) getDefaultGateway() string {
 	cmd := exec.Command("ip", "route", "show", "default")
 	output, err := cmd.Output()
 	if err != nil {
-		app.LogWarn("vpn", "failed to get default gateway: %v", err)
+		logger.LogWarn("vpn", "failed to get default gateway: %v", err)
 		return ""
 	}
 
@@ -208,7 +208,7 @@ func (m *Manager) detectSystemDNS() string {
 	// Fall back to parsing resolv.conf
 	data, err := os.ReadFile("/etc/resolv.conf")
 	if err != nil {
-		app.LogDebug("vpn", "failed to read resolv.conf: %v", err)
+		logger.LogDebug("vpn", "failed to read resolv.conf: %v", err)
 		return "127.0.0.53" // Default fallback
 	}
 
@@ -233,12 +233,12 @@ func (m *Manager) detectSystemDNS() string {
 // applySplitTunnelIncludeMode configures "include" mode where only listed routes go through VPN
 func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vpnGateway string) {
 	profile := conn.Profile
-	app.LogDebug("vpn", "Configuring INCLUDE mode - Only specified routes will use VPN")
+	logger.LogDebug("vpn", "Configuring INCLUDE mode - Only specified routes will use VPN")
 
 	// Check current routes
 	cmd := exec.Command("ip", "route", "show")
 	output, _ := cmd.Output()
-	app.LogDebug("vpn", "Current routes:\n%s", string(output))
+	logger.LogDebug("vpn", "Current routes:\n%s", string(output))
 
 	for _, route := range profile.SplitTunnelRoutes {
 		route = strings.TrimSpace(route)
@@ -249,7 +249,7 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 		// Normalize the route: convert "192.168.1.1/24" to "192.168.1.0/24"
 		normalizedRoute := normalizeNetworkRoute(route)
 		if normalizedRoute == "" {
-			app.LogDebug("vpn", "Invalid route, ignoring: %s", route)
+			logger.LogDebug("vpn", "Invalid route, ignoring: %s", route)
 			continue
 		}
 
@@ -264,17 +264,17 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 
 		output, err := cmdRoute.CombinedOutput()
 		if err != nil {
-			app.LogDebug("vpn", "Error adding route %s: %v - %s", normalizedRoute, err, string(output))
+			logger.LogDebug("vpn", "Error adding route %s: %v - %s", normalizedRoute, err, string(output))
 			// Try without "via"
 			cmdRoute = exec.Command("ip", "route", "replace", normalizedRoute, "dev", tunInterface)
 			output, err = cmdRoute.CombinedOutput()
 			if err != nil {
-				app.LogDebug("vpn", "Error (retry) adding route %s: %v - %s", normalizedRoute, err, string(output))
+				logger.LogDebug("vpn", "Error (retry) adding route %s: %v - %s", normalizedRoute, err, string(output))
 			} else {
-				app.LogDebug("vpn", "Route added (without via): %s -> %s", normalizedRoute, tunInterface)
+				logger.LogDebug("vpn", "Route added (without via): %s -> %s", normalizedRoute, tunInterface)
 			}
 		} else {
-			app.LogDebug("vpn", "Route added: %s -> VPN (%s)", normalizedRoute, tunInterface)
+			logger.LogDebug("vpn", "Route added: %s -> VPN (%s)", normalizedRoute, tunInterface)
 		}
 	}
 
@@ -282,31 +282,31 @@ func (m *Manager) applySplitTunnelIncludeMode(conn *Connection, tunInterface, vp
 	cmd = exec.Command("ip", "route", "show")
 	routeOutput, routeErr := cmd.Output()
 	if routeErr != nil {
-		app.LogWarn("vpn", "Failed to get routes: %v", routeErr)
+		logger.LogWarn("vpn", "Failed to get routes: %v", routeErr)
 	}
-	app.LogDebug("vpn", "Routes after split tunneling:\n%s", string(routeOutput))
+	logger.LogDebug("vpn", "Routes after split tunneling:\n%s", string(routeOutput))
 }
 
 // applySplitTunnelExcludeMode configures "exclude" mode where everything goes through VPN except listed routes
 func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, _, _ string) {
 	profile := conn.Profile
-	app.LogDebug("vpn", "Configuring EXCLUDE mode - Everything will go through VPN except specified routes")
+	logger.LogDebug("vpn", "Configuring EXCLUDE mode - Everything will go through VPN except specified routes")
 
 	// Get original default gateway (before VPN)
 	originalGateway := m.getOriginalGateway()
 	if originalGateway == "" {
-		app.LogError("vpn", "Could not get original gateway")
+		logger.LogError("vpn", "Could not get original gateway")
 		return
 	}
 
 	originalInterface := m.getOriginalInterface()
-	app.LogDebug("vpn", "Original gateway: %s via %s", originalGateway, originalInterface)
+	logger.LogDebug("vpn", "Original gateway: %s via %s", originalGateway, originalInterface)
 
 	for _, route := range profile.SplitTunnelRoutes {
 		// Normalize the route
 		normalizedRoute := normalizeNetworkRoute(route)
 		if normalizedRoute == "" {
-			app.LogDebug("vpn", "Invalid route, ignoring: %s", route)
+			logger.LogDebug("vpn", "Invalid route, ignoring: %s", route)
 			continue
 		}
 
@@ -318,12 +318,12 @@ func (m *Manager) applySplitTunnelExcludeMode(conn *Connection, _, _ string) {
 			cmd = exec.Command("ip", "route", "replace", normalizedRoute, "via", originalGateway, "dev", originalInterface)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				app.LogDebug("vpn", "Error adding bypass route %s: %v - %s", normalizedRoute, err, string(output))
+				logger.LogDebug("vpn", "Error adding bypass route %s: %v - %s", normalizedRoute, err, string(output))
 			} else {
-				app.LogDebug("vpn", "Bypass route added: %s -> Local network", normalizedRoute)
+				logger.LogDebug("vpn", "Bypass route added: %s -> Local network", normalizedRoute)
 			}
 		} else {
-			app.LogDebug("vpn", "Bypass route added: %s -> Local network", normalizedRoute)
+			logger.LogDebug("vpn", "Bypass route added: %s -> Local network", normalizedRoute)
 		}
 	}
 }
@@ -403,7 +403,7 @@ func parseRouteForOpenVPN(route string) (network, netmask string) {
 	if strings.Contains(route, "/") {
 		_, ipNet, err := net.ParseCIDR(route)
 		if err != nil {
-			app.LogDebug("vpn", "Error parsing CIDR %s: %v", route, err)
+			logger.LogDebug("vpn", "Error parsing CIDR %s: %v", route, err)
 			return "", ""
 		}
 		// Convert mask to decimal format
@@ -418,7 +418,7 @@ func parseRouteForOpenVPN(route string) (network, netmask string) {
 		return route, "255.255.255.255"
 	}
 
-	app.LogDebug("vpn", "Invalid route: %s", route)
+	logger.LogDebug("vpn", "Invalid route: %s", route)
 	return "", ""
 }
 
@@ -435,7 +435,7 @@ func normalizeNetworkRoute(route string) string {
 	if strings.Contains(route, "/") {
 		_, ipNet, err := net.ParseCIDR(route)
 		if err != nil {
-			app.LogDebug("vpn", "Error parsing CIDR %s: %v", route, err)
+			logger.LogDebug("vpn", "Error parsing CIDR %s: %v", route, err)
 			return ""
 		}
 		// net.ParseCIDR returns the correct network address in ipNet.IP
@@ -450,6 +450,6 @@ func normalizeNetworkRoute(route string) string {
 		return route + "/32"
 	}
 
-	app.LogDebug("vpn", "Invalid route: %s", route)
+	logger.LogDebug("vpn", "Invalid route: %s", route)
 	return ""
 }
