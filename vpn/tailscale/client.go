@@ -213,6 +213,9 @@ func (c *Client) upWithPkexec(ctx context.Context, extraArgs []string) error {
 
 // Down disconnects from Tailscale.
 func (c *Client) Down(ctx context.Context) error {
+	// Clean up LAN Gateway rules before disconnecting
+	_ = c.CleanupLANGateway(ctx)
+
 	cmd := exec.CommandContext(ctx, c.binaryPath, "down")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -231,6 +234,9 @@ func (c *Client) Down(ctx context.Context) error {
 
 // downWithPkexec attempts tailscale down using pkexec for elevated privileges.
 func (c *Client) downWithPkexec(ctx context.Context) error {
+	// Clean up LAN Gateway rules before disconnecting
+	_ = c.CleanupLANGateway(ctx)
+
 	cmd := exec.CommandContext(ctx, "pkexec", c.binaryPath, "down")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

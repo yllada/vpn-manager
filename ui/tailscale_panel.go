@@ -45,6 +45,10 @@ type TailscalePanel struct {
 	cachedExitNodes  []*tailscale.PeerStatus // Cached for popover rebuilds
 	lastExitNodesSig string
 
+	// LAN Gateway status indicator
+	lanGatewayRow  *adw.ActionRow
+	lanGatewayIcon *gtk.Image
+
 	// Devices section (non-exit-node peers)
 	devicesGroup    *adw.PreferencesGroup
 	devicesEmptyRow *adw.ActionRow
@@ -308,6 +312,30 @@ func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	tp.exitNodeRow.SetActivatableWidget(changeBtn)
 
 	tp.exitNodeGroup.Add(tp.exitNodeRow)
+
+	// LAN Gateway status indicator (initially hidden)
+	tp.lanGatewayRow = adw.NewActionRow()
+	tp.lanGatewayRow.SetTitle("LAN Gateway Active")
+	tp.lanGatewayRow.SetSubtitle("Other devices can use this machine as gateway")
+	tp.lanGatewayRow.SetVisible(false)
+
+	// Prefix: Network workgroup icon (represents multiple devices)
+	tp.lanGatewayIcon = gtk.NewImage()
+	tp.lanGatewayIcon.SetFromIconName("network-workgroup-symbolic")
+	tp.lanGatewayIcon.SetPixelSize(16)
+	tp.lanGatewayRow.AddPrefix(tp.lanGatewayIcon)
+
+	// Help button suffix
+	helpBtn := gtk.NewButton()
+	helpBtn.SetLabel("How to connect")
+	helpBtn.AddCSSClass("flat")
+	helpBtn.SetVAlign(gtk.AlignCenter)
+	helpBtn.ConnectClicked(func() {
+		tp.showLANGatewayHelpDialog()
+	})
+	tp.lanGatewayRow.AddSuffix(helpBtn)
+
+	tp.exitNodeGroup.Add(tp.lanGatewayRow)
 	contentBox.Append(tp.exitNodeGroup)
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -985,12 +1013,17 @@ func (tp *TailscalePanel) updatePeers() {
 
 // updateExitNodesSection updates the Exit Node selector row with current state.
 func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStatus) {
-	// Build signature for exit nodes (includes alias so changes trigger update)
+	// Build signature for exit nodes (includes alias AND LAN Gateway setting so changes trigger update)
 	var sigParts []string
 	for _, peer := range exitNodes {
 		alias := tp.mainWindow.app.GetConfig().Tailscale.GetExitNodeAlias(peer.ID)
 		sigParts = append(sigParts, fmt.Sprintf("%s:%v:%v:%s", peer.ID, peer.Online, peer.ExitNode, alias))
 	}
+
+	// Include LAN Gateway checkbox state in signature
+	lanGatewayEnabled := tp.mainWindow.app.GetConfig().Tailscale.ExitNodeAllowLANAccess
+	sigParts = append(sigParts, fmt.Sprintf("lan_gateway:%v", lanGatewayEnabled))
+
 	sort.Strings(sigParts)
 	newSig := strings.Join(sigParts, "|")
 
@@ -1033,18 +1066,100 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 			tp.exitNodeRow.SetTitle(activeNode.HostName)
 			tp.exitNodeRow.SetSubtitle("Active")
 		}
-	} else if len(exitNodes) == 0 {
-		tp.exitNodeRow.SetTitle("No Exit Nodes")
-		tp.exitNodeRow.SetSubtitle("No gateways available")
-	} else {
-		onlineCount := 0
-		for _, peer := range exitNodes {
-			if peer.Online {
-				onlineCount++
+
+		// Show LAN Gateway indicator if enabled in config
+		if tp.mainWindow.app.GetConfig().Tailscale.ExitNodeAllowLANAccess {
+			app.LogInfo("[LAN Gateway] Checkbox is enabled, checking rules status...")
+			localIP := tp.getLocalIP()
+
+			// Check if rules are actually active
+			rulesActive := tp.checkLANGatewayRulesActive()
+			app.LogInfo("[LAN Gateway] Rules active: %v", rulesActive)
+
+			if rulesActive {
+				tp.lanGatewayIcon.SetFromIconName("network-workgroup-symbolic")
+				tp.lanGatewayRow.SetTitle("LAN Gateway Active")
+				if localIP != "" {
+					tp.lanGatewayRow.SetSubtitle(fmt.Sprintf("Other devices can use %s as gateway", localIP))
+				} else {
+					tp.lanGatewayRow.SetSubtitle("Rules configured successfully")
+				}
+			} else {
+				// Rules should be active but aren't - try to configure them
+				app.LogInfo("[LAN Gateway] Rules not active, triggering auto-configuration...")
+				tp.lanGatewayIcon.SetFromIconName("dialog-warning-symbolic")
+				tp.lanGatewayRow.SetTitle("LAN Gateway Inactive")
+				tp.lanGatewayRow.SetSubtitle("Configuring network rules...")
+
+				// Configure rules in background
+				app.SafeGoWithName("tailscale-lan-gateway-auto-config", func() {
+					ctx := context.Background()
+					if err := tp.provider.ConfigureLANGateway(ctx); err != nil {
+						app.LogWarn("[LAN Gateway] Auto-configuration failed: %v", err)
+						glib.IdleAdd(func() {
+							tp.lanGatewayIcon.SetFromIconName("dialog-error-symbolic")
+							tp.lanGatewayRow.SetTitle("LAN Gateway Error")
+							tp.lanGatewayRow.SetSubtitle("Failed to configure - see logs")
+							tp.mainWindow.ShowToast("LAN Gateway setup failed - check logs", 5)
+						})
+					} else {
+						app.LogInfo("[LAN Gateway] Auto-configured successfully")
+						glib.IdleAdd(func() {
+							// Update UI directly instead of calling updateStatus()
+							localIP := tp.getLocalIP()
+							tp.lanGatewayIcon.SetFromIconName("network-workgroup-symbolic")
+							tp.lanGatewayRow.SetTitle("LAN Gateway Active")
+							if localIP != "" {
+								tp.lanGatewayRow.SetSubtitle(fmt.Sprintf("Other devices can use %s as gateway", localIP))
+							} else {
+								tp.lanGatewayRow.SetSubtitle("Rules configured successfully")
+							}
+							tp.mainWindow.ShowToast("LAN Gateway activated successfully", 3)
+						})
+					}
+				})
 			}
+			tp.lanGatewayRow.SetVisible(true)
+		} else {
+			// Checkbox disabled - cleanup rules if they exist
+			app.LogInfo("[LAN Gateway] Checkbox is disabled, cleaning up rules...")
+
+			// Check if rules are active before attempting cleanup
+			if tp.checkLANGatewayRulesActive() {
+				app.LogInfo("[LAN Gateway] Rules are active, triggering cleanup...")
+
+				// Cleanup rules in background
+				app.SafeGoWithName("tailscale-lan-gateway-cleanup", func() {
+					ctx := context.Background()
+					if err := tp.provider.CleanupLANGateway(ctx); err != nil {
+						app.LogWarn("[LAN Gateway] Failed to cleanup: %v", err)
+					} else {
+						app.LogInfo("[LAN Gateway] Cleanup completed successfully")
+					}
+				})
+			} else {
+				app.LogInfo("[LAN Gateway] No active rules found, skipping cleanup")
+			}
+
+			tp.lanGatewayRow.SetVisible(false)
 		}
-		tp.exitNodeRow.SetTitle("None")
-		tp.exitNodeRow.SetSubtitle(fmt.Sprintf("Direct connection • %d available", onlineCount))
+	} else {
+		// No active exit node - hide LAN Gateway indicator
+		tp.lanGatewayRow.SetVisible(false)
+
+		if len(exitNodes) == 0 {
+			tp.exitNodeRow.SetTitle("No Exit Nodes")
+			tp.exitNodeRow.SetSubtitle("No gateways available")
+		} else {
+			onlineCount := 0
+			for _, peer := range exitNodes {
+				if peer.Online {
+					onlineCount++
+				}
+			}
+			tp.exitNodeRow.SetTitle("None")
+			tp.exitNodeRow.SetSubtitle(fmt.Sprintf("Direct connection • %d available", onlineCount))
+		}
 	}
 }
 
@@ -1240,9 +1355,12 @@ func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, e
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
+		// Get LAN Gateway setting from config
+		allowLANAccess := tp.mainWindow.app.GetConfig().Tailscale.ExitNodeAllowLANAccess
+
 		var err error
 		if enable {
-			err = tp.provider.SetExitNodeWithOptions(ctx, nodeIdentifier, false)
+			err = tp.provider.SetExitNodeWithOptions(ctx, nodeIdentifier, allowLANAccess)
 		} else {
 			err = tp.provider.SetExitNodeWithOptions(ctx, "", false)
 		}
@@ -1425,4 +1543,194 @@ func (tp *TailscalePanel) StopUpdates() {
 			close(tp.stopUpdates)
 		}
 	})
+}
+
+// getLocalIP returns the local IP address of the default network interface.
+// Returns empty string if detection fails.
+func (tp *TailscalePanel) getLocalIP() string {
+	// Detect default route interface
+	cmd := exec.Command("ip", "route", "show", "default")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// Parse interface name
+	fields := strings.Fields(string(output))
+	var iface string
+	for i, field := range fields {
+		if field == "dev" && i+1 < len(fields) {
+			iface = fields[i+1]
+			break
+		}
+	}
+	if iface == "" {
+		return ""
+	}
+
+	// Get IP from interface
+	cmd = exec.Command("ip", "-o", "-f", "inet", "addr", "show", iface)
+	output, err = cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// Parse IP address (format: "2: wlp1s0 inet 192.168.0.105/24 ...")
+	fields = strings.Fields(string(output))
+	for i, field := range fields {
+		if field == "inet" && i+1 < len(fields) {
+			// Extract IP without CIDR mask
+			ipWithMask := fields[i+1]
+			if idx := strings.Index(ipWithMask, "/"); idx > 0 {
+				return ipWithMask[:idx]
+			}
+			return ipWithMask
+		}
+	}
+
+	return ""
+}
+
+// checkLANGatewayRulesActive verifies if LAN Gateway network rules are active.
+// Returns true if policy routing rule exists.
+func (tp *TailscalePanel) checkLANGatewayRulesActive() bool {
+	cmd := exec.Command("ip", "rule", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// Check for our policy routing rule (priority 5260)
+	return strings.Contains(string(output), "5260") && strings.Contains(string(output), "lookup 52")
+}
+
+// showLANGatewayHelpDialog shows instructions for configuring client devices.
+func (tp *TailscalePanel) showLANGatewayHelpDialog() {
+	dialog := adw.NewDialog()
+	dialog.SetTitle("Connect Devices to VPN Gateway")
+	dialog.SetContentWidth(500)
+	dialog.SetContentHeight(400)
+
+	// Toolbar view
+	toolbarView := adw.NewToolbarView()
+
+	// Header bar
+	headerBar := adw.NewHeaderBar()
+	headerBar.SetShowEndTitleButtons(false)
+	headerBar.SetShowStartTitleButtons(false)
+
+	// Close button
+	closeBtn := gtk.NewButton()
+	closeBtn.SetLabel("Close")
+	closeBtn.ConnectClicked(func() {
+		dialog.Close()
+	})
+	headerBar.PackEnd(closeBtn)
+
+	toolbarView.AddTopBar(headerBar)
+
+	// Content
+	scrolled := gtk.NewScrolledWindow()
+	scrolled.SetVExpand(true)
+	scrolled.SetHExpand(true)
+
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
+	contentBox.SetMarginTop(24)
+	contentBox.SetMarginBottom(24)
+	contentBox.SetMarginStart(24)
+	contentBox.SetMarginEnd(24)
+
+	// Intro text
+	introLabel := gtk.NewLabel("")
+	introLabel.SetMarkup("<b>Your laptop is now a VPN gateway.</b>\n\nConfigure other devices on your network to route traffic through this machine:")
+	introLabel.SetWrap(true)
+	introLabel.SetXAlign(0)
+	contentBox.Append(introLabel)
+
+	// Get local IP
+	localIP := tp.getLocalIP()
+	if localIP == "" {
+		localIP = "your-laptop-ip"
+	}
+
+	// Android section
+	androidGroup := adw.NewPreferencesGroup()
+	androidGroup.SetTitle("Android")
+	androidGroup.SetMarginTop(12)
+
+	androidLabel := gtk.NewLabel("")
+	androidLabel.SetMarkup(fmt.Sprintf(`1. WiFi → Long press your network → <b>Modify network</b>
+2. Tap <b>Advanced options</b> → Show
+3. IP settings: <b>Static</b>
+4. Configure:
+   • IP address: <tt>192.168.X.XXX</tt> (any free IP)
+   • Gateway: <tt><b>%s</b></tt> ← Your laptop
+   • DNS 1: <tt>8.8.8.8</tt>
+   • DNS 2: <tt>8.8.4.4</tt>
+5. Save`, localIP))
+	androidLabel.SetWrap(true)
+	androidLabel.SetXAlign(0)
+	androidLabel.SetSelectable(true)
+	androidLabel.SetMarginTop(8)
+	androidLabel.SetMarginBottom(8)
+	androidLabel.SetMarginStart(12)
+	androidLabel.SetMarginEnd(12)
+
+	androidRow := adw.NewActionRow()
+	androidRow.SetChild(androidLabel)
+	androidGroup.Add(androidRow)
+	contentBox.Append(androidGroup)
+
+	// iOS section
+	iosGroup := adw.NewPreferencesGroup()
+	iosGroup.SetTitle("iOS / iPadOS")
+	iosGroup.SetMarginTop(12)
+
+	iosLabel := gtk.NewLabel("")
+	iosLabel.SetMarkup(fmt.Sprintf(`1. Settings → WiFi → (i) icon
+2. Configure IP → <b>Manual</b>
+3. Gateway: <tt><b>%s</b></tt>
+4. DNS: <tt>8.8.8.8</tt>`, localIP))
+	iosLabel.SetWrap(true)
+	iosLabel.SetXAlign(0)
+	iosLabel.SetSelectable(true)
+	iosLabel.SetMarginTop(8)
+	iosLabel.SetMarginBottom(8)
+	iosLabel.SetMarginStart(12)
+	iosLabel.SetMarginEnd(12)
+
+	iosRow := adw.NewActionRow()
+	iosRow.SetChild(iosLabel)
+	iosGroup.Add(iosRow)
+	contentBox.Append(iosGroup)
+
+	// Testing section
+	testGroup := adw.NewPreferencesGroup()
+	testGroup.SetTitle("Verify Connection")
+	testGroup.SetMarginTop(12)
+
+	testLabel := gtk.NewLabel("")
+	testLabel.SetMarkup(`From your device, visit:
+<tt><b>https://ifconfig.me</b></tt>
+
+Should show your Tailscale exit node's IP
+(NOT your local ISP's IP)`)
+	testLabel.SetWrap(true)
+	testLabel.SetXAlign(0)
+	testLabel.SetSelectable(true)
+	testLabel.SetMarginTop(8)
+	testLabel.SetMarginBottom(8)
+	testLabel.SetMarginStart(12)
+	testLabel.SetMarginEnd(12)
+
+	testRow := adw.NewActionRow()
+	testRow.SetChild(testLabel)
+	testGroup.Add(testRow)
+	contentBox.Append(testGroup)
+
+	scrolled.SetChild(contentBox)
+	toolbarView.SetContent(scrolled)
+
+	dialog.SetChild(toolbarView)
+	dialog.Present(&tp.mainWindow.window.Widget)
 }

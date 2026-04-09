@@ -27,9 +27,10 @@ type PreferencesDialog struct {
 	themeIDs     []string
 
 	// Tailscale settings
-	tailscaleEnabledRow *adw.SwitchRow
-	tailscaleRoutesRow  *adw.SwitchRow
-	tailscaleDNSRow     *adw.SwitchRow
+	tailscaleEnabledRow    *adw.SwitchRow
+	tailscaleRoutesRow     *adw.SwitchRow
+	tailscaleDNSRow        *adw.SwitchRow
+	tailscaleLANGatewayRow *adw.SwitchRow
 
 	// Network Trust settings
 	trustEnabledRow       *adw.SwitchRow
@@ -292,6 +293,13 @@ func (pd *PreferencesDialog) buildProvidersPage() *adw.PreferencesPage {
 	pd.tailscaleDNSRow.SetActive(pd.config.Tailscale.AcceptDNS)
 	tailscaleGroup.Add(pd.tailscaleDNSRow)
 
+	// LAN Gateway row
+	pd.tailscaleLANGatewayRow = adw.NewSwitchRow()
+	pd.tailscaleLANGatewayRow.SetTitle("Enable LAN Gateway")
+	pd.tailscaleLANGatewayRow.SetSubtitle("Share VPN with other devices on your WiFi network (requires administrator password)")
+	pd.tailscaleLANGatewayRow.SetActive(pd.config.Tailscale.ExitNodeAllowLANAccess)
+	tailscaleGroup.Add(pd.tailscaleLANGatewayRow)
+
 	page.Add(tailscaleGroup)
 
 	return page
@@ -345,6 +353,7 @@ func (pd *PreferencesDialog) savePreferences() {
 	pd.config.Tailscale.Enabled = pd.tailscaleEnabledRow.Active()
 	pd.config.Tailscale.AcceptRoutes = pd.tailscaleRoutesRow.Active()
 	pd.config.Tailscale.AcceptDNS = pd.tailscaleDNSRow.Active()
+	pd.config.Tailscale.ExitNodeAllowLANAccess = pd.tailscaleLANGatewayRow.Active()
 
 	// Theme
 	themeIdx := pd.themeRow.Selected()
@@ -387,6 +396,14 @@ func (pd *PreferencesDialog) savePreferences() {
 	}
 
 	pd.mainWindow.ShowToast("Settings saved", 2)
+
+	// Refresh Tailscale panel to trigger LAN Gateway auto-config if needed
+	if pd.mainWindow.tailscalePanel != nil {
+		app.LogInfo("[Preferences] Triggering Tailscale panel updateStatus after saving preferences")
+		pd.mainWindow.tailscalePanel.updateStatus()
+	} else {
+		app.LogWarn("[Preferences] tailscalePanel is nil, cannot trigger updateStatus")
+	}
 }
 
 // Show displays the preferences dialog.

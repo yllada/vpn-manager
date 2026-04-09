@@ -51,6 +51,10 @@ type TailscaleConfig struct {
 	AdvertiseExitNode bool `yaml:"advertise_exit_node"`
 	// ExitNode is the default exit node hostname or IP.
 	ExitNode string `yaml:"exit_node,omitempty"`
+	// ExitNodeAllowLANAccess allows LAN devices to use this machine as gateway.
+	// When enabled, configures iptables and routing for LAN gateway functionality.
+	// See: https://tailscale.com/kb/1103/exit-nodes/#allow-lan-access
+	ExitNodeAllowLANAccess bool `yaml:"exit_node_allow_lan_access"`
 	// ShieldsUp blocks all incoming connections (paranoid mode).
 	// See: https://tailscale.com/kb/1072/client-preferences
 	ShieldsUp bool `yaml:"shields_up"`
@@ -114,23 +118,24 @@ func DefaultConfig() *Config {
 		AutoReconnect:     true,
 		Theme:             "auto",
 		Tailscale: TailscaleConfig{
-			Enabled:           true,
-			ControlServer:     "cloud", // Default to Tailscale Cloud
-			CustomServers:     []TailscaleServer{},
-			AuthKey:           "",
-			SaveAuthKey:       false,
-			AcceptRoutes:      true,
-			AcceptDNS:         true,
-			AdvertiseExitNode: false,
-			ExitNode:          "",
-			ShieldsUp:         false,
-			Taildrop:          true,
-			TaildropDir:       taildropDir,
-			SSH:               false,
-			Mullvad:           false,
-			Hostname:          "",
-			AdvertiseTags:     []string{},
-			OperatorUser:      "",
+			Enabled:                true,
+			ControlServer:          "cloud",
+			CustomServers:          []TailscaleServer{},
+			AuthKey:                "",
+			SaveAuthKey:            false,
+			AcceptRoutes:           true,
+			AcceptDNS:              true,
+			AdvertiseExitNode:      false,
+			ExitNode:               "",
+			ExitNodeAllowLANAccess: false,
+			ShieldsUp:              false,
+			Taildrop:               true,
+			TaildropDir:            taildropDir,
+			SSH:                    false,
+			Mullvad:                false,
+			Hostname:               "",
+			AdvertiseTags:          []string{},
+			OperatorUser:           "",
 		},
 	}
 }

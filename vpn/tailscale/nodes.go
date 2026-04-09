@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/yllada/vpn-manager/app"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -263,6 +265,12 @@ func (c *Client) setExitNodeWithPkexec(ctx context.Context, nodeID string) error
 // SetExitNodeWithOptions sets the exit node with additional options.
 // allowLANAccess enables access to local network while using exit node.
 // See: https://tailscale.com/kb/1080/cli#set
+//
+// When allowLANAccess is true, this also configures:
+//   - IP forwarding
+//   - Policy routing (ip rule)
+//   - iptables FORWARD rules
+//   - NAT/MASQUERADE
 func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allowLANAccess bool) error {
 	args := []string{"set", "--exit-node=" + nodeID}
 
@@ -282,9 +290,30 @@ func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allo
 			strings.Contains(outputLower, "permission denied") ||
 			strings.Contains(outputLower, "operation not permitted") {
 			// Try with pkexec for elevated privileges
-			return c.setExitNodeWithOptionsPkexec(ctx, nodeID, allowLANAccess)
+			err = c.setExitNodeWithOptionsPkexec(ctx, nodeID, allowLANAccess)
+			if err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("failed to set exit node: %w: %s", err, outputStr)
 		}
-		return fmt.Errorf("failed to set exit node: %w: %s", err, outputStr)
+	}
+
+	// If allowLANAccess is enabled, configure network rules for LAN gateway
+	if allowLANAccess {
+		app.LogInfo("[LAN Gateway] Attempting to configure LAN Gateway...")
+		if err := c.ConfigureLANGateway(ctx); err != nil {
+			// Log warning but don't fail - Tailscale flag is already set
+			// User may not want to use this machine as a gateway
+			app.LogWarn("[LAN Gateway] Failed to configure LAN Gateway: %v", err)
+			app.LogWarn("[LAN Gateway] Tailscale exit node with LAN access is active, but network rules may need manual configuration.")
+		} else {
+			app.LogInfo("[LAN Gateway] LAN Gateway configured successfully")
+		}
+	} else {
+		// Clean up any existing LAN gateway rules
+		app.LogInfo("[LAN Gateway] Cleaning up LAN Gateway rules...")
+		_ = c.CleanupLANGateway(ctx)
 	}
 
 	return nil
@@ -304,6 +333,23 @@ func (c *Client) setExitNodeWithOptionsPkexec(ctx context.Context, nodeID string
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tailscale set exit-node (pkexec) failed: %w: %s", err, string(output))
+	}
+
+	// If allowLANAccess is enabled, configure network rules for LAN gateway
+	if allowLANAccess {
+		app.LogInfo("[LAN Gateway] Attempting to configure LAN Gateway...")
+		if err := c.ConfigureLANGateway(ctx); err != nil {
+			// Log warning but don't fail - Tailscale flag is already set
+			// User may not want to use this machine as a gateway
+			app.LogWarn("[LAN Gateway] Failed to configure LAN Gateway: %v", err)
+			app.LogWarn("[LAN Gateway] Tailscale exit node with LAN access is active, but network rules may need manual configuration.")
+		} else {
+			app.LogInfo("[LAN Gateway] LAN Gateway configured successfully")
+		}
+	} else {
+		// Clean up any existing LAN gateway rules
+		app.LogInfo("[LAN Gateway] Cleaning up LAN Gateway rules...")
+		_ = c.CleanupLANGateway(ctx)
 	}
 
 	return nil
