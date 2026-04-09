@@ -46,9 +46,18 @@ func NewMainWindow(app *Application) *MainWindow {
 	mw.window.SetSizeRequest(400, 300) // Minimum size to prevent UI breaking
 	mw.window.SetIconName("vpn-manager")
 
-	// Hide to tray instead of closing - like ProtonVPN behavior
-	// Clicking X hides the window, app continues running in system tray
-	mw.window.SetHideOnClose(true)
+	// Handle close request based on "Minimize to Tray" preference
+	// If enabled: hide window, keep app running in tray
+	// If disabled: quit the application
+	mw.window.ConnectCloseRequest(func() bool {
+		if app.config.MinimizeToTray {
+			// Hide to tray - return true to prevent default close behavior
+			mw.window.SetVisible(false)
+			return true
+		}
+		// Allow normal close - app will quit
+		return false
+	})
 
 	// Create main layout
 	mw.createLayout()
