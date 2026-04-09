@@ -44,6 +44,7 @@ Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you c
 - **Auto-reconnect** — Restores connection if lost
 - **System tray** — Quick access without opening the app
 - **Network Trust Rules** — Auto-manage VPN based on network trust (connect on untrusted, disconnect on trusted)
+- **Tailscale LAN Gateway** — Share your Tailscale exit node connection with other devices on your local network
 
 <p align="center">
   <img src="assets/screen/tailscale.png" alt="Tailscale Integration" width="600">
