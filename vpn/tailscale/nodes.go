@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -300,18 +301,18 @@ func (c *Client) SetExitNodeWithOptions(ctx context.Context, nodeID string, allo
 
 	// If allowLANAccess is enabled, configure network rules for LAN gateway
 	if allowLANAccess {
-		app.LogInfo("[LAN Gateway] Attempting to configure LAN Gateway...")
+		logger.LogInfo("[LAN Gateway] Attempting to configure LAN Gateway...")
 		if err := c.ConfigureLANGateway(ctx); err != nil {
 			// Log warning but don't fail - Tailscale flag is already set
 			// User may not want to use this machine as a gateway
-			app.LogWarn("[LAN Gateway] Failed to configure LAN Gateway: %v", err)
-			app.LogWarn("[LAN Gateway] Tailscale exit node with LAN access is active, but network rules may need manual configuration.")
+			logger.LogWarn("[LAN Gateway] Failed to configure LAN Gateway: %v", err)
+			logger.LogWarn("[LAN Gateway] Tailscale exit node with LAN access is active, but network rules may need manual configuration.")
 		} else {
-			app.LogInfo("[LAN Gateway] LAN Gateway configured successfully")
+			logger.LogInfo("[LAN Gateway] LAN Gateway configured successfully")
 		}
 	} else {
 		// Clean up any existing LAN gateway rules
-		app.LogInfo("[LAN Gateway] Cleaning up LAN Gateway rules...")
+		logger.LogInfo("[LAN Gateway] Cleaning up LAN Gateway rules...")
 		_ = c.CleanupLANGateway(ctx)
 	}
 

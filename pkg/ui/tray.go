@@ -20,6 +20,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/trust"
@@ -228,14 +229,14 @@ func (t *TrayIndicator) onExit() {
 	if t.app != nil && t.app.vpnManager != nil {
 		connections := t.app.vpnManager.ListConnections()
 		for _, conn := range connections {
-			app.LogInfo("Tray: Disconnecting VPN %s on exit", conn.Profile.Name)
+			logger.LogInfo("Tray: Disconnecting VPN %s on exit", conn.Profile.Name)
 			if err := t.app.vpnManager.Disconnect(conn.Profile.ID); err != nil {
-				app.LogWarn("Tray: Failed to disconnect %s: %v", conn.Profile.Name, err)
+				logger.LogWarn("Tray: Failed to disconnect %s: %v", conn.Profile.Name, err)
 			}
 		}
 	}
 
-	app.LogInfo("Tray indicator shutdown complete")
+	logger.LogInfo("Tray indicator shutdown complete")
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -384,7 +385,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 			if status == vpn.StatusConnected || status == vpn.StatusConnecting {
 				profileID := profile.ID
 				if err := t.app.vpnManager.Disconnect(profileID); err != nil {
-					app.LogError("tray", "Disconnect failed for %s: %v", profile.Name, err)
+					logger.LogError("tray", "Disconnect failed for %s: %v", profile.Name, err)
 					allDisconnected = false
 					continue
 				}
@@ -405,10 +406,10 @@ func (t *TrayIndicator) disconnectCurrent() {
 		status, err := provider.Status(ctx)
 		if err == nil && status.Connected {
 			if err := provider.Disconnect(ctx, nil); err != nil {
-				app.LogError("tray", "Tailscale disconnect failed: %v", err)
+				logger.LogError("tray", "Tailscale disconnect failed: %v", err)
 				allDisconnected = false
 			} else {
-				app.LogInfo("tray", "Tailscale disconnected from tray")
+				logger.LogInfo("tray", "Tailscale disconnected from tray")
 				NotifyDisconnected("Tailscale")
 				// Update Tailscale panel UI
 				glib.IdleAdd(func() {
@@ -425,10 +426,10 @@ func (t *TrayIndicator) disconnectCurrent() {
 		status, err := provider.Status(ctx)
 		if err == nil && status.Connected {
 			if err := provider.Disconnect(ctx, nil); err != nil {
-				app.LogError("tray", "WireGuard disconnect failed: %v", err)
+				logger.LogError("tray", "WireGuard disconnect failed: %v", err)
 				allDisconnected = false
 			} else {
-				app.LogInfo("tray", "WireGuard disconnected from tray")
+				logger.LogInfo("tray", "WireGuard disconnected from tray")
 				NotifyDisconnected("WireGuard")
 				// Update WireGuard panel UI
 				glib.IdleAdd(func() {
@@ -553,13 +554,13 @@ func (t *TrayIndicator) trustCurrentNetwork() {
 			}
 		}
 		if err := trustMgr.UpdateRule(existingRule.ID, rule); err != nil {
-			app.LogError("Failed to update trust rule: %v", err)
+			logger.LogError("Failed to update trust rule: %v", err)
 			return
 		}
 	} else {
 		// Add new rule
 		if err := trustMgr.AddRule(rule); err != nil {
-			app.LogError("Failed to add trust rule: %v", err)
+			logger.LogError("Failed to add trust rule: %v", err)
 			return
 		}
 	}
@@ -622,13 +623,13 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 			}
 		}
 		if err := trustMgr.UpdateRule(existingRule.ID, rule); err != nil {
-			app.LogError("Failed to update trust rule: %v", err)
+			logger.LogError("Failed to update trust rule: %v", err)
 			return
 		}
 	} else {
 		// Add new rule
 		if err := trustMgr.AddRule(rule); err != nil {
-			app.LogError("Failed to add trust rule: %v", err)
+			logger.LogError("Failed to add trust rule: %v", err)
 			return
 		}
 	}
@@ -662,7 +663,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 	})
 
 	if err := t.app.vpnManager.Connect(profile.ID, username, password); err != nil {
-		app.LogError("tray", "Connect failed for %s: %v", profile.Name, err)
+		logger.LogError("tray", "Connect failed for %s: %v", profile.Name, err)
 		t.SetDisconnected()
 		glib.IdleAdd(func() {
 			if t.app.window != nil && t.app.window.openvpnPanel != nil {
@@ -682,10 +683,10 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 			if needsOTP {
 				failedProfile.RequiresOTP = true
 				if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
-					app.LogWarn("tray", "Failed to save profile after OTP detection: %v", err)
+					logger.LogWarn("tray", "Failed to save profile after OTP detection: %v", err)
 				}
 				if err := t.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
-					app.LogError("tray", "Disconnect after auth failure failed: %v", err)
+					logger.LogError("tray", "Disconnect after auth failure failed: %v", err)
 				}
 				t.SetDisconnected()
 
@@ -752,7 +753,7 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 		case vpn.StatusConnecting:
 			// Check for timeout while in connecting state
 			if time.Since(startTime) > connectionTimeout {
-				app.LogWarn("tray", "Connection monitor timeout for %s after %v", profileID, connectionTimeout)
+				logger.LogWarn("tray", "Connection monitor timeout for %s after %v", profileID, connectionTimeout)
 				return
 			}
 		}
@@ -915,10 +916,10 @@ func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
 			profile.Username = username
 			profile.SavePassword = true
 			if err := keyring.Store(profile.ID, password); err != nil {
-				app.LogWarn("tray", "Failed to store password in keyring: %v", err)
+				logger.LogWarn("tray", "Failed to store password in keyring: %v", err)
 			}
 			if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
-				app.LogWarn("tray", "Failed to save profile after credential update: %v", err)
+				logger.LogWarn("tray", "Failed to save profile after credential update: %v", err)
 			}
 		}
 

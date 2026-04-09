@@ -13,6 +13,7 @@ import (
 
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/keyring"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn/stats"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
@@ -105,7 +106,7 @@ func NewManager() (*Manager, error) {
 	// Create circuit breaker for connection resilience
 	cbConfig := app.DefaultCircuitBreakerConfig()
 	cbConfig.OnStateChange = func(from, to app.CircuitState) {
-		app.LogInfo("VPN Circuit Breaker: %s -> %s", from, to)
+		logger.LogInfo("VPN Circuit Breaker: %s -> %s", from, to)
 		app.Emit(app.EventStatusChanged, "CircuitBreaker", map[string]string{
 			"from": from.String(),
 			"to":   to.String(),
@@ -129,7 +130,7 @@ func NewManager() (*Manager, error) {
 
 	// Initialize traffic statistics (non-fatal if it fails)
 	if statsManager, err := stats.NewStatsManager(""); err != nil {
-		app.LogWarn("vpn", "Failed to initialize stats manager: %v (traffic statistics will be unavailable)", err)
+		logger.LogWarn("vpn", "Failed to initialize stats manager: %v (traffic statistics will be unavailable)", err)
 	} else {
 		m.statsManager = statsManager
 	}
@@ -150,32 +151,32 @@ func (m *Manager) registerShutdownHooks() {
 
 	// Stop trust management first
 	sm.Register("trust-stop", app.PriorityFirst, func(ctx context.Context) error {
-		app.LogInfo("Shutdown: Stopping trust management")
+		logger.LogInfo("Shutdown: Stopping trust management")
 		m.StopTrustManagement()
 		return nil
 	})
 
 	// Disconnect all VPNs first
 	sm.Register("vpn-disconnect-all", app.PriorityFirst, func(ctx context.Context) error {
-		app.LogInfo("Shutdown: Disconnecting all VPN connections")
+		logger.LogInfo("Shutdown: Disconnecting all VPN connections")
 		return m.DisconnectAll()
 	})
 
 	// Restore DNS settings
 	sm.Register("dns-restore", app.PriorityLow, func(ctx context.Context) error {
-		app.LogInfo("Shutdown: Restoring DNS settings")
+		logger.LogInfo("Shutdown: Restoring DNS settings")
 		return m.dnsProtection.Disable()
 	})
 
 	// Restore IPv6 settings
 	sm.Register("ipv6-restore", app.PriorityLow, func(ctx context.Context) error {
-		app.LogInfo("Shutdown: Restoring IPv6 settings")
+		logger.LogInfo("Shutdown: Restoring IPv6 settings")
 		return m.ipv6Protection.Disable()
 	})
 
 	// Disable kill switch
 	sm.Register("killswitch-disable", app.PriorityLow, func(ctx context.Context) error {
-		app.LogInfo("Shutdown: Disabling kill switch")
+		logger.LogInfo("Shutdown: Disabling kill switch")
 		return m.killSwitch.Disable()
 	})
 
@@ -188,7 +189,7 @@ func (m *Manager) registerShutdownHooks() {
 	// Close stats manager
 	sm.Register("stats-close", app.PriorityLow, func(ctx context.Context) error {
 		if m.statsManager != nil {
-			app.LogInfo("Shutdown: Closing stats manager")
+			logger.LogInfo("Shutdown: Closing stats manager")
 			return m.statsManager.Close()
 		}
 		return nil
@@ -269,12 +270,12 @@ func (m *Manager) FixAllVPNConnections() {
 
 	fixed, err := m.nmBackend.FixAllVPNConnections()
 	if err != nil {
-		app.LogWarn("vpn", "Failed to fix VPN connections: %v", err)
+		logger.LogWarn("vpn", "Failed to fix VPN connections: %v", err)
 		return
 	}
 
 	if fixed > 0 {
-		app.LogDebug("vpn", "Fixed password-flags for %d connection(s) - reconnection will now work without password", fixed)
+		logger.LogDebug("vpn", "Fixed password-flags for %d connection(s) - reconnection will now work without password", fixed)
 	}
 }
 
@@ -308,7 +309,7 @@ func (m *Manager) StartStatsCollection(profileID string, providerType app.VPNPro
 
 	sessionID, err := m.statsManager.StartSession(profileID, providerType, vpnIface, serverAddr)
 	if err != nil {
-		app.LogWarn("stats", "Failed to start stats collection: %v", err)
+		logger.LogWarn("stats", "Failed to start stats collection: %v", err)
 		return ""
 	}
 	return sessionID
@@ -324,7 +325,7 @@ func (m *Manager) StopStatsCollection() *stats.SessionSummary {
 
 	summary, err := m.statsManager.EndSession()
 	if err != nil {
-		app.LogWarn("stats", "Failed to end stats collection: %v", err)
+		logger.LogWarn("stats", "Failed to end stats collection: %v", err)
 		return nil
 	}
 	return summary
@@ -353,7 +354,7 @@ func (m *Manager) InitTrustManagement() error {
 	// Load trust configuration
 	config, err := trust.LoadTrustConfig()
 	if err != nil {
-		app.LogWarn("trust", "Failed to load trust config, using defaults: %v", err)
+		logger.LogWarn("trust", "Failed to load trust config, using defaults: %v", err)
 		config = trust.DefaultTrustConfig()
 	}
 	m.trustConfig = config
@@ -370,12 +371,12 @@ func (m *Manager) InitTrustManagement() error {
 	// Start network monitor if trust management is enabled
 	if config.Enabled {
 		if err := m.networkMonitor.Start(); err != nil {
-			app.LogWarn("trust", "Failed to start network monitor: %v", err)
+			logger.LogWarn("trust", "Failed to start network monitor: %v", err)
 		} else {
-			app.LogDebug("trust", "Trust management initialized and active")
+			logger.LogDebug("trust", "Trust management initialized and active")
 		}
 	} else {
-		app.LogDebug("trust", "Trust management initialized but disabled")
+		logger.LogDebug("trust", "Trust management initialized but disabled")
 	}
 
 	return nil
@@ -396,7 +397,7 @@ func (m *Manager) StopTrustManagement() {
 		m.networkMonitor.Stop()
 	}
 
-	app.LogDebug("trust", "Trust management stopped")
+	logger.LogDebug("trust", "Trust management stopped")
 }
 
 // TrustManager returns the trust manager instance.
@@ -438,13 +439,13 @@ func (m *Manager) SetTrustEnabled(enabled bool) error {
 				return app.WrapError(err, "failed to start network monitor")
 			}
 		}
-		app.LogDebug("trust", "Trust management enabled")
+		logger.LogDebug("trust", "Trust management enabled")
 	} else {
 		// Stop network monitor
 		if m.networkMonitor != nil && m.networkMonitor.IsRunning() {
 			m.networkMonitor.Stop()
 		}
-		app.LogDebug("trust", "Trust management disabled")
+		logger.LogDebug("trust", "Trust management disabled")
 	}
 
 	return m.trustConfig.Save()
@@ -461,7 +462,7 @@ func (m *Manager) handleNetworkChanged(event *app.Event) {
 	case app.NetworkChangedData:
 		data = &d
 	default:
-		app.LogWarn("trust", "Invalid event data type for network changed: %T", event.Data)
+		logger.LogWarn("trust", "Invalid event data type for network changed: %T", event.Data)
 		return
 	}
 
@@ -484,17 +485,17 @@ func (m *Manager) handleNetworkChanged(event *app.Event) {
 		Interface: data.Interface,
 	}
 
-	app.LogDebug("trust", "Network changed: SSID=%q BSSID=%q Type=%s Connected=%v",
+	logger.LogDebug("trust", "Network changed: SSID=%q BSSID=%q Type=%s Connected=%v",
 		netInfo.SSID, netInfo.BSSID, netInfo.Type, netInfo.Connected)
 
 	// Evaluate trust rules
 	action, rule, err := trustMgr.Evaluate(netInfo)
 	if err != nil {
-		app.LogError("trust", "Failed to evaluate trust rules: %v", err)
+		logger.LogError("trust", "Failed to evaluate trust rules: %v", err)
 		return
 	}
 
-	app.LogDebug("trust", "Trust evaluation: action=%s rule=%v", action, rule != nil)
+	logger.LogDebug("trust", "Trust evaluation: action=%s rule=%v", action, rule != nil)
 
 	// Execute action
 	m.executeTrustAction(action, rule, netInfo)
@@ -520,7 +521,7 @@ func (m *Manager) executeTrustAction(action trust.TrustAction, rule *trust.Trust
 		m.handleEvilTwinWarning(rule, net)
 
 	case trust.TrustActionNone:
-		app.LogDebug("trust", "No action required for network %q", net.SSID)
+		logger.LogDebug("trust", "No action required for network %q", net.SSID)
 	}
 }
 
@@ -534,7 +535,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 	}
 
 	if profileID == "" {
-		app.LogWarn("trust", "No VPN profile configured for auto-connect")
+		logger.LogWarn("trust", "No VPN profile configured for auto-connect")
 		app.Emit(app.EventTrustActionTaken, "TrustManager", app.TrustActionTakenData{
 			Action:  string(trust.TrustActionConnectVPN),
 			SSID:    net.SSID,
@@ -544,7 +545,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		return
 	}
 
-	app.LogDebug("trust", "Auto-connecting VPN profile %s for untrusted network %q", profileID, net.SSID)
+	logger.LogDebug("trust", "Auto-connecting VPN profile %s for untrusted network %q", profileID, net.SSID)
 
 	// Parse provider:id format
 	providerType, actualID := m.parseProfileID(profileID)
@@ -587,20 +588,20 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 
 	default:
 		// OpenVPN: use legacy ProfileManager
-		app.LogInfo("trust", "OpenVPN auto-connect: looking up profile %s", actualID)
+		logger.LogInfo("trust", "OpenVPN auto-connect: looking up profile %s", actualID)
 		profile, profErr := m.profileManager.Get(actualID)
 		if profErr != nil {
-			app.LogError("trust", "OpenVPN profile %s not found: %v", actualID, profErr)
+			logger.LogError("trust", "OpenVPN profile %s not found: %v", actualID, profErr)
 			err = profErr
 			break
 		}
 
-		app.LogInfo("trust", "OpenVPN profile found: %s (RequiresOTP=%v, SavePassword=%v)",
+		logger.LogInfo("trust", "OpenVPN profile found: %s (RequiresOTP=%v, SavePassword=%v)",
 			profile.Name, profile.RequiresOTP, profile.SavePassword)
 
 		// Check if profile requires OTP - emit event for UI to handle
 		if profile.RequiresOTP {
-			app.LogInfo("trust", "Profile %s requires OTP - emitting auth required event", profile.Name)
+			logger.LogInfo("trust", "Profile %s requires OTP - emitting auth required event", profile.Name)
 			app.Emit(app.EventTrustAuthRequired, "TrustManager", app.TrustAuthRequiredData{
 				SSID:        net.SSID,
 				ProfileID:   actualID,
@@ -616,7 +617,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 		if profile.SavePassword {
 			savedPassword, keyErr := keyring.Get(profile.ID)
 			if keyErr != nil || savedPassword == "" {
-				app.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring, prompting for auth", profile.Name)
+				logger.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring, prompting for auth", profile.Name)
 				// Emit auth required event to prompt user instead of connecting with empty password
 				app.Emit(app.EventTrustAuthRequired, "TrustManager", app.TrustAuthRequiredData{
 					SSID:        net.SSID,
@@ -635,7 +636,7 @@ func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkIn
 	}
 
 	if err != nil {
-		app.LogError("trust", "Failed to auto-connect VPN: %v", err)
+		logger.LogError("trust", "Failed to auto-connect VPN: %v", err)
 		m.handleConnectFailureOnUntrusted(net, cfg, err)
 		return
 	}
@@ -675,7 +676,7 @@ func (m *Manager) handleConnectFailureOnUntrusted(net *trust.NetworkInfo, cfg *t
 
 	// Activate kill switch if configured
 	if cfg.BlockOnUntrustedFailure {
-		app.LogWarn("trust", "VPN connection failed on untrusted network, activating kill switch")
+		logger.LogWarn("trust", "VPN connection failed on untrusted network, activating kill switch")
 		m.activateKillSwitchForUntrusted()
 	}
 }
@@ -693,16 +694,16 @@ func (m *Manager) handleTrustDisconnect(net *trust.NetworkInfo) {
 	m.mu.RUnlock()
 
 	if len(profileIDs) == 0 {
-		app.LogDebug("trust", "No active VPN connections to disconnect")
+		logger.LogDebug("trust", "No active VPN connections to disconnect")
 		return
 	}
 
-	app.LogDebug("trust", "Auto-disconnecting VPN for trusted network %q", net.SSID)
+	logger.LogDebug("trust", "Auto-disconnecting VPN for trusted network %q", net.SSID)
 
 	var lastErr error
 	for _, profileID := range profileIDs {
 		if err := m.Disconnect(profileID); err != nil {
-			app.LogError("trust", "Failed to disconnect profile %s: %v", profileID, err)
+			logger.LogError("trust", "Failed to disconnect profile %s: %v", profileID, err)
 			lastErr = err
 		}
 	}
@@ -723,7 +724,7 @@ func (m *Manager) handleTrustDisconnect(net *trust.NetworkInfo) {
 
 // handleTrustPrompt emits an event for the UI to show a trust prompt dialog.
 func (m *Manager) handleTrustPrompt(net *trust.NetworkInfo, cfg *trust.TrustConfig) {
-	app.LogDebug("trust", "Prompting user for unknown network %q", net.SSID)
+	logger.LogDebug("trust", "Prompting user for unknown network %q", net.SSID)
 
 	app.Emit(app.EventTrustPrompt, "TrustManager", app.TrustPromptData{
 		SSID:             net.SSID,
@@ -735,7 +736,7 @@ func (m *Manager) handleTrustPrompt(net *trust.NetworkInfo, cfg *trust.TrustConf
 
 // handleEvilTwinWarning emits an event for the UI to show an evil twin warning.
 func (m *Manager) handleEvilTwinWarning(rule *trust.TrustRule, net *trust.NetworkInfo) {
-	app.LogWarn("trust", "Potential evil twin detected for network %q (new BSSID: %s)", net.SSID, net.BSSID)
+	logger.LogWarn("trust", "Potential evil twin detected for network %q (new BSSID: %s)", net.SSID, net.BSSID)
 
 	ruleID := ""
 	var knownBSSIDs []string
@@ -755,7 +756,7 @@ func (m *Manager) handleEvilTwinWarning(rule *trust.TrustRule, net *trust.Networ
 // activateKillSwitchForUntrusted activates the kill switch when VPN fails on untrusted network.
 func (m *Manager) activateKillSwitchForUntrusted() {
 	if m.killSwitch == nil || !m.killSwitch.IsAvailable() {
-		app.LogWarn("trust", "Kill switch not available")
+		logger.LogWarn("trust", "Kill switch not available")
 		return
 	}
 
@@ -766,12 +767,12 @@ func (m *Manager) activateKillSwitchForUntrusted() {
 	// Enable with no VPN interface (block all non-local traffic)
 	// Use empty interface and server IP since we're blocking everything
 	if err := m.killSwitch.Enable("lo", "127.0.0.1"); err != nil {
-		app.LogError("trust", "Failed to activate kill switch: %v", err)
+		logger.LogError("trust", "Failed to activate kill switch: %v", err)
 		m.killSwitch.SetMode(oldMode) // Restore mode on failure
 		return
 	}
 
-	app.LogWarn("trust", "Kill switch activated - all non-local traffic blocked")
+	logger.LogWarn("trust", "Kill switch activated - all non-local traffic blocked")
 
 	// Emit event
 	app.Emit(app.EventKillSwitchEnabled, "TrustManager", app.SecurityEventData{
@@ -809,7 +810,7 @@ func (m *Manager) DetectOrphanedVPN() (bool, *OrphanedVPNInfo) {
 	// Get VPN IP if available
 	ipAddr := m.getVPNGateway(tunIface)
 
-	app.LogWarn("vpn", "Detected orphaned VPN connection (interface: %s, ip: %s)", tunIface, ipAddr)
+	logger.LogWarn("vpn", "Detected orphaned VPN connection (interface: %s, ip: %s)", tunIface, ipAddr)
 
 	return true, &OrphanedVPNInfo{
 		Interface: tunIface,

@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
@@ -231,7 +232,7 @@ func (trd *TrustRulesDialog) cacheProfileNames() {
 	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
 		profiles, err := provider.GetProfiles(ctx)
 		if err != nil {
-			app.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
+			logger.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
 			continue
 		}
 		for _, p := range profiles {
@@ -341,7 +342,7 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
 		profiles, err := provider.GetProfiles(ctx)
 		if err != nil {
-			app.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
+			logger.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
 			continue
 		}
 		for _, p := range profiles {

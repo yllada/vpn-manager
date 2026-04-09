@@ -9,7 +9,7 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
 )
 
@@ -363,17 +363,17 @@ func (std *SplitTunnelDialog) showAddRouteDialog() {
 	dialog.SetCloseResponse("cancel")
 
 	dialog.ConnectResponse(func(response string) {
-		app.LogDebug("ui", "Add route dialog response: %s", response)
+		logger.LogDebug("ui", "Add route dialog response: %s", response)
 		if response == "add" {
 			route := strings.TrimSpace(routeEntry.Text())
-			app.LogDebug("ui", "Route value: %q", route)
+			logger.LogDebug("ui", "Route value: %q", route)
 			isValid := std.validateRoute(route)
-			app.LogDebug("ui", "Route validation result: %v", isValid)
+			logger.LogDebug("ui", "Route validation result: %v", isValid)
 			if route != "" && isValid {
-				app.LogDebug("ui", "Calling addRoute(%s)", route)
+				logger.LogDebug("ui", "Calling addRoute(%s)", route)
 				std.addRoute(route)
 			} else {
-				app.LogDebug("ui", "Route not added - empty: %v, invalid: %v", route == "", !isValid)
+				logger.LogDebug("ui", "Route not added - empty: %v, invalid: %v", route == "", !isValid)
 			}
 		}
 	})
@@ -385,19 +385,19 @@ func (std *SplitTunnelDialog) showAddRouteDialog() {
 
 // addRoute adds a route to the list.
 func (std *SplitTunnelDialog) addRoute(route string) {
-	app.LogDebug("ui", "addRoute() called with: %s", route)
+	logger.LogDebug("ui", "addRoute() called with: %s", route)
 	// Check for duplicates
 	for _, r := range std.routes {
 		if r == route {
-			app.LogDebug("ui", "Route %s already exists, skipping", route)
+			logger.LogDebug("ui", "Route %s already exists, skipping", route)
 			return
 		}
 	}
 
 	std.routes = append(std.routes, route)
-	app.LogDebug("ui", "Routes slice length after append: %d", len(std.routes))
-	app.LogDebug("ui", "Routes: %v", std.routes)
-	app.LogDebug("ui", "Calling refreshRoutesList()")
+	logger.LogDebug("ui", "Routes slice length after append: %d", len(std.routes))
+	logger.LogDebug("ui", "Routes: %v", std.routes)
+	logger.LogDebug("ui", "Calling refreshRoutesList()")
 	std.refreshRoutesList()
 }
 
@@ -435,7 +435,7 @@ func (std *SplitTunnelDialog) removeRoute(route string) {
 // refreshRoutesList updates the routes list display by updating in-place.
 // This maintains the group's position in the PreferencesPage.
 func (std *SplitTunnelDialog) refreshRoutesList() {
-	app.LogDebug("ui", "refreshRoutesList() called, routes count: %d", len(std.routes))
+	logger.LogDebug("ui", "refreshRoutesList() called, routes count: %d", len(std.routes))
 
 	// Remove old dynamic route rows
 	for _, row := range std.routeRows {
@@ -491,7 +491,7 @@ func (std *SplitTunnelDialog) refreshRoutesList() {
 		std.routesGroup.Add(std.quickAddRow)
 	}
 
-	app.LogDebug("ui", "Routes list refreshed, %d rows added", len(std.routeRows))
+	logger.LogDebug("ui", "Routes list refreshed, %d rows added", len(std.routeRows))
 }
 
 // findModeIndex returns the index of a mode ID, or 0 if not found.

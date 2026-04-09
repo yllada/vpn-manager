@@ -11,6 +11,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
@@ -173,7 +174,7 @@ func (mw *MainWindow) createTailscalePage() {
 		app.SafeGoWithName("tailscale-ensure-operator", func() {
 			if err := provider.EnsureOperator(); err != nil {
 				// Log but don't fail - user can still use daemon
-				app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
+				logger.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
 			}
 		})
 	}

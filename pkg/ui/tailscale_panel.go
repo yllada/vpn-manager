@@ -15,6 +15,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
@@ -787,7 +788,7 @@ func (tp *TailscalePanel) onSuggestExitNodeClicked() {
 
 		glib.IdleAdd(func() {
 			if err != nil {
-				app.LogError("tailscale-panel", "suggest exit node failed: %v", err)
+				logger.LogError("tailscale-panel", "suggest exit node failed: %v", err)
 				tp.mainWindow.showError("Suggest Error", fmt.Sprintf("Could not get suggested exit node: %v", err))
 				return
 			}
@@ -886,7 +887,7 @@ func (tp *TailscalePanel) updateStatus() {
 	status, err := tp.provider.Status(ctx)
 	if err != nil {
 		tp.profileExpanderRow.SetSubtitle("Error")
-		app.LogError("tailscale-panel", "status error: %v", err)
+		logger.LogError("tailscale-panel", "status error: %v", err)
 		return
 	}
 
@@ -1069,12 +1070,12 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 
 		// Show LAN Gateway indicator if enabled in config
 		if tp.mainWindow.app.GetConfig().Tailscale.ExitNodeAllowLANAccess {
-			app.LogInfo("[LAN Gateway] Checkbox is enabled, checking rules status...")
+			logger.LogInfo("[LAN Gateway] Checkbox is enabled, checking rules status...")
 			localIP := tp.getLocalIP()
 
 			// Check if rules are actually active
 			rulesActive := tp.checkLANGatewayRulesActive()
-			app.LogInfo("[LAN Gateway] Rules active: %v", rulesActive)
+			logger.LogInfo("[LAN Gateway] Rules active: %v", rulesActive)
 
 			if rulesActive {
 				tp.lanGatewayIcon.SetFromIconName("network-workgroup-symbolic")
@@ -1086,7 +1087,7 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 				}
 			} else {
 				// Rules should be active but aren't - try to configure them
-				app.LogInfo("[LAN Gateway] Rules not active, triggering auto-configuration...")
+				logger.LogInfo("[LAN Gateway] Rules not active, triggering auto-configuration...")
 				tp.lanGatewayIcon.SetFromIconName("dialog-warning-symbolic")
 				tp.lanGatewayRow.SetTitle("LAN Gateway Inactive")
 				tp.lanGatewayRow.SetSubtitle("Configuring network rules...")
@@ -1095,7 +1096,7 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 				app.SafeGoWithName("tailscale-lan-gateway-auto-config", func() {
 					ctx := context.Background()
 					if err := tp.provider.ConfigureLANGateway(ctx); err != nil {
-						app.LogWarn("[LAN Gateway] Auto-configuration failed: %v", err)
+						logger.LogWarn("[LAN Gateway] Auto-configuration failed: %v", err)
 						glib.IdleAdd(func() {
 							tp.lanGatewayIcon.SetFromIconName("dialog-error-symbolic")
 							tp.lanGatewayRow.SetTitle("LAN Gateway Error")
@@ -1103,7 +1104,7 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 							tp.mainWindow.ShowToast("LAN Gateway setup failed - check logs", 5)
 						})
 					} else {
-						app.LogInfo("[LAN Gateway] Auto-configured successfully")
+						logger.LogInfo("[LAN Gateway] Auto-configured successfully")
 						glib.IdleAdd(func() {
 							// Update UI directly instead of calling updateStatus()
 							localIP := tp.getLocalIP()
@@ -1122,23 +1123,23 @@ func (tp *TailscalePanel) updateExitNodesSection(exitNodes []*tailscale.PeerStat
 			tp.lanGatewayRow.SetVisible(true)
 		} else {
 			// Checkbox disabled - cleanup rules if they exist
-			app.LogInfo("[LAN Gateway] Checkbox is disabled, cleaning up rules...")
+			logger.LogInfo("[LAN Gateway] Checkbox is disabled, cleaning up rules...")
 
 			// Check if rules are active before attempting cleanup
 			if tp.checkLANGatewayRulesActive() {
-				app.LogInfo("[LAN Gateway] Rules are active, triggering cleanup...")
+				logger.LogInfo("[LAN Gateway] Rules are active, triggering cleanup...")
 
 				// Cleanup rules in background
 				app.SafeGoWithName("tailscale-lan-gateway-cleanup", func() {
 					ctx := context.Background()
 					if err := tp.provider.CleanupLANGateway(ctx); err != nil {
-						app.LogWarn("[LAN Gateway] Failed to cleanup: %v", err)
+						logger.LogWarn("[LAN Gateway] Failed to cleanup: %v", err)
 					} else {
-						app.LogInfo("[LAN Gateway] Cleanup completed successfully")
+						logger.LogInfo("[LAN Gateway] Cleanup completed successfully")
 					}
 				})
 			} else {
-				app.LogInfo("[LAN Gateway] No active rules found, skipping cleanup")
+				logger.LogInfo("[LAN Gateway] No active rules found, skipping cleanup")
 			}
 
 			tp.lanGatewayRow.SetVisible(false)
@@ -1479,7 +1480,7 @@ func (tp *TailscalePanel) startStatsCollection() {
 
 	status, err := tp.provider.Status(ctx)
 	if err != nil {
-		app.LogWarn("tailscale-panel", "Failed to get status for stats: %v", err)
+		logger.LogWarn("tailscale-panel", "Failed to get status for stats: %v", err)
 		return
 	}
 
@@ -1505,7 +1506,7 @@ func (tp *TailscalePanel) startStatsCollection() {
 	)
 
 	if sessionID != "" {
-		app.LogDebug("tailscale-panel", "Stats collection started: session=%s", sessionID)
+		logger.LogDebug("tailscale-panel", "Stats collection started: session=%s", sessionID)
 	}
 }
 

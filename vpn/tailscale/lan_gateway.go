@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -45,11 +46,11 @@ type LANGatewayConfig struct {
 //   - Sets up iptables FORWARD rules for LAN <-> Tailscale traffic
 //   - Configures NAT/MASQUERADE for LAN traffic going out through Tailscale
 func (c *Client) ConfigureLANGateway(ctx context.Context) error {
-	app.LogInfo("Configuring LAN Gateway for Tailscale exit node")
+	logger.LogInfo("Configuring LAN Gateway for Tailscale exit node")
 
 	// Check if rules are already active - avoid unnecessary operations
 	if c.IsLANGatewayActive(ctx) {
-		app.LogInfo("[LAN Gateway] Rules already active, skipping configuration")
+		logger.LogInfo("[LAN Gateway] Rules already active, skipping configuration")
 		return nil
 	}
 
@@ -66,7 +67,7 @@ func (c *Client) ConfigureLANGateway(ctx context.Context) error {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
-	app.LogInfo("✅ LAN Gateway configured via daemon for %s via %s", result.LANNetwork, result.WiFiInterface)
+	logger.LogInfo("✅ LAN Gateway configured via daemon for %s via %s", result.LANNetwork, result.WiFiInterface)
 	return nil
 }
 
@@ -74,7 +75,7 @@ func (c *Client) ConfigureLANGateway(ctx context.Context) error {
 // This should be called when disconnecting or disabling LAN gateway functionality.
 // Requires the vpn-managerd daemon to be running.
 func (c *Client) CleanupLANGateway(ctx context.Context) error {
-	app.LogInfo("Cleaning up LAN Gateway configuration")
+	logger.LogInfo("Cleaning up LAN Gateway configuration")
 
 	// Use daemon for privileged operations (required)
 	if !app.IsDaemonAvailable() {
@@ -86,7 +87,7 @@ func (c *Client) CleanupLANGateway(ctx context.Context) error {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
-	app.LogInfo("✅ LAN Gateway cleanup via daemon completed")
+	logger.LogInfo("✅ LAN Gateway cleanup via daemon completed")
 	return nil
 }
 
@@ -109,7 +110,7 @@ func (c *Client) IsLANGatewayActive(ctx context.Context) bool {
 	hasRule := strings.Contains(outputStr, "5260") && strings.Contains(outputStr, "lookup 52")
 
 	if hasRule {
-		app.LogDebug("[LAN Gateway] Policy routing rule found (priority 5260, table 52)")
+		logger.LogDebug("[LAN Gateway] Policy routing rule found (priority 5260, table 52)")
 	}
 
 	return hasRule

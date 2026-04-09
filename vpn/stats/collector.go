@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // =============================================================================
@@ -179,7 +180,7 @@ func (c *Collector) Start(profileID string, providerType app.VPNProviderType, vp
 		c.collectLoop()
 	})
 
-	app.LogInfo("Stats collection started for session %s (interface: %s, profile: %s, provider: %s)",
+	logger.LogInfo("Stats collection started for session %s (interface: %s, profile: %s, provider: %s)",
 		sessionID, vpnIface, profileID, providerType)
 
 	return sessionID, nil
@@ -214,7 +215,7 @@ func (c *Collector) Stop() (*SessionSummary, error) {
 
 	// Mark session as ended in database
 	if err := c.repo.EndSession(sessionID); err != nil {
-		app.LogWarn("Failed to end session %s: %v", sessionID, err)
+		logger.LogWarn("Failed to end session %s: %v", sessionID, err)
 	}
 
 	// Build summary from collector's tracked values (more reliable than DB round-trip)
@@ -240,7 +241,7 @@ func (c *Collector) Stop() (*SessionSummary, error) {
 	}
 	c.mu.RUnlock()
 
-	app.LogInfo("Stats collection stopped for session %s", sessionID)
+	logger.LogInfo("Stats collection stopped for session %s", sessionID)
 
 	return summary, nil
 }
@@ -335,7 +336,7 @@ func (c *Collector) collectOnce() {
 	stats, err := getInterfaceStats(vpnIface)
 	if err != nil {
 		// Interface might be gone (VPN disconnected)
-		app.LogDebug("Failed to read interface stats for %s: %v", vpnIface, err)
+		logger.LogDebug("Failed to read interface stats for %s: %v", vpnIface, err)
 		return
 	}
 
@@ -425,7 +426,7 @@ func NewStatsManager(dbPath string) (*StatsManager, error) {
 
 	// Close orphaned sessions from previous runs (app crash, force quit, etc.)
 	if err := repo.CloseOrphanedSessions(); err != nil {
-		app.LogWarn("Failed to close orphaned sessions: %v", err)
+		logger.LogWarn("Failed to close orphaned sessions: %v", err)
 	}
 
 	collector := NewCollector(repo, DefaultCollectionInterval)

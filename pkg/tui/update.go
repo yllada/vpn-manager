@@ -12,8 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yllada/vpn-manager/app"
-	"github.com/yllada/vpn-manager/pkg/tui/components"
+	vpnerrors "github.com/yllada/vpn-manager/internal/errors"
 	"github.com/yllada/vpn-manager/internal/keyring"
+	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/pkg/tui/components"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 )
@@ -66,7 +68,7 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 			sparklineWidth = 30
 		}
 		m.statusPanel.SetSparklineWidth(sparklineWidth)
-		app.LogDebug("tui", "Window resized: %dx%d", m.width, m.height)
+		logger.LogDebug("tui", "Window resized: %dx%d", m.width, m.height)
 		return m, nil
 
 	// Keyboard input
@@ -83,13 +85,13 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.connection != nil && m.connection.Profile != nil {
 			m.profilesList.SetConnectedProfile(m.connection.Profile.ID)
 		}
-		app.LogDebug("tui", "Loaded %d profiles", len(m.profiles))
+		logger.LogDebug("tui", "Loaded %d profiles", len(m.profiles))
 		return m, nil
 
 	// Profile selected for connection
 	case ProfileSelectedMsg:
 		if msg.Profile != nil {
-			app.LogInfo("tui", "Profile selected: %s", msg.Profile.Name)
+			logger.LogInfo("tui", "Profile selected: %s", msg.Profile.Name)
 			return m, connectToProfile(m.manager, msg.Profile)
 		}
 		return m, nil
@@ -177,7 +179,7 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentView = ViewDashboard
 			m.keys = m.keys.SetContext(ContextDashboard)
 		}
-		app.LogDebug("tui", "Connection updated: %v", msg.Status)
+		logger.LogDebug("tui", "Connection updated: %v", msg.Status)
 		return m, tea.Batch(cmds...)
 
 	// Stats updated
@@ -210,7 +212,7 @@ func handleUpdate(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.currentView == ViewConnecting {
 			m.currentView = ViewDashboard
 		}
-		app.LogError("tui", "Error: %v", msg.Err)
+		logger.LogError("tui", "Error: %v", msg.Err)
 		return m, nil
 
 	// Tick for time-based updates (uptime counter, etc.)
@@ -446,7 +448,7 @@ func connectToProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 			return ErrorMsg{Err: app.WrapError(nil, "invalid manager or profile")}
 		}
 
-		app.LogInfo("tui", "Starting auth flow for profile: %s", profile.Name)
+		logger.LogInfo("tui", "Starting auth flow for profile: %s", profile.Name)
 
 		// Check if this is a Tailscale profile
 		if isTailscaleProfile(profile.ID) {
@@ -483,12 +485,12 @@ func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 		// Get Tailscale provider
 		providerIface, ok := manager.GetProvider(app.ProviderTailscale)
 		if !ok {
-			return ErrorMsg{Err: app.WrapError(nil, "Tailscale provider not available")}
+			return ErrorMsg{Err: vpnerrors.WrapError(nil, "Tailscale provider not available")}
 		}
 
 		tsProvider, ok := providerIface.(*tailscale.Provider)
 		if !ok {
-			return ErrorMsg{Err: app.WrapError(nil, "invalid Tailscale provider type")}
+			return ErrorMsg{Err: vpnerrors.WrapError(nil, "invalid Tailscale provider type")}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -497,14 +499,14 @@ func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 		// Check current status
 		status, err := tsProvider.Status(ctx)
 		if err != nil {
-			return ErrorMsg{Err: app.WrapError(err, "failed to get Tailscale status")}
+			return ErrorMsg{Err: vpnerrors.WrapError(err, "failed to get Tailscale status")}
 		}
 
-		app.LogInfo("tui", "Tailscale status: BackendState=%s", status.BackendState)
+		logger.LogInfo("tui", "Tailscale status: BackendState=%s", status.BackendState)
 
 		// If needs login, initiate OAuth flow
 		if status.BackendState == "NeedsLogin" {
-			app.LogInfo("tui", "Tailscale needs login, initiating OAuth flow")
+			logger.LogInfo("tui", "Tailscale needs login, initiating OAuth flow")
 
 			// Get auth URL by calling Login
 			authURL, err := tsProvider.Login(ctx, "")
@@ -512,9 +514,9 @@ func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 				// Check for permission errors
 				errStr := err.Error()
 				if strings.Contains(errStr, "Access denied") || strings.Contains(errStr, "profiles access denied") {
-					return ErrorMsg{Err: app.WrapError(err, "Tailscale requires operator permissions. Run: sudo tailscale set --operator=$USER")}
+					return ErrorMsg{Err: vpnerrors.WrapError(err, "Tailscale requires operator permissions. Run: sudo tailscale set --operator=$USER")}
 				}
-				return ErrorMsg{Err: app.WrapError(err, "failed to initiate Tailscale login")}
+				return ErrorMsg{Err: vpnerrors.WrapError(err, "failed to initiate Tailscale login")}
 			}
 
 			if authURL != "" {
@@ -528,11 +530,11 @@ func connectToTailscaleCmd(manager *vpn.Manager) tea.Cmd {
 
 		// Already logged in - try to connect (bring up)
 		if status.BackendState == "Stopped" || status.BackendState == "NoState" {
-			app.LogInfo("tui", "Tailscale is logged in but stopped, connecting...")
+			logger.LogInfo("tui", "Tailscale is logged in but stopped, connecting...")
 
 			err := tsProvider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
 			if err != nil {
-				return ErrorMsg{Err: app.WrapError(err, "failed to connect Tailscale")}
+				return ErrorMsg{Err: vpnerrors.WrapError(err, "failed to connect Tailscale")}
 			}
 
 			return TailscaleAuthCompleteMsg{Success: true}
@@ -555,7 +557,7 @@ func disconnectProfile(manager *vpn.Manager, profile *vpn.Profile) tea.Cmd {
 			return ErrorMsg{Err: app.WrapError(nil, "invalid manager or profile")}
 		}
 
-		app.LogInfo("tui", "Disconnecting from profile: %s", profile.Name)
+		logger.LogInfo("tui", "Disconnecting from profile: %s", profile.Name)
 
 		err := manager.Disconnect(profile.ID)
 		if err != nil {
@@ -648,7 +650,7 @@ func handleConfirmDialog(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 func handleConfirmResult(m Model, result components.ConfirmResult) (tea.Model, tea.Cmd) {
 	if !result.Confirmed {
 		// User canceled - just close the dialog
-		app.LogDebug("tui", "Confirmation canceled for action: %s", result.Action)
+		logger.LogDebug("tui", "Confirmation canceled for action: %s", result.Action)
 		return m, nil
 	}
 
@@ -657,7 +659,7 @@ func handleConfirmResult(m Model, result components.ConfirmResult) (tea.Model, t
 	case ConfirmActionDisconnect:
 		// Execute disconnect
 		if profile, ok := result.Data.(*vpn.Profile); ok && profile != nil {
-			app.LogInfo("tui", "User confirmed disconnect from: %s", profile.Name)
+			logger.LogInfo("tui", "User confirmed disconnect from: %s", profile.Name)
 			m.currentView = ViewConnecting
 			m.keys = m.keys.SetContext(ContextConnecting)
 			return m, disconnectProfile(m.manager, profile)
@@ -666,7 +668,7 @@ func handleConfirmResult(m Model, result components.ConfirmResult) (tea.Model, t
 	case ConfirmActionDelete:
 		// Execute delete (to be implemented when delete functionality is added)
 		if profile, ok := result.Data.(*vpn.Profile); ok && profile != nil {
-			app.LogInfo("tui", "User confirmed delete of: %s", profile.Name)
+			logger.LogInfo("tui", "User confirmed delete of: %s", profile.Name)
 			// TODO: Implement profile deletion
 			// return m, deleteProfile(m.manager, profile)
 		}
@@ -761,7 +763,7 @@ func handleAuthRequired(m Model, msg AuthRequiredMsg) (tea.Model, tea.Cmd) {
 
 	// If we have everything, connect directly
 	if hasSavedPassword && !needsOTP {
-		app.LogInfo("tui", "Using saved password for profile: %s", profile.Name)
+		logger.LogInfo("tui", "Using saved password for profile: %s", profile.Name)
 		return m, doConnect(m.manager, profile.ID, profile.Username, savedPassword)
 	}
 
@@ -789,7 +791,7 @@ func handleAuthRequired(m Model, msg AuthRequiredMsg) (tea.Model, tea.Cmd) {
 	m.authDialog.SetSize(m.width, m.height)
 	m.authDialog.Show(profile.Name, dialogState)
 
-	app.LogInfo("tui", "Showing auth dialog for profile: %s (needsPassword=%v, needsOTP=%v)",
+	logger.LogInfo("tui", "Showing auth dialog for profile: %s (needsPassword=%v, needsOTP=%v)",
 		profile.Name, needsPassword, needsOTP)
 
 	return m, nil
@@ -799,7 +801,7 @@ func handleAuthRequired(m Model, msg AuthRequiredMsg) (tea.Model, tea.Cmd) {
 func handleAuthDialogResult(m Model, result components.AuthDialogResult) (tea.Model, tea.Cmd) {
 	if !result.Submitted {
 		// User cancelled
-		app.LogInfo("tui", "Auth cancelled for profile: %s", result.ProfileName)
+		logger.LogInfo("tui", "Auth cancelled for profile: %s", result.ProfileName)
 		m.authDialog.Hide()
 		m.authState = AuthStateNone
 		m.authPassword = ""
@@ -833,13 +835,13 @@ func handleAuthDialogResult(m Model, result components.AuthDialogResult) (tea.Mo
 	// Save password if profile has SavePassword=true and we got a new password
 	if profile.SavePassword && password != "" && result.Password != "" {
 		if err := keyring.Store(profile.ID, password); err != nil {
-			app.LogError("tui", "Failed to save password to keyring: %v", err)
+			logger.LogError("tui", "Failed to save password to keyring: %v", err)
 		} else {
-			app.LogInfo("tui", "Password saved to keyring for profile: %s", profile.Name)
+			logger.LogInfo("tui", "Password saved to keyring for profile: %s", profile.Name)
 		}
 	}
 
-	app.LogInfo("tui", "Auth submitted for profile: %s", profile.Name)
+	logger.LogInfo("tui", "Auth submitted for profile: %s", profile.Name)
 
 	m.authDialog.Hide()
 	m.authState = AuthStateConnecting
@@ -852,10 +854,10 @@ func handleAuthDialogResult(m Model, result components.AuthDialogResult) (tea.Mo
 func doConnect(manager *vpn.Manager, profileID, username, fullPassword string) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil {
-			return ErrorMsg{Err: app.WrapError(nil, "invalid manager")}
+			return ErrorMsg{Err: vpnerrors.WrapError(nil, "invalid manager")}
 		}
 
-		app.LogInfo("tui", "Executing connection for profile ID: %s", profileID)
+		logger.LogInfo("tui", "Executing connection for profile ID: %s", profileID)
 
 		err := manager.Connect(profileID, username, fullPassword)
 		if err != nil {
@@ -906,7 +908,7 @@ func handleOAuthPrompt(m Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	case components.OAuthPromptResult:
 		// User cancelled OAuth flow
 		if msg.Cancelled {
-			app.LogInfo("tui", "OAuth flow cancelled by user")
+			logger.LogInfo("tui", "OAuth flow cancelled by user")
 			m.oauthPrompt.Hide()
 			m.toastManager.AddInfo("Authentication cancelled")
 		}
@@ -967,7 +969,7 @@ type tailscaleAuthPollMsg struct{}
 
 // handleTailscaleAuthURL processes the TailscaleAuthURLMsg and shows the OAuth prompt.
 func handleTailscaleAuthURL(m Model, msg TailscaleAuthURLMsg) (tea.Model, tea.Cmd) {
-	app.LogInfo("tui", "Tailscale auth URL received: %s", msg.URL)
+	logger.LogInfo("tui", "Tailscale auth URL received: %s", msg.URL)
 
 	// Show the OAuth prompt
 	m.oauthPrompt.SetSize(m.width, m.height)
@@ -1010,11 +1012,11 @@ func handleTailscaleAuthPoll(m Model, manager *vpn.Manager) (tea.Model, tea.Cmd)
 
 	status, err := tsProvider.Status(ctx)
 	if err != nil {
-		app.LogDebug("tui", "Tailscale poll error: %v", err)
+		logger.LogDebug("tui", "Tailscale poll error: %v", err)
 		return m, tailscaleAuthPollCmd()
 	}
 
-	app.LogDebug("tui", "Tailscale poll: BackendState=%s", status.BackendState)
+	logger.LogDebug("tui", "Tailscale poll: BackendState=%s", status.BackendState)
 
 	// Check if auth completed
 	switch status.BackendState {
@@ -1026,7 +1028,7 @@ func handleTailscaleAuthPoll(m Model, manager *vpn.Manager) (tea.Model, tea.Cmd)
 
 	case "Stopped":
 		// Auth completed but not connected yet - try to connect
-		app.LogInfo("tui", "Tailscale auth complete, connecting...")
+		logger.LogInfo("tui", "Tailscale auth complete, connecting...")
 		err := tsProvider.Connect(ctx, nil, app.AuthInfo{Interactive: true})
 		if err != nil {
 			return m, func() tea.Msg {
@@ -1046,7 +1048,7 @@ func handleTailscaleAuthPoll(m Model, manager *vpn.Manager) (tea.Model, tea.Cmd)
 		return m, func() tea.Msg {
 			return TailscaleAuthCompleteMsg{
 				Success: false,
-				Error:   app.WrapError(nil, "machine needs admin approval in Tailscale admin console"),
+				Error:   vpnerrors.WrapError(nil, "machine needs admin approval in Tailscale admin console"),
 			}
 		}
 

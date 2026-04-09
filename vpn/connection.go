@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // Connect initiates a VPN connection for the specified profile.
@@ -44,7 +45,7 @@ func (m *Manager) Connect(profileID string, username string, password string) er
 
 	// Mark profile as used
 	if err := m.profileManager.MarkUsed(profileID); err != nil {
-		app.LogWarn("vpn", "Failed to mark profile as used: %v", err)
+		logger.LogWarn("vpn", "Failed to mark profile as used: %v", err)
 	}
 
 	// Create new connection
@@ -110,7 +111,7 @@ func (m *Manager) Disconnect(profileID string) error {
 	// Use NetworkManager to disconnect if that was used for connection
 	if useNM && m.nmBackend.IsAvailable() && nmConnName != "" {
 		if err := m.nmBackend.Disconnect(nmConnName); err != nil {
-			app.LogDebug("vpn", "NM disconnect failed: %v, trying daemon", err)
+			logger.LogDebug("vpn", "NM disconnect failed: %v, trying daemon", err)
 		}
 	}
 
@@ -118,7 +119,7 @@ func (m *Manager) Disconnect(profileID string) error {
 	if app.IsDaemonAvailable() {
 		client := &app.OpenVPNClient{}
 		if err := client.Disconnect(profileID); err != nil {
-			app.LogWarn("vpn", "Daemon disconnect failed: %v", err)
+			logger.LogWarn("vpn", "Daemon disconnect failed: %v", err)
 		}
 	}
 
@@ -128,14 +129,14 @@ func (m *Manager) Disconnect(profileID string) error {
 	// Disable kill switch if no other connections remain
 	if len(m.connections) <= 1 {
 		if err := m.killSwitch.Disable(); err != nil {
-			app.LogWarn("killswitch", "failed to disable: %v", err)
+			logger.LogWarn("killswitch", "failed to disable: %v", err)
 		}
 	}
 
 	// Disable per-app tunneling if no other connections remain
 	if len(m.connections) <= 1 && m.appTunnel.enabled {
 		if err := m.appTunnel.Disable(); err != nil {
-			app.LogWarn("apptunnel", "failed to disable: %v", err)
+			logger.LogWarn("apptunnel", "failed to disable: %v", err)
 		}
 	}
 
@@ -146,7 +147,7 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	// Stop traffic statistics collection
 	if summary := m.StopStatsCollection(); summary != nil {
-		app.LogInfo("vpn", "Session stats: ↓%d MB ↑%d MB duration=%v",
+		logger.LogInfo("vpn", "Session stats: ↓%d MB ↑%d MB duration=%v",
 			summary.TotalBytesIn/(1024*1024),
 			summary.TotalBytesOut/(1024*1024),
 			summary.Duration.Round(time.Second))
@@ -154,7 +155,7 @@ func (m *Manager) Disconnect(profileID string) error {
 
 	delete(m.connections, profileID)
 
-	app.LogDebug("vpn", "Disconnected from %s", profileID)
+	logger.LogDebug("vpn", "Disconnected from %s", profileID)
 
 	// Emit event
 	app.Emit(app.EventConnectionClosed, "Manager", app.ConnectionEventData{
@@ -193,7 +194,7 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	// Kill Switch
 	if m.killSwitch != nil && m.killSwitch.GetMode() != KillSwitchOff {
 		if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
-			app.LogWarn("killswitch", "failed to enable: %v", err)
+			logger.LogWarn("killswitch", "failed to enable: %v", err)
 		}
 	}
 
@@ -207,12 +208,12 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 			vpnDNS := []string{DefaultVPNGatewayDNS}
 			systemDNS := m.detectSystemDNS()
 			m.appTunnel.SetSplitDNS(true, vpnDNS, systemDNS)
-			app.LogDebug("apptunnel", "Split DNS enabled (vpnDNS: %v, systemDNS: %s)", vpnDNS, systemDNS)
+			logger.LogDebug("apptunnel", "Split DNS enabled (vpnDNS: %v, systemDNS: %s)", vpnDNS, systemDNS)
 		}
 		if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
-			app.LogWarn("apptunnel", "failed to enable: %v", err)
+			logger.LogWarn("apptunnel", "failed to enable: %v", err)
 		} else {
-			app.LogDebug("apptunnel", "Enabled for %d apps (mode: %s, splitDNS: %v)",
+			logger.LogDebug("apptunnel", "Enabled for %d apps (mode: %s, splitDNS: %v)",
 				len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode, conn.Profile.SplitTunnelDNS)
 		}
 	}
@@ -235,7 +236,7 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 // runNMConnection executes VPN connection via NetworkManager.
 // This shows the VPN icon in the system panel.
 func (m *Manager) runNMConnection(conn *Connection, username, password string) {
-	app.LogDebug("vpn", "Starting NetworkManager connection to %s", conn.Profile.Name)
+	logger.LogDebug("vpn", "Starting NetworkManager connection to %s", conn.Profile.Name)
 
 	// First, ensure the profile is imported to NetworkManager
 	connName := conn.Profile.NMConnectionName
@@ -244,7 +245,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 		var err error
 		connName, err = m.nmBackend.ImportProfile(conn.Profile.ConfigPath, conn.Profile.Name)
 		if err != nil {
-			app.LogError("vpn", "Failed to import profile to NetworkManager: %v", err)
+			logger.LogError("vpn", "Failed to import profile to NetworkManager: %v", err)
 			m.handleConnectionError(conn, fmt.Errorf("failed to import to NetworkManager: %w", err))
 			return
 		}
@@ -252,7 +253,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 		// Save the connection name to the profile
 		conn.Profile.NMConnectionName = connName
 		_ = m.profileManager.Save()
-		app.LogDebug("vpn", "Imported to NetworkManager as '%s'", connName)
+		logger.LogDebug("vpn", "Imported to NetworkManager as '%s'", connName)
 	} else {
 		// Connection exists - ensure password storage is enabled
 		// This fixes existing connections that have password-flags=1
@@ -269,7 +270,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 	}
 
 	if err != nil {
-		app.LogError("vpn", "NetworkManager connection failed: %v", err)
+		logger.LogError("vpn", "NetworkManager connection failed: %v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
@@ -286,7 +287,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 			// Disconnection requested
 			return
 		case <-timeout:
-			app.LogError("vpn", "Connection timeout")
+			logger.LogError("vpn", "Connection timeout")
 			m.handleConnectionError(conn, fmt.Errorf("connection timeout"))
 			return
 		case <-ticker.C:
@@ -298,7 +299,7 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 				profileID := conn.Profile.ID
 				profileName := conn.Profile.Name
 				conn.mu.Unlock()
-				app.LogDebug("vpn", "Connected via NetworkManager - IP: %s", ip)
+				logger.LogDebug("vpn", "Connected via NetworkManager - IP: %s", ip)
 
 				// Emit connection established event
 				app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
@@ -318,13 +319,13 @@ func (m *Manager) runNMConnection(conn *Connection, username, password string) {
 // runConnection executes the VPN connection via the daemon.
 // The daemon handles all privileged operations (no pkexec needed).
 func (m *Manager) runConnection(conn *Connection, username string, password string) {
-	app.LogDebug("vpn", "Starting connection to %s", conn.Profile.Name)
-	app.LogDebug("vpn", "Configuration file: %s", conn.Profile.ConfigPath)
+	logger.LogDebug("vpn", "Starting connection to %s", conn.Profile.Name)
+	logger.LogDebug("vpn", "Configuration file: %s", conn.Profile.ConfigPath)
 
 	// Check daemon availability
 	if !app.IsDaemonAvailable() {
 		err := fmt.Errorf("vpn-managerd daemon is not running. Install and start it with: sudo ./build/install-daemon.sh")
-		app.LogError("vpn", "%v", err)
+		logger.LogError("vpn", "%v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
@@ -343,12 +344,12 @@ func (m *Manager) runConnection(conn *Connection, username string, password stri
 
 	result, err := client.Connect(params)
 	if err != nil {
-		app.LogError("vpn", "Daemon connection failed: %v", err)
+		logger.LogError("vpn", "Daemon connection failed: %v", err)
 		m.handleConnectionError(conn, err)
 		return
 	}
 
-	app.LogInfo("vpn", "OpenVPN started via daemon, PID: %d", result.PID)
+	logger.LogInfo("vpn", "OpenVPN started via daemon, PID: %d", result.PID)
 
 	// Start monitoring the connection status via daemon
 	m.monitorDaemonConnection(conn)
@@ -372,7 +373,7 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 		case <-ticker.C:
 			status, err := client.Status(profileID)
 			if err != nil {
-				app.LogDebug("vpn", "Error getting daemon status: %v", err)
+				logger.LogDebug("vpn", "Error getting daemon status: %v", err)
 				continue
 			}
 
@@ -383,7 +384,7 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 					conn.Status = StatusConnected
 					conn.IPAddress = status.IPAddress
 					wasConnected = true
-					app.LogInfo("vpn", "Connected via daemon - IP: %s", status.IPAddress)
+					logger.LogInfo("vpn", "Connected via daemon - IP: %s", status.IPAddress)
 
 					// Emit connection established event
 					app.Emit(app.EventConnectionEstablished, "Manager", app.ConnectionEventData{
@@ -465,11 +466,11 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 		line := scanner.Text()
 
 		// Log all OpenVPN output
-		app.LogDebug("openvpn", "%s", line)
+		logger.LogDebug("openvpn", "%s", line)
 
 		// Detect important events
 		if strings.Contains(line, "Initialization Sequence Completed") {
-			app.LogDebug("vpn", "Connection established!")
+			logger.LogDebug("vpn", "Connection established!")
 			conn.mu.Lock()
 			conn.Status = StatusConnected
 			profileID := conn.Profile.ID
@@ -490,7 +491,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 
 		// Detect authentication errors
 		if strings.Contains(line, "AUTH_FAILED") {
-			app.LogError("vpn", "Authentication failed")
+			logger.LogError("vpn", "Authentication failed")
 			conn.mu.Lock()
 			conn.Status = StatusError
 			conn.LastError = "Authentication failed - verify username/password/OTP"
@@ -505,7 +506,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 
 			// Invoke auth failed callback if set and not already called
 			if onAuthFailed != nil && !authFailedCalled && needsOTP {
-				app.LogDebug("vpn", "AUTH_FAILED detected without OTP - suggesting OTP retry")
+				logger.LogDebug("vpn", "AUTH_FAILED detected without OTP - suggesting OTP retry")
 				app.SafeGoWithName("vpn-auth-failed-callback", func() {
 					onAuthFailed(conn.Profile, true)
 				})
@@ -515,7 +516,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 		// Detect CRV1 challenge (dynamic challenge from server)
 		// Format: AUTH:CRV1:R,E:base64:base64:message
 		if strings.Contains(line, "AUTH:CRV1") || strings.Contains(line, "CHALLENGE") {
-			app.LogDebug("vpn", "Server requesting challenge/OTP authentication")
+			logger.LogDebug("vpn", "Server requesting challenge/OTP authentication")
 			conn.mu.Lock()
 			needsOTP := !conn.Profile.RequiresOTP
 			onAuthFailed := conn.onAuthFailed
@@ -532,7 +533,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 
 		// Detect connection errors
 		if strings.Contains(line, "Connection refused") || strings.Contains(line, "SIGTERM") {
-			app.LogError("vpn", "Connection refused or terminated")
+			logger.LogError("vpn", "Connection refused or terminated")
 		}
 
 		// Invoke log handler if exists
@@ -544,7 +545,7 @@ func (m *Manager) monitorOutput(conn *Connection, pipe interface {
 
 // handleConnectionError handles connection errors
 func (m *Manager) handleConnectionError(conn *Connection, err error) {
-	app.LogError("vpn", "%v", err)
+	logger.LogError("vpn", "%v", err)
 	conn.mu.Lock()
 	conn.Status = StatusError
 	conn.LastError = err.Error()
@@ -664,7 +665,7 @@ func (m *Manager) getVPNServerIP(profile *Profile) string {
 
 	data, err := os.ReadFile(profile.ConfigPath)
 	if err != nil {
-		app.LogDebug("vpn", "Failed to read config for server IP: %v", err)
+		logger.LogDebug("vpn", "Failed to read config for server IP: %v", err)
 		return ""
 	}
 
@@ -692,7 +693,7 @@ func (m *Manager) getVPNServerIP(profile *Profile) string {
 					}
 					return ips[0].String()
 				}
-				app.LogDebug("vpn", "Could not resolve server hostname: %s", serverAddr)
+				logger.LogDebug("vpn", "Could not resolve server hostname: %s", serverAddr)
 				return serverAddr // Return hostname as fallback
 			}
 		}

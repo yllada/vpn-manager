@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/stats"
 )
@@ -599,7 +600,7 @@ func (sp *StatsPanel) updateTodaySummary() {
 	// Get today's stats (last 1 day)
 	summaries, err := sp.statsManager.GetDailySummaries(1)
 	if err != nil {
-		app.LogDebug("Failed to get today's stats: %v", err)
+		logger.LogDebug("Failed to get today's stats: %v", err)
 		return
 	}
 
@@ -644,7 +645,7 @@ func (sp *StatsPanel) updateWeeklyChart() {
 	// Get last 7 days of data
 	summaries, err := sp.statsManager.GetDailySummaries(7)
 	if err != nil {
-		app.LogDebug("Failed to get weekly stats: %v", err)
+		logger.LogDebug("Failed to get weekly stats: %v", err)
 		return
 	}
 
@@ -678,7 +679,7 @@ func (sp *StatsPanel) updateSessionsList() {
 	// Get recent sessions
 	sessions, err := sp.statsManager.GetRecentSessions(10)
 	if err != nil {
-		app.LogDebug("Failed to get recent sessions: %v", err)
+		logger.LogDebug("Failed to get recent sessions: %v", err)
 		return
 	}
 

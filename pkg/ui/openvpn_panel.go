@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -746,7 +747,7 @@ func (pl *ProfileList) connectWithCredentials(profile *vpn.Profile, username, pa
 
 				// Disconnect failed connection first (done outside GTK thread)
 				if err := pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
-					app.LogError("openvpn_panel", "Disconnect after auth failure failed: %v", err)
+					logger.LogError("openvpn_panel", "Disconnect after auth failure failed: %v", err)
 				}
 
 				// All GTK operations must be done on the main thread

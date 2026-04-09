@@ -11,6 +11,7 @@ import (
 
 	"github.com/yllada/vpn-manager/app"
 	"github.com/yllada/vpn-manager/internal/keyring"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // HealthState represents the current health state of a connection.
@@ -141,7 +142,7 @@ func (hc *HealthChecker) Start() {
 	hc.stopChan = make(chan struct{})
 	hc.mu.Unlock()
 
-	app.LogInfo("Health checker started (interval: %v)", hc.config.CheckInterval)
+	logger.LogInfo("Health checker started (interval: %v)", hc.config.CheckInterval)
 
 	app.SafeGoWithName("health-checker-loop", func() {
 		hc.runLoop()
@@ -159,7 +160,7 @@ func (hc *HealthChecker) Stop() {
 	close(hc.stopChan)
 	hc.mu.Unlock()
 
-	app.LogInfo("Health checker stopped")
+	logger.LogInfo("Health checker stopped")
 }
 
 // IsRunning returns whether the health checker is currently running.
@@ -236,7 +237,7 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 	if err != nil {
 		health.ConsecutiveFails++
 		health.Latency = 0
-		app.LogWarn("Health check failed for %s (attempt %d/%d): %v",
+		logger.LogWarn("Health check failed for %s (attempt %d/%d): %v",
 			conn.Profile.Name, health.ConsecutiveFails, DefaultHealthFailureThreshold, err)
 
 		if health.ConsecutiveFails >= hc.config.FailureThreshold {
@@ -254,7 +255,7 @@ func (hc *HealthChecker) checkConnection(conn *Connection) {
 
 	// Notify on state change
 	if oldState != health.State {
-		app.LogInfo("Health state changed for %s: %s -> %s",
+		logger.LogInfo("Health state changed for %s: %s -> %s",
 			conn.Profile.Name, oldState.String(), health.State.String())
 
 		if hc.onHealthChange != nil {
@@ -298,13 +299,13 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 	health, healthExists := hc.connectionHealth[profileID]
 	if !healthExists {
 		hc.mu.Unlock()
-		app.LogWarn("No health record found for profile %s during reconnect", profileID)
+		logger.LogWarn("No health record found for profile %s during reconnect", profileID)
 		return
 	}
 
 	if hc.config.MaxReconnectAttempts > 0 && health.ReconnectAttempts >= hc.config.MaxReconnectAttempts {
 		hc.mu.Unlock()
-		app.LogError("Max reconnect attempts reached for profile %s", profileID)
+		logger.LogError("Max reconnect attempts reached for profile %s", profileID)
 		if hc.onReconnectFailed != nil {
 			hc.onReconnectFailed(profileID, app.ErrConnectionFailed)
 		}
@@ -318,11 +319,11 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 	// Fetch connection from manager (outside health checker lock)
 	conn, exists := hc.manager.GetConnection(profileID)
 	if !exists {
-		app.LogWarn("Connection not found for profile %s during reconnect", profileID)
+		logger.LogWarn("Connection not found for profile %s during reconnect", profileID)
 		return
 	}
 
-	app.LogInfo("Attempting reconnect for %s (attempt %d)", conn.Profile.Name, attempt)
+	logger.LogInfo("Attempting reconnect for %s (attempt %d)", conn.Profile.Name, attempt)
 
 	if hc.onReconnecting != nil {
 		hc.onReconnecting(profileID, attempt)
@@ -334,7 +335,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 	// Check if we should still reconnect (connection might have been manually disconnected)
 	currentConn, exists := hc.manager.GetConnection(profileID)
 	if !exists || currentConn.Status == StatusDisconnected {
-		app.LogInfo("Connection was disconnected, skipping reconnect for %s", conn.Profile.Name)
+		logger.LogInfo("Connection was disconnected, skipping reconnect for %s", conn.Profile.Name)
 		return
 	}
 
@@ -343,7 +344,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 
 	// Check if profile requires OTP - cannot auto-reconnect with expired OTP codes
 	if profile.RequiresOTP {
-		app.LogInfo("Profile %s requires OTP - requesting user input for reconnection", profile.Name)
+		logger.LogInfo("Profile %s requires OTP - requesting user input for reconnection", profile.Name)
 
 		// Try to get saved password for OTP dialog
 		savedPassword := ""
@@ -379,7 +380,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 			password = savedPassword
 		} else {
 			// No hay credenciales - notificar y abortar
-			app.LogWarn("Cannot auto-reconnect %s: no saved credentials", profile.Name)
+			logger.LogWarn("Cannot auto-reconnect %s: no saved credentials", profile.Name)
 			if hc.onReconnectFailed != nil {
 				hc.onReconnectFailed(profile.ID, fmt.Errorf("no saved credentials for auto-reconnect"))
 			}
@@ -387,7 +388,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 		}
 	} else {
 		// Perfil sin SavePassword - reconexión manual requerida
-		app.LogWarn("Cannot auto-reconnect %s: credentials not saved", profile.Name)
+		logger.LogWarn("Cannot auto-reconnect %s: credentials not saved", profile.Name)
 		if hc.onReconnectFailed != nil {
 			hc.onReconnectFailed(profile.ID, fmt.Errorf("credentials not saved, manual reconnect required"))
 		}
@@ -396,7 +397,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 
 	// Disconnect first
 	if err := hc.manager.Disconnect(profile.ID); err != nil {
-		app.LogError("Failed to disconnect before reconnect: %v", err)
+		logger.LogError("Failed to disconnect before reconnect: %v", err)
 	}
 
 	// Small delay after disconnect
@@ -404,7 +405,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 
 	// Attempt to reconnect with retrieved credentials
 	if err := hc.manager.Connect(profile.ID, profile.Username, password); err != nil {
-		app.LogError("Reconnect failed for %s: %v", profile.Name, err)
+		logger.LogError("Reconnect failed for %s: %v", profile.Name, err)
 
 		hc.mu.Lock()
 		currentHealth, ok := hc.connectionHealth[profileID]
@@ -423,7 +424,7 @@ func (hc *HealthChecker) attemptReconnect(profileID string) {
 			}
 		}
 	} else {
-		app.LogInfo("Reconnect successful for %s", profile.Name)
+		logger.LogInfo("Reconnect successful for %s", profile.Name)
 	}
 }
 

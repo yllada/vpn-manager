@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // =============================================================================
@@ -309,7 +310,7 @@ func (qm *QualityMonitor) Start() error {
 	qm.stopCh = make(chan struct{})
 	qm.mu.Unlock()
 
-	app.LogInfo("Quality monitor started for interface %s (interval: %v)", qm.vpnIface, qm.interval)
+	logger.LogInfo("Quality monitor started for interface %s (interval: %v)", qm.vpnIface, qm.interval)
 
 	// Take initial stats sample
 	if stats, err := GetInterfaceStats(qm.vpnIface); err == nil {
@@ -342,7 +343,7 @@ func (qm *QualityMonitor) Stop() {
 	qm.subscribers = make([]chan QualityMetrics, 0)
 	qm.mu.Unlock()
 
-	app.LogInfo("Quality monitor stopped for interface %s", qm.vpnIface)
+	logger.LogInfo("Quality monitor stopped for interface %s", qm.vpnIface)
 }
 
 // IsRunning returns whether the quality monitor is currently running.
@@ -430,7 +431,7 @@ func (qm *QualityMonitor) collectMetrics() {
 		failCount := qm.consecutiveFails
 		qm.mu.Unlock()
 
-		app.LogDebug("Latency measurement failed for %s (attempt %d): %v",
+		logger.LogDebug("Latency measurement failed for %s (attempt %d): %v",
 			qm.serverAddr, failCount, latencyErr)
 	}
 
@@ -460,7 +461,7 @@ func (qm *QualityMonitor) collectMetrics() {
 		qm.prevStats = stats
 		qm.mu.Unlock()
 	} else {
-		app.LogDebug("Interface stats read failed for %s: %v", vpnIface, statsErr)
+		logger.LogDebug("Interface stats read failed for %s: %v", vpnIface, statsErr)
 	}
 
 	// Determine quality status

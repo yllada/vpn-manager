@@ -10,6 +10,7 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
@@ -361,7 +362,7 @@ func (pd *PreferencesDialog) savePreferences() {
 				AcceptRoutes: &acceptRoutes,
 				AcceptDNS:    &acceptDNS,
 			}); err != nil {
-				app.LogWarn("[Preferences] Could not apply Tailscale settings: %v", err)
+				logger.LogWarn("[Preferences] Could not apply Tailscale settings: %v", err)
 			}
 		}
 	}
@@ -410,10 +411,10 @@ func (pd *PreferencesDialog) savePreferences() {
 
 	// Refresh Tailscale panel to trigger LAN Gateway auto-config if needed
 	if pd.mainWindow.tailscalePanel != nil {
-		app.LogInfo("[Preferences] Triggering Tailscale panel updateStatus after saving preferences")
+		logger.LogInfo("[Preferences] Triggering Tailscale panel updateStatus after saving preferences")
 		pd.mainWindow.tailscalePanel.updateStatus()
 	} else {
-		app.LogWarn("[Preferences] tailscalePanel is nil, cannot trigger updateStatus")
+		logger.LogWarn("[Preferences] tailscalePanel is nil, cannot trigger updateStatus")
 	}
 }
 

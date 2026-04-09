@@ -11,6 +11,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/vpn"
 )
@@ -48,7 +49,7 @@ func NewApplication(appID, version string, startMinimized bool) (*Application, e
 	cfg, err := app.Load()
 	if err != nil {
 		// Use default configuration if there's an error
-		app.LogWarn("Failed to load config, using defaults: %v", err)
+		logger.LogWarn("Failed to load config, using defaults: %v", err)
 		cfg = app.DefaultConfig()
 	}
 
@@ -87,7 +88,7 @@ func (a *Application) onActivate() {
 
 	// Check for orphaned VPN on startup (before showing window)
 	if detected, info := a.vpnManager.DetectOrphanedVPN(); detected {
-		app.LogWarn("app", "Orphaned VPN detected on startup: interface=%s, ip=%s", info.Interface, info.IPAddress)
+		logger.LogWarn("app", "Orphaned VPN detected on startup: interface=%s, ip=%s", info.Interface, info.IPAddress)
 	}
 
 	// Create main window
@@ -95,7 +96,7 @@ func (a *Application) onActivate() {
 
 	// Show window only if not starting minimized (autostart mode)
 	if a.startMinimized {
-		app.LogInfo("Starting minimized to system tray")
+		logger.LogInfo("Starting minimized to system tray")
 		// Window is created but not shown - needed for GTK app lifecycle
 		// The tray indicator will allow showing the window later
 	} else {
@@ -113,18 +114,18 @@ func (a *Application) onActivate() {
 
 	// Initialize trust management system (network-based auto-VPN control)
 	if err := a.vpnManager.InitTrustManagement(); err != nil {
-		app.LogWarn("Failed to initialize trust management: %v", err)
+		logger.LogWarn("Failed to initialize trust management: %v", err)
 	}
 
 	// Subscribe to trust auth required events (OTP needed during auto-connect)
 	a.trustAuthSubscription = app.On(app.EventTrustAuthRequired, func(event *app.Event) {
-		app.LogInfo("UI received EventTrustAuthRequired event")
+		logger.LogInfo("UI received EventTrustAuthRequired event")
 		if data, ok := event.Data.(app.TrustAuthRequiredData); ok {
-			app.LogInfo("EventTrustAuthRequired data: SSID=%s, ProfileID=%s, NeedsOTP=%v",
+			logger.LogInfo("EventTrustAuthRequired data: SSID=%s, ProfileID=%s, NeedsOTP=%v",
 				data.SSID, data.ProfileID, data.NeedsOTP)
 			a.handleTrustAuthRequired(data)
 		} else {
-			app.LogError("EventTrustAuthRequired: failed to cast data, type=%T", event.Data)
+			logger.LogError("EventTrustAuthRequired: failed to cast data, type=%T", event.Data)
 		}
 	})
 }
@@ -236,7 +237,7 @@ func (a *Application) Cleanup() {
 			a.window.statsPanel.StopUpdates()
 		}
 	}
-	app.LogInfo("Application cleanup completed")
+	logger.LogInfo("Application cleanup completed")
 }
 
 // Quit closes the application
@@ -330,7 +331,7 @@ func (a *Application) setupHealthChecker() {
 		glib.IdleAdd(func() {
 			profile, err := a.vpnManager.ProfileManager().Get(profileID)
 			if err != nil {
-				app.LogError("Failed to get profile for OTP reconnect: %v", err)
+				logger.LogError("Failed to get profile for OTP reconnect: %v", err)
 				return
 			}
 
@@ -362,7 +363,7 @@ func (a *Application) handleTrustAuthRequired(data app.TrustAuthRequiredData) {
 		// Get the profile from ProfileManager
 		profile, err := a.vpnManager.ProfileManager().Get(data.ProfileID)
 		if err != nil {
-			app.LogError("Failed to get profile for trust auth: %v", err)
+			logger.LogError("Failed to get profile for trust auth: %v", err)
 			return
 		}
 

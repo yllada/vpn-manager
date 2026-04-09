@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 )
 
 // NMBackend provides NetworkManager-based VPN connection management.
@@ -51,7 +52,7 @@ func (nm *NMBackend) ImportProfile(configPath, name string) (string, error) {
 	// First check if already imported
 	existing := nm.findConnection(name)
 	if existing != "" {
-		app.LogDebug("nm", "Profile '%s' already imported as '%s'", name, existing)
+		logger.LogDebug("nm", "Profile '%s' already imported as '%s'", name, existing)
 		return existing, nil
 	}
 
@@ -84,7 +85,7 @@ func (nm *NMBackend) ImportProfile(configPath, name string) (string, error) {
 	_ = exec.Command("nmcli", "connection", "modify", connName,
 		"+vpn.data", "password-flags=0").Run()
 
-	app.LogDebug("nm", "Profile imported as '%s' with password storage enabled", connName)
+	logger.LogDebug("nm", "Profile imported as '%s' with password storage enabled", connName)
 	return connName, nil
 }
 
@@ -163,7 +164,7 @@ func (nm *NMBackend) connectWithPasswdFile(connName, password string) error {
 		return fmt.Errorf("nmcli connection up failed: %w: %s", err, string(output))
 	}
 
-	app.LogDebug("nm", "Connected to %s (via passwd-file)", connName)
+	logger.LogDebug("nm", "Connected to %s (via passwd-file)", connName)
 	return nil
 }
 
@@ -194,7 +195,7 @@ func (nm *NMBackend) ConnectWithSecrets(connName, username, password, otp string
 	if otp == "" {
 		cmd := exec.Command("nmcli", "connection", "up", connName)
 		if err := cmd.Run(); err == nil {
-			app.LogDebug("nm", "Connected to %s", connName)
+			logger.LogDebug("nm", "Connected to %s", connName)
 			return nil
 		}
 	}
@@ -213,7 +214,7 @@ func (nm *NMBackend) Disconnect(connName string) error {
 		return nil
 	}
 
-	app.LogDebug("nm", "Disconnected from %s: %s", connName, string(output))
+	logger.LogDebug("nm", "Disconnected from %s: %s", connName, string(output))
 	return nil
 }
 
@@ -360,7 +361,7 @@ func (nm *NMBackend) SetCredentials(connName, username, password string) error {
 		cmd := exec.Command("nmcli", "connection", "modify", connName,
 			"+vpn.data", fmt.Sprintf("username=%s", username))
 		if err := cmd.Run(); err != nil {
-			app.LogWarn("nm", "Could not set username: %v", err)
+			logger.LogWarn("nm", "Could not set username: %v", err)
 		}
 	}
 
@@ -368,7 +369,7 @@ func (nm *NMBackend) SetCredentials(connName, username, password string) error {
 	cmd := exec.Command("nmcli", "connection", "modify", connName,
 		"+vpn.data", "password-flags=0")
 	if err := cmd.Run(); err != nil {
-		app.LogWarn("nm", "Could not set password-flags: %v", err)
+		logger.LogWarn("nm", "Could not set password-flags: %v", err)
 	}
 
 	// Save the password
@@ -380,7 +381,7 @@ func (nm *NMBackend) SetCredentials(connName, username, password string) error {
 		}
 	}
 
-	app.LogDebug("nm", "Credentials saved for %s", connName)
+	logger.LogDebug("nm", "Credentials saved for %s", connName)
 	return nil
 }
 
@@ -443,7 +444,7 @@ func (nm *NMBackend) FixAllVPNConnections() (int, error) {
 			if nm.GetPasswordFlags(connName) != 0 {
 				if err := nm.FixPasswordFlags(connName); err == nil {
 					fixed++
-					app.LogDebug("nm", "Fixed password-flags for %s", connName)
+					logger.LogDebug("nm", "Fixed password-flags for %s", connName)
 				}
 			}
 		}

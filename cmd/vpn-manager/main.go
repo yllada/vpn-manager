@@ -29,6 +29,7 @@ import (
 	"syscall"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/pkg/cli"
 	"github.com/yllada/vpn-manager/pkg/tui"
 	"github.com/yllada/vpn-manager/pkg/ui"
@@ -88,12 +89,12 @@ func main() {
 	}
 
 	// Initialize logger with structured logging and file output
-	logLevel := app.LevelInfo
+	logLevel := logger.LevelInfo
 	if *verbose {
-		logLevel = app.LevelDebug
+		logLevel = logger.LevelDebug
 	}
 
-	if err := app.InitLogger(app.LogConfig{
+	if err := logger.InitLogger(logger.LogConfig{
 		Level:       logLevel,
 		EnableFile:  true,
 		MaxFileSize: 5 * 1024 * 1024, // 5MB
@@ -101,7 +102,7 @@ func main() {
 	}); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: Could not initialize file logging: %v\n", err)
 	}
-	defer func() { _ = app.CloseLogger() }()
+	defer func() { _ = logger.CloseLogger() }()
 
 	// Setup graceful shutdown context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -122,7 +123,7 @@ func main() {
 
 	// Log OpenVPN availability (app continues regardless - panels show install guidance)
 	if !checkOpenVPNInstalled() {
-		app.LogInfo("OpenVPN is not installed - OpenVPN tab will show installation guidance")
+		logger.LogInfo("OpenVPN is not installed - OpenVPN tab will show installation guidance")
 	}
 
 	// Check if any CLI mode flag is set
@@ -138,10 +139,10 @@ func main() {
 	}
 
 	// Start the GTK application (GUI mode)
-	app.LogInfo("Starting %s v%s", app.AppName, appVersion)
+	logger.LogInfo("Starting %s v%s", app.AppName, appVersion)
 	application, err := ui.NewApplication(app.AppID, appVersion, *startMinimized)
 	if err != nil {
-		app.LogError("Failed to initialize application: %v", err)
+		logger.LogError("Failed to initialize application: %v", err)
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -153,7 +154,7 @@ func main() {
 	exitCode := application.Run([]string{os.Args[0]})
 
 	if exitCode != 0 {
-		app.LogWarn("Application exited with code %d", exitCode)
+		logger.LogWarn("Application exited with code %d", exitCode)
 	}
 	os.Exit(exitCode)
 }
@@ -176,7 +177,7 @@ func runCLI(ctx context.Context) {
 	// Check if context is already cancelled before proceeding
 	select {
 	case <-ctx.Done():
-		app.LogInfo("Operation cancelled before execution")
+		logger.LogInfo("Operation cancelled before execution")
 		return
 	default:
 	}
@@ -217,11 +218,11 @@ func runCLI(ctx context.Context) {
 // runTUI launches the interactive Terminal User Interface.
 // It creates a VPN manager and runs the Bubble Tea TUI application.
 func runTUI() {
-	app.LogInfo("Starting TUI mode")
+	logger.LogInfo("Starting TUI mode")
 
 	manager, err := vpn.NewManager()
 	if err != nil {
-		app.LogError("Failed to initialize VPN manager: %v", err)
+		logger.LogError("Failed to initialize VPN manager: %v", err)
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -232,13 +233,13 @@ func runTUI() {
 		// Ensure current user is configured as Tailscale operator
 		app.SafeGoWithName("tailscale-ensure-operator", func() {
 			if err := tsProvider.EnsureOperator(); err != nil {
-				app.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
+				logger.LogWarn("[Tailscale] Warning: Could not configure operator: %v", err)
 			}
 		})
 	}
 
 	if err := tui.Run(manager); err != nil {
-		app.LogError("TUI error: %v", err)
+		logger.LogError("TUI error: %v", err)
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -252,7 +253,7 @@ func setupSignalHandler(cancel context.CancelFunc) {
 
 	app.SafeGoWithName("signal-handler", func() {
 		sig := <-sigChan
-		app.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
+		logger.LogInfo("Received signal %v, initiating graceful shutdown...", sig)
 		cancel()
 		// Note: In CLI mode, the context cancellation will be checked
 		// In GUI mode, GTK handles the shutdown via window close
@@ -279,25 +280,25 @@ func checkOpenVPNInstalled() bool {
 // handleRecoverKillSwitch recovers the kill switch state from the state file.
 // This is called by the systemd service at boot time to restore kill switch rules.
 func handleRecoverKillSwitch() {
-	app.LogInfo("Recovering kill switch state (systemd service start)")
+	logger.LogInfo("Recovering kill switch state (systemd service start)")
 
 	ks := vpn.NewKillSwitch()
 
 	// Load the persisted state
 	state, err := vpn.LoadState()
 	if err != nil {
-		app.LogError("Failed to load kill switch state: %v", err)
+		logger.LogError("Failed to load kill switch state: %v", err)
 		os.Exit(1)
 	}
 
 	if state == nil {
 		// No state file - nothing to recover
-		app.LogInfo("No kill switch state file found, skipping recovery")
+		logger.LogInfo("No kill switch state file found, skipping recovery")
 		os.Exit(0)
 	}
 
 	if !state.Enabled {
-		app.LogInfo("Kill switch was not enabled, skipping recovery")
+		logger.LogInfo("Kill switch was not enabled, skipping recovery")
 		os.Exit(0)
 	}
 
@@ -320,37 +321,37 @@ func handleRecoverKillSwitch() {
 	}
 
 	if enableErr != nil {
-		app.LogError("Failed to enable kill switch: %v", enableErr)
+		logger.LogError("Failed to enable kill switch: %v", enableErr)
 		os.Exit(1)
 	}
 
-	app.LogInfo("Kill switch recovered successfully (iface=%s, allowLAN=%v)", state.VPNIface, state.AllowLAN)
+	logger.LogInfo("Kill switch recovered successfully (iface=%s, allowLAN=%v)", state.VPNIface, state.AllowLAN)
 	os.Exit(0)
 }
 
 // handleDisableKillSwitch disables the kill switch and clears the state file.
 // This is called by the systemd service at shutdown/stop time.
 func handleDisableKillSwitch() {
-	app.LogInfo("Disabling kill switch (systemd service stop)")
+	logger.LogInfo("Disabling kill switch (systemd service stop)")
 
 	ks := vpn.NewKillSwitch()
 
 	// Recover current state first so we know how to disable
 	if err := ks.RecoverState(); err != nil {
-		app.LogWarn("Failed to recover state: %v", err)
+		logger.LogWarn("Failed to recover state: %v", err)
 	}
 
 	// Force disable the kill switch
 	if err := ks.ForceDisable(); err != nil {
-		app.LogError("Failed to disable kill switch: %v", err)
+		logger.LogError("Failed to disable kill switch: %v", err)
 		os.Exit(1)
 	}
 
 	// Clear the state file
 	if err := ks.ClearState(); err != nil {
-		app.LogWarn("Failed to clear state file: %v", err)
+		logger.LogWarn("Failed to clear state file: %v", err)
 	}
 
-	app.LogInfo("Kill switch disabled successfully")
+	logger.LogInfo("Kill switch disabled successfully")
 	os.Exit(0)
 }

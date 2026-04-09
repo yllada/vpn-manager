@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
@@ -152,7 +153,7 @@ func (wp *WireGuardPanel) createLayout() {
 func (wp *WireGuardPanel) loadProfiles() {
 	profiles, err := wp.provider.LoadProfiles()
 	if err != nil {
-		app.LogError("WireGuard: Failed to load profiles: %v", err)
+		logger.LogError("WireGuard: Failed to load profiles: %v", err)
 		return
 	}
 
@@ -342,7 +343,7 @@ func (wp *WireGuardPanel) onImportProfile() {
 		path := file.Path()
 		_, importErr := wp.provider.ImportProfile(path)
 		if importErr != nil {
-			app.LogError("WireGuard: Import failed: %v", importErr)
+			logger.LogError("WireGuard: Import failed: %v", importErr)
 			wp.showError("Import Failed", importErr.Error())
 		} else {
 			// Reload all profiles to ensure consistency
@@ -363,7 +364,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
-					app.LogError("WireGuard: Disconnect error: %v", err)
+					logger.LogError("WireGuard: Disconnect error: %v", err)
 					wp.showError("Disconnect Failed", err.Error())
 				}
 				wp.updateRowStatus(row)
@@ -377,7 +378,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
-					app.LogError("WireGuard: Connect error: %v", err)
+					logger.LogError("WireGuard: Connect error: %v", err)
 					wp.showError("Connection Failed", err.Error())
 				}
 				wp.updateRowStatus(row)
@@ -411,13 +412,13 @@ func (wp *WireGuardPanel) onDeleteProfile(row *WireGuardRow) {
 			conn := wp.provider.GetConnection(row.profile.ID())
 			if conn != nil && conn.Status == wireguard.StatusConnected {
 				if err := wp.provider.Disconnect(context.Background(), row.profile); err != nil {
-					app.LogWarn("WireGuard: Disconnect before delete failed: %v", err)
+					logger.LogWarn("WireGuard: Disconnect before delete failed: %v", err)
 				}
 			}
 
 			// Delete profile
 			if err := wp.provider.DeleteProfile(row.profile.ID()); err != nil {
-				app.LogError("WireGuard: Delete error: %v", err)
+				logger.LogError("WireGuard: Delete error: %v", err)
 				wp.showError("Delete Failed", err.Error())
 				return
 			}

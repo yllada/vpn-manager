@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/app"
+	"github.com/yllada/vpn-manager/internal/logger"
 	_ "modernc.org/sqlite"
 )
 
@@ -125,7 +126,7 @@ func NewRepository(dbPath string) (*Repository, error) {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	app.LogInfo("Stats repository initialized at %s", dbPath)
+	logger.LogInfo("Stats repository initialized at %s", dbPath)
 	return repo, nil
 }
 
@@ -189,12 +190,12 @@ func (r *Repository) migrate() error {
 
 	// Fix corrupted timestamps (Go's monotonic clock suffix breaks SQLite date() functions)
 	if err := r.migrateTimestamps(); err != nil {
-		app.LogWarn("Failed to migrate timestamps: %v", err)
+		logger.LogWarn("Failed to migrate timestamps: %v", err)
 	}
 
 	// Add provider_type column for multi-provider stats support
 	if err := r.addProviderTypeColumn(); err != nil {
-		app.LogWarn("Failed to add provider_type column: %v", err)
+		logger.LogWarn("Failed to add provider_type column: %v", err)
 	}
 
 	return nil
@@ -218,7 +219,7 @@ func (r *Repository) migrateTimestamps() error {
 			return fmt.Errorf("migration query failed: %w", err)
 		}
 		if rows, _ := result.RowsAffected(); rows > 0 {
-			app.LogInfo("Timestamp migration: fixed %d records", rows)
+			logger.LogInfo("Timestamp migration: fixed %d records", rows)
 		}
 	}
 
@@ -244,7 +245,7 @@ func (r *Repository) addProviderTypeColumn() error {
 		if err != nil {
 			return fmt.Errorf("failed to add provider_type column: %w", err)
 		}
-		app.LogInfo("Added provider_type column to sessions table")
+		logger.LogInfo("Added provider_type column to sessions table")
 	}
 
 	return nil
@@ -383,7 +384,7 @@ func (r *Repository) InsertRecord(record *TrafficRecord) error {
 func (r *Repository) InsertRecordAsync(record *TrafficRecord) {
 	app.SafeGoWithName("stats-insert-record", func() {
 		if err := r.InsertRecord(record); err != nil {
-			app.LogDebug("Failed to insert traffic record: %v", err)
+			logger.LogDebug("Failed to insert traffic record: %v", err)
 		}
 	})
 }
@@ -842,7 +843,7 @@ func (r *Repository) CloseOrphanedSessions() error {
 
 	total := closedWithRecords + closedWithoutRecords
 	if total > 0 {
-		app.LogInfo("Closed %d orphaned sessions (%d with records, %d without)",
+		logger.LogInfo("Closed %d orphaned sessions (%d with records, %d without)",
 			total, closedWithRecords, closedWithoutRecords)
 	}
 
@@ -891,12 +892,12 @@ func (r *Repository) CleanupOldRecords(retentionDays int) error {
 	sessionsDeleted, _ := result.RowsAffected()
 
 	if recordsDeleted > 0 || sessionsDeleted > 0 {
-		app.LogInfo("Stats cleanup: deleted %d records and %d sessions older than %d days",
+		logger.LogInfo("Stats cleanup: deleted %d records and %d sessions older than %d days",
 			recordsDeleted, sessionsDeleted, retentionDays)
 
 		// Vacuum database to reclaim space
 		if _, err := r.db.Exec("VACUUM"); err != nil {
-			app.LogWarn("Failed to vacuum stats database: %v", err)
+			logger.LogWarn("Failed to vacuum stats database: %v", err)
 		}
 	}
 
