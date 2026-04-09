@@ -268,15 +268,15 @@ func (c *Client) executeScriptWithPkexec(ctx context.Context, script string) err
 	if err != nil {
 		return fmt.Errorf("failed to create temp script: %w", err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	// Write script with descriptive header
 	header := "#!/bin/bash\n# VPN Manager: Configure network routing for LAN Gateway\nset -e\n\n"
 	if _, err := tmpfile.WriteString(header + script); err != nil {
-		tmpfile.Close()
+		_ = tmpfile.Close()
 		return fmt.Errorf("failed to write temp script: %w", err)
 	}
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Make executable
 	if err := os.Chmod(tmpfile.Name(), 0755); err != nil {

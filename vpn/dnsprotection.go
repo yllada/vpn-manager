@@ -1044,7 +1044,7 @@ func writeDNSStateFile(path string, data []byte) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpfile.Name()
-	tmpfile.Close() // Close immediately, we only need the path
+	_ = tmpfile.Close() // Close immediately, we only need the path
 
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
