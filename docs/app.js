@@ -12,6 +12,7 @@
  * 8. Parallax Mouse Effect
  * 9. Floating CTA
  * 10. Header Scroll Effect
+ * 11. Contributors
  */
 
 (function() {
@@ -628,6 +629,76 @@ vpn-manager`;
     checkScroll();
   }
 
+  // ===== 11. CONTRIBUTORS =====
+  function initContributors() {
+    const grid = document.getElementById('contributors-grid');
+    if (!grid) return;
+
+    const CONTRIBUTORS_CACHE_KEY = 'vpn-manager-contributors';
+    const CONTRIBUTORS_CACHE_TTL = 1000 * 60 * 60; // 1 hour
+
+    async function fetchContributors() {
+      // Check cache first
+      const cached = localStorage.getItem(CONTRIBUTORS_CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CONTRIBUTORS_CACHE_TTL) {
+          return data;
+        }
+      }
+
+      try {
+        const response = await fetch(`https://api.github.com/repos/${REPO}/contributors?per_page=20`);
+        if (!response.ok) throw new Error('API error');
+        
+        const contributors = await response.json();
+        
+        // Cache the results
+        localStorage.setItem(CONTRIBUTORS_CACHE_KEY, JSON.stringify({
+          data: contributors,
+          timestamp: Date.now()
+        }));
+        
+        return contributors;
+      } catch (error) {
+        console.warn('Failed to fetch contributors:', error);
+        return null;
+      }
+    }
+
+    async function renderContributors() {
+      const contributors = await fetchContributors();
+      
+      if (!contributors || contributors.length === 0) {
+        grid.innerHTML = '<p class="text-slate-400 dark:text-slate-500 text-sm">Could not load contributors</p>';
+        return;
+      }
+
+      grid.innerHTML = contributors.map(contributor => `
+        <a href="${contributor.html_url}" 
+           target="_blank" 
+           rel="noopener noreferrer" 
+           class="group relative" 
+           title="${contributor.login} (${contributor.contributions} contributions)">
+          <div class="relative">
+            <img src="${contributor.avatar_url}" 
+                 alt="${contributor.login}" 
+                 class="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-slate-200 dark:border-slate-700 group-hover:border-gnome transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-gnome/20"
+                 loading="lazy">
+            <div class="absolute -bottom-1 -right-1 bg-gnome text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              ${contributor.contributions}
+            </div>
+          </div>
+          <p class="text-xs text-center mt-2 text-slate-600 dark:text-slate-400 group-hover:text-gnome transition-colors truncate max-w-[64px] sm:max-w-[72px]">
+            ${contributor.login}
+          </p>
+        </a>
+      `).join('');
+    }
+
+    renderContributors();
+  }
+
   // ===== INITIALIZATION =====
   function init() {
     initThemeToggle();
@@ -639,6 +710,7 @@ vpn-manager`;
     initParallax();
     initFloatingCTA();
     initHeaderScroll();
+    initContributors();
   }
 
   // Run on DOM ready
