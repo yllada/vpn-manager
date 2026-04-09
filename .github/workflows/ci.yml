@@ -118,23 +118,36 @@ jobs:
       - name: Setup Go and GTK
         uses: ./.github/actions/setup-go-gtk
 
-      - name: Build application
+      - name: Build GUI application
         run: |
           CGO_ENABLED=1 go build -v -trimpath \
             -ldflags="-s -w \
               -X main.appVersion=ci-${{ github.sha }} \
               -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
               -X main.commitSHA=${{ github.sha }}" \
-            -o vpn-manager .
+            -o vpn-manager ./cmd/vpn-manager
 
-      - name: Verify binary
+      - name: Build daemon
         run: |
+          CGO_ENABLED=1 go build -v -trimpath \
+            -ldflags="-s -w" \
+            -o vpn-managerd ./cmd/vpn-managerd
+
+      - name: Verify binaries
+        run: |
+          echo "📦 GUI Application:"
           file vpn-manager
           ./vpn-manager --version || echo "Version flag may not be implemented"
+          
+          echo ""
+          echo "📦 Daemon:"
+          file vpn-managerd
 
-      - name: Upload build artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: vpn-manager-ci-${{ github.sha }}
-          path: vpn-manager
+          path: |
+            vpn-manager
+            vpn-managerd
           retention-days: 7
