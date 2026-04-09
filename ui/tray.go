@@ -25,11 +25,29 @@ import (
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
-// Pre-generated icons for performance.
+// Icon variables - initialized lazily via sync.Once to avoid init() pattern.
 var (
-	iconConnected    = GenerateConnectedIcon()
-	iconDisconnected = GenerateDisconnectedIcon()
+	iconConnected        []byte
+	iconDisconnected     []byte
+	iconConnectedOnce    sync.Once
+	iconDisconnectedOnce sync.Once
 )
+
+// getConnectedIcon returns the connected icon, initializing it on first use.
+func getConnectedIcon() []byte {
+	iconConnectedOnce.Do(func() {
+		iconConnected = GenerateConnectedIcon()
+	})
+	return iconConnected
+}
+
+// getDisconnectedIcon returns the disconnected icon, initializing it on first use.
+func getDisconnectedIcon() []byte {
+	iconDisconnectedOnce.Do(func() {
+		iconDisconnected = GenerateDisconnectedIcon()
+	})
+	return iconDisconnected
+}
 
 // TrayIndicator manages the system tray icon and menu.
 // Professional enterprise design - simple and effective.
@@ -48,17 +66,24 @@ type TrayIndicator struct {
 	trustNetworkItem   *systray.MenuItem
 	untrustNetworkItem *systray.MenuItem
 
-	// Connection state
+	// Connection state - protected by stateMu
 	connectedProfile string
 	connectedID      string
 	connectTime      time.Time
-	uptimeTicker     *time.Ticker
-	uptimeStop       chan struct{}
-	uptimeStopOnce   sync.Once
 
-	// Current network state
+	// Uptime counter state - protected by stateMu
+	stateMu        sync.Mutex
+	uptimeTicker   *time.Ticker
+	uptimeStop     chan struct{}
+	uptimeStopOnce sync.Once
+
+	// Current network state - protected by networkMu
+	networkMu    sync.RWMutex
 	currentSSID  string
 	currentBSSID string
+
+	// Done channel for graceful shutdown of click handlers
+	done chan struct{}
 }
 
 // NewTrayIndicator creates a new system tray indicator.
@@ -66,6 +91,7 @@ func NewTrayIndicator(app *Application) *TrayIndicator {
 	return &TrayIndicator{
 		app:        app,
 		uptimeStop: make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -77,7 +103,7 @@ func (t *TrayIndicator) Run() {
 // onReady is called when the systray is ready.
 func (t *TrayIndicator) onReady() {
 	// Set disconnected state initially
-	systray.SetIcon(iconDisconnected)
+	systray.SetIcon(getDisconnectedIcon())
 	systray.SetTitle("VPN Manager")
 	systray.SetTooltip("VPN Manager - Not Connected")
 
@@ -103,8 +129,13 @@ func (t *TrayIndicator) onReady() {
 	t.disconnectItem = systray.AddMenuItem("Disconnect", "Disconnect from VPN")
 	t.disconnectItem.Hide()
 	app.SafeGoWithName("tray-disconnect-handler", func() {
-		for range t.disconnectItem.ClickedCh {
-			t.disconnectCurrent()
+		for {
+			select {
+			case <-t.disconnectItem.ClickedCh:
+				t.disconnectCurrent()
+			case <-t.done:
+				return
+			}
 		}
 	})
 
@@ -121,16 +152,26 @@ func (t *TrayIndicator) onReady() {
 	t.trustNetworkItem = systray.AddMenuItem("Trust This Network", "Mark current network as trusted")
 	t.trustNetworkItem.Hide()
 	app.SafeGoWithName("tray-trust-handler", func() {
-		for range t.trustNetworkItem.ClickedCh {
-			t.trustCurrentNetwork()
+		for {
+			select {
+			case <-t.trustNetworkItem.ClickedCh:
+				t.trustCurrentNetwork()
+			case <-t.done:
+				return
+			}
 		}
 	})
 
 	t.untrustNetworkItem = systray.AddMenuItem("Untrust This Network", "Mark current network as untrusted")
 	t.untrustNetworkItem.Hide()
 	app.SafeGoWithName("tray-untrust-handler", func() {
-		for range t.untrustNetworkItem.ClickedCh {
-			t.untrustCurrentNetwork()
+		for {
+			select {
+			case <-t.untrustNetworkItem.ClickedCh:
+				t.untrustCurrentNetwork()
+			case <-t.done:
+				return
+			}
 		}
 	})
 
@@ -152,22 +193,35 @@ func (t *TrayIndicator) onReady() {
 
 	t.openAppItem = systray.AddMenuItem("Open VPN Manager", "Show main window")
 	app.SafeGoWithName("tray-openapp-handler", func() {
-		for range t.openAppItem.ClickedCh {
-			t.app.showWindow()
+		for {
+			select {
+			case <-t.openAppItem.ClickedCh:
+				t.app.showWindow()
+			case <-t.done:
+				return
+			}
 		}
 	})
 
 	t.quitItem = systray.AddMenuItem("Quit", "Exit VPN Manager")
 	app.SafeGoWithName("tray-quit-handler", func() {
-		for range t.quitItem.ClickedCh {
-			t.app.Quit()
-			systray.Quit()
+		for {
+			select {
+			case <-t.quitItem.ClickedCh:
+				t.app.Quit()
+				systray.Quit()
+			case <-t.done:
+				return
+			}
 		}
 	})
 }
 
 // onExit is called when the systray is about to exit.
 func (t *TrayIndicator) onExit() {
+	// Signal all click handler goroutines to stop
+	close(t.done)
+
 	t.stopUptimeCounter()
 
 	// Gracefully disconnect active VPN connections
@@ -190,16 +244,19 @@ func (t *TrayIndicator) onExit() {
 
 // SetConnected updates the tray to show connected state.
 func (t *TrayIndicator) SetConnected(profileName string) {
+	t.stateMu.Lock()
 	// Guard: Don't reset if already connected to the same profile
 	if t.connectedProfile == profileName && t.uptimeTicker != nil {
+		t.stateMu.Unlock()
 		return
 	}
 
-	systray.SetIcon(iconConnected)
-	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected: %s", profileName))
-
 	t.connectedProfile = profileName
 	t.connectTime = time.Now()
+	t.stateMu.Unlock()
+
+	systray.SetIcon(getConnectedIcon())
+	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected: %s", profileName))
 
 	if t.statusItem != nil {
 		t.statusItem.SetTitle(fmt.Sprintf("● Connected: %s", profileName))
@@ -218,11 +275,13 @@ func (t *TrayIndicator) SetConnected(profileName string) {
 
 // SetDisconnected updates the tray to show disconnected state.
 func (t *TrayIndicator) SetDisconnected() {
-	systray.SetIcon(iconDisconnected)
+	systray.SetIcon(getDisconnectedIcon())
 	systray.SetTooltip("VPN Manager - Not Connected")
 
+	t.stateMu.Lock()
 	t.connectedProfile = ""
 	t.connectedID = ""
+	t.stateMu.Unlock()
 
 	if t.statusItem != nil {
 		t.statusItem.SetTitle("○ Not Connected")
@@ -252,22 +311,31 @@ func (t *TrayIndicator) SetConnecting(profileName string) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // startUptimeCounter starts the session timer display.
+// Caller must NOT hold stateMu.
 func (t *TrayIndicator) startUptimeCounter() {
-	// Stop any existing counter first
-	t.stopUptimeCounter()
+	t.stateMu.Lock()
+
+	// Stop any existing counter first (internal call, mutex already held)
+	t.stopUptimeCounterLocked()
 
 	// Create a new stop channel for this counter instance
 	t.uptimeStop = make(chan struct{})
 	t.uptimeStopOnce = sync.Once{}
 
 	t.uptimeTicker = time.NewTicker(1 * time.Second)
-	stopCh := t.uptimeStop // Capture for the goroutine
+
+	// Capture values for the goroutine before releasing lock
+	tickerCh := t.uptimeTicker.C
+	stopCh := t.uptimeStop
+	startTime := t.connectTime
+
+	t.stateMu.Unlock()
 
 	app.SafeGoWithName("tray-uptime-counter", func() {
 		for {
 			select {
-			case <-t.uptimeTicker.C:
-				elapsed := time.Since(t.connectTime)
+			case <-tickerCh:
+				elapsed := time.Since(startTime)
 				h := int(elapsed.Hours())
 				m := int(elapsed.Minutes()) % 60
 				s := int(elapsed.Seconds()) % 60
@@ -284,6 +352,13 @@ func (t *TrayIndicator) startUptimeCounter() {
 // stopUptimeCounter stops the session timer.
 // Uses sync.Once to ensure it only closes the channel once per instance.
 func (t *TrayIndicator) stopUptimeCounter() {
+	t.stateMu.Lock()
+	defer t.stateMu.Unlock()
+	t.stopUptimeCounterLocked()
+}
+
+// stopUptimeCounterLocked stops the session timer (caller must hold stateMu).
+func (t *TrayIndicator) stopUptimeCounterLocked() {
 	if t.uptimeTicker != nil {
 		t.uptimeTicker.Stop()
 		t.uptimeTicker = nil
@@ -399,8 +474,10 @@ func (t *TrayIndicator) initNetworkTrustMenu() {
 
 // updateNetworkTrustMenu updates the trust menu items based on network state.
 func (t *TrayIndicator) updateNetworkTrustMenu(ssid, bssid string, connected bool) {
+	t.networkMu.Lock()
 	t.currentSSID = ssid
 	t.currentBSSID = bssid
+	t.networkMu.Unlock()
 
 	if !connected || ssid == "" {
 		// Not connected to a WiFi network
@@ -431,7 +508,12 @@ func (t *TrayIndicator) updateNetworkTrustMenu(ssid, bssid string, connected boo
 
 // trustCurrentNetwork marks the current network as trusted.
 func (t *TrayIndicator) trustCurrentNetwork() {
-	if t.currentSSID == "" {
+	t.networkMu.RLock()
+	ssid := t.currentSSID
+	bssid := t.currentBSSID
+	t.networkMu.RUnlock()
+
+	if ssid == "" {
 		return
 	}
 
@@ -442,17 +524,17 @@ func (t *TrayIndicator) trustCurrentNetwork() {
 
 	// Create or update rule for this network
 	rule := trust.TrustRule{
-		SSID:       t.currentSSID,
+		SSID:       ssid,
 		TrustLevel: trust.TrustLevelTrusted,
 	}
 
 	// Add BSSID to known BSSIDs if available
-	if t.currentBSSID != "" {
-		rule.KnownBSSIDs = []string{t.currentBSSID}
+	if bssid != "" {
+		rule.KnownBSSIDs = []string{bssid}
 	}
 
 	// Check if rule already exists for this SSID
-	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(t.currentSSID)
+	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(ssid)
 	if existingRule != nil {
 		// Update existing rule
 		rule.ID = existingRule.ID
@@ -483,19 +565,24 @@ func (t *TrayIndicator) trustCurrentNetwork() {
 	}
 
 	// Show notification
-	NotifyNetworkTrusted(t.currentSSID)
+	NotifyNetworkTrusted(ssid)
 
 	// Update main window status
 	glib.IdleAdd(func() {
 		if t.app.window != nil {
-			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as trusted", t.currentSSID))
+			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as trusted", ssid))
 		}
 	})
 }
 
 // untrustCurrentNetwork marks the current network as untrusted.
 func (t *TrayIndicator) untrustCurrentNetwork() {
-	if t.currentSSID == "" {
+	t.networkMu.RLock()
+	ssid := t.currentSSID
+	bssid := t.currentBSSID
+	t.networkMu.RUnlock()
+
+	if ssid == "" {
 		return
 	}
 
@@ -506,17 +593,17 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 
 	// Create or update rule for this network
 	rule := trust.TrustRule{
-		SSID:       t.currentSSID,
+		SSID:       ssid,
 		TrustLevel: trust.TrustLevelUntrusted,
 	}
 
 	// Add BSSID to known BSSIDs if available
-	if t.currentBSSID != "" {
-		rule.KnownBSSIDs = []string{t.currentBSSID}
+	if bssid != "" {
+		rule.KnownBSSIDs = []string{bssid}
 	}
 
 	// Check if rule already exists for this SSID
-	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(t.currentSSID)
+	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(ssid)
 	if existingRule != nil {
 		// Update existing rule
 		rule.ID = existingRule.ID
@@ -547,12 +634,12 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 	}
 
 	// Show notification
-	NotifyNetworkUntrusted(t.currentSSID)
+	NotifyNetworkUntrusted(ssid)
 
 	// Update main window status
 	glib.IdleAdd(func() {
 		if t.app.window != nil {
-			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as untrusted", t.currentSSID))
+			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as untrusted", ssid))
 		}
 	})
 }
@@ -575,6 +662,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 	})
 
 	if err := t.app.vpnManager.Connect(profile.ID, username, password); err != nil {
+		app.LogError("tray", "Connect failed for %s: %v", profile.Name, err)
 		t.SetDisconnected()
 		glib.IdleAdd(func() {
 			if t.app.window != nil && t.app.window.openvpnPanel != nil {
@@ -593,7 +681,9 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 		conn.SetOnAuthFailed(func(failedProfile *vpn.Profile, needsOTP bool) {
 			if needsOTP {
 				failedProfile.RequiresOTP = true
-				_ = t.app.vpnManager.ProfileManager().Save()
+				if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
+					app.LogWarn("tray", "Failed to save profile after OTP detection: %v", err)
+				}
 				if err := t.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
 					app.LogError("tray", "Disconnect after auth failure failed: %v", err)
 				}
@@ -616,6 +706,9 @@ func (t *TrayIndicator) ConnectFromTray(profile *vpn.Profile, username, password
 
 // monitorConnection monitors VPN connection state.
 func (t *TrayIndicator) monitorConnection(profileID string) {
+	const connectionTimeout = 2 * time.Minute
+	startTime := time.Now()
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -656,6 +749,12 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 				}
 			})
 			return
+		case vpn.StatusConnecting:
+			// Check for timeout while in connecting state
+			if time.Since(startTime) > connectionTimeout {
+				app.LogWarn("tray", "Connection monitor timeout for %s after %v", profileID, connectionTimeout)
+				return
+			}
 		}
 	}
 }
@@ -815,8 +914,12 @@ func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *vpn.Profile) {
 		if saveRow.Active() {
 			profile.Username = username
 			profile.SavePassword = true
-			_ = keyring.Store(profile.ID, password)
-			_ = t.app.vpnManager.ProfileManager().Save()
+			if err := keyring.Store(profile.ID, password); err != nil {
+				app.LogWarn("tray", "Failed to store password in keyring: %v", err)
+			}
+			if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
+				app.LogWarn("tray", "Failed to save profile after credential update: %v", err)
+			}
 		}
 
 		window.Close()
