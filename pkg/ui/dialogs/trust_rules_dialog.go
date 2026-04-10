@@ -442,30 +442,20 @@ func (trd *TrustRulesDialog) showDeleteConfirmation(ruleID string) {
 		return
 	}
 
-	// Use AdwAlertDialog for confirmation
-	alertDialog := adw.NewAlertDialog(
-		fmt.Sprintf("Delete rule for \"%s\"?", rule.SSID),
-		"This action cannot be undone. The VPN will no longer automatically manage connections for this network.",
-	)
-
-	alertDialog.AddResponse("cancel", "Cancel")
-	alertDialog.AddResponse("delete", "Delete")
-	alertDialog.SetResponseAppearance("delete", adw.ResponseDestructive)
-	alertDialog.SetDefaultResponse("cancel")
-	alertDialog.SetCloseResponse("cancel")
-
-	alertDialog.ConnectResponse(func(response string) {
-		if response == "delete" {
-			if err := trd.trustManager.RemoveRule(ruleID); err != nil {
-				trd.host.ShowToast("Failed to delete rule: "+err.Error(), 5)
-				return
-			}
-			trd.refreshRulesList()
-			trd.host.ShowToast("Trust rule deleted", 2)
+	components.ShowConfirmDialog(trd.host.GetWindow(), components.ConfirmDialogConfig{
+		Title:         fmt.Sprintf("Delete rule for \"%s\"?", rule.SSID),
+		Message:       "This action cannot be undone. The VPN will no longer automatically manage connections for this network.",
+		ActionLabel:   "Delete",
+		Style:         components.DialogDestructive,
+		DefaultCancel: true,
+	}, func() {
+		if err := trd.trustManager.RemoveRule(ruleID); err != nil {
+			trd.host.ShowToast("Failed to delete rule: "+err.Error(), 5)
+			return
 		}
+		trd.refreshRulesList()
+		trd.host.ShowToast("Trust rule deleted", 2)
 	})
-
-	alertDialog.Present(trd.host.GetWindow())
 }
 
 // Show displays the trust rules dialog.

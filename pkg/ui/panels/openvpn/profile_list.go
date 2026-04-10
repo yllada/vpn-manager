@@ -710,41 +710,26 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 }
 
 // onDeleteClicked handles the delete button click.
-// Shows an AdwAlertDialog confirmation before deleting the profile.
+// Shows a confirmation dialog before deleting the profile.
 func (pl *ProfileList) onDeleteClicked(profile *profilepkg.Profile) {
-	// Create AdwAlertDialog for delete confirmation
-	dialog := adw.NewAlertDialog(
-		fmt.Sprintf("Delete \"%s\"?", profile.Name),
-		"This action cannot be undone. The profile configuration will be permanently removed.",
-	)
+	components.ShowConfirmDialog(pl.host.GetWindow(), components.ConfirmDialogConfig{
+		Title:         fmt.Sprintf("Delete \"%s\"?", profile.Name),
+		Message:       "This action cannot be undone. The profile configuration will be permanently removed.",
+		ActionLabel:   "Delete",
+		Style:         components.DialogDestructive,
+		DefaultCancel: true,
+	}, func() {
+		// Delete from keyring
+		_ = keyring.Delete(profile.ID)
 
-	// Add responses
-	dialog.AddResponse("cancel", "Cancel")
-	dialog.AddResponse("delete", "Delete")
-
-	// Style the destructive action
-	dialog.SetResponseAppearance("delete", adw.ResponseDestructive)
-	dialog.SetDefaultResponse("cancel")
-	dialog.SetCloseResponse("cancel")
-
-	// Connect response signal
-	dialog.ConnectResponse(func(response string) {
-		if response == "delete" {
-			// Delete from keyring
-			_ = keyring.Delete(profile.ID)
-
-			// Delete profile
-			if err := pl.host.VPNManager().ProfileManager().Remove(profile.ID); err != nil {
-				pl.host.ShowError("Error deleting", err.Error())
-			} else {
-				pl.LoadProfiles()
-				pl.host.SetStatus(fmt.Sprintf("Profile '%s' deleted", profile.Name))
-			}
+		// Delete profile
+		if err := pl.host.VPNManager().ProfileManager().Remove(profile.ID); err != nil {
+			pl.host.ShowError("Error deleting", err.Error())
+		} else {
+			pl.LoadProfiles()
+			pl.host.SetStatus(fmt.Sprintf("Profile '%s' deleted", profile.Name))
 		}
 	})
-
-	// Present the dialog using the AdwApplicationWindow
-	dialog.Present(pl.host.GetWindow())
 }
 
 // UpdateHealthIndicator updates the visual health indicator for a profile.

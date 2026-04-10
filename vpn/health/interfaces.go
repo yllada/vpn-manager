@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn/profile"
 )
 
@@ -25,15 +26,17 @@ type HealthProbe interface {
 	IsAvailable() bool
 }
 
-// ConnectionStatus represents the state of a VPN connection.
-type ConnectionStatus int
+// ConnectionStatus is an alias to the canonical type in vpntypes.
+// Using a type alias ensures compatibility with the rest of the codebase.
+type ConnectionStatus = vpntypes.ConnectionStatus
 
+// Status constants - re-exported from vpntypes for convenience.
 const (
-	StatusDisconnected ConnectionStatus = iota
-	StatusConnecting
-	StatusConnected
-	StatusDisconnecting
-	StatusError
+	StatusDisconnected  = vpntypes.StatusDisconnected
+	StatusConnecting    = vpntypes.StatusConnecting
+	StatusConnected     = vpntypes.StatusConnected
+	StatusDisconnecting = vpntypes.StatusDisconnecting
+	StatusError         = vpntypes.StatusError
 )
 
 // ConnectionInfo contains the information needed by HealthChecker to monitor a connection.

@@ -523,75 +523,17 @@ func (t *TrayIndicator) updateNetworkTrustMenu(ssid, bssid string, connected boo
 
 // trustCurrentNetwork marks the current network as trusted.
 func (t *TrayIndicator) trustCurrentNetwork() {
-	t.networkMu.RLock()
-	ssid := t.currentSSID
-	bssid := t.currentBSSID
-	t.networkMu.RUnlock()
-
-	if ssid == "" {
-		return
-	}
-
-	trustMgr := t.app.vpnManager.TrustManager()
-	if trustMgr == nil {
-		return
-	}
-
-	// Create or update rule for this network
-	rule := trust.TrustRule{
-		SSID:       ssid,
-		TrustLevel: trust.TrustLevelTrusted,
-	}
-
-	// Add BSSID to known BSSIDs if available
-	if bssid != "" {
-		rule.KnownBSSIDs = []string{bssid}
-	}
-
-	// Check if rule already exists for this SSID
-	existingRule, _ := trustMgr.GetConfig().GetRuleBySSID(ssid)
-	if existingRule != nil {
-		// Update existing rule
-		rule.ID = existingRule.ID
-		rule.Created = existingRule.Created
-		// Merge known BSSIDs
-		for _, b := range existingRule.KnownBSSIDs {
-			found := false
-			for _, kb := range rule.KnownBSSIDs {
-				if kb == b {
-					found = true
-					break
-				}
-			}
-			if !found {
-				rule.KnownBSSIDs = append(rule.KnownBSSIDs, b)
-			}
-		}
-		if err := trustMgr.UpdateRule(existingRule.ID, rule); err != nil {
-			logger.LogError("Failed to update trust rule: %v", err)
-			return
-		}
-	} else {
-		// Add new rule
-		if err := trustMgr.AddRule(rule); err != nil {
-			logger.LogError("Failed to add trust rule: %v", err)
-			return
-		}
-	}
-
-	// Show notification
-	notify.NetworkTrusted(ssid)
-
-	// Update main window status
-	glib.IdleAdd(func() {
-		if t.app.window != nil {
-			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as trusted", ssid))
-		}
-	})
+	t.setCurrentNetworkTrustLevel(trust.TrustLevelTrusted)
 }
 
 // untrustCurrentNetwork marks the current network as untrusted.
 func (t *TrayIndicator) untrustCurrentNetwork() {
+	t.setCurrentNetworkTrustLevel(trust.TrustLevelUntrusted)
+}
+
+// setCurrentNetworkTrustLevel sets the trust level for the current network.
+// This consolidates the shared logic between trust and untrust operations.
+func (t *TrayIndicator) setCurrentNetworkTrustLevel(level trust.TrustLevel) {
 	t.networkMu.RLock()
 	ssid := t.currentSSID
 	bssid := t.currentBSSID
@@ -609,7 +551,7 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 	// Create or update rule for this network
 	rule := trust.TrustRule{
 		SSID:       ssid,
-		TrustLevel: trust.TrustLevelUntrusted,
+		TrustLevel: level,
 	}
 
 	// Add BSSID to known BSSIDs if available
@@ -648,13 +590,19 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 		}
 	}
 
-	// Show notification
-	notify.NetworkUntrusted(ssid)
+	// Show notification and update status based on trust level
+	var statusMsg string
+	if level == trust.TrustLevelTrusted {
+		notify.NetworkTrusted(ssid)
+		statusMsg = fmt.Sprintf("Network \"%s\" marked as trusted", ssid)
+	} else {
+		notify.NetworkUntrusted(ssid)
+		statusMsg = fmt.Sprintf("Network \"%s\" marked as untrusted", ssid)
+	}
 
-	// Update main window status
 	glib.IdleAdd(func() {
 		if t.app.window != nil {
-			t.app.window.SetStatus(fmt.Sprintf("Network \"%s\" marked as untrusted", ssid))
+			t.app.window.SetStatus(statusMsg)
 		}
 	})
 }
