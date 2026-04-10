@@ -12,9 +12,31 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/yllada/vpn-manager/pkg/protocol"
 )
+
+// DefaultHandlerTimeout is the default timeout for RPC handler execution.
+const DefaultHandlerTimeout = 30 * time.Second
+
+// methodTimeouts defines custom timeouts for specific methods that need more time.
+// Methods not in this map use DefaultHandlerTimeout.
+var methodTimeouts = map[string]time.Duration{
+	"openvpn.connect":   60 * time.Second,  // VPN connection can take time
+	"wireguard.connect": 60 * time.Second,  // WireGuard setup
+	"tailscale.up":      60 * time.Second,  // Tailscale connection
+	"tailscale.login":   120 * time.Second, // May require browser auth
+}
+
+// getMethodTimeout returns the timeout for a given method.
+// Returns the override if one exists, otherwise DefaultHandlerTimeout.
+func getMethodTimeout(method string) time.Duration {
+	if t, ok := methodTimeouts[method]; ok {
+		return t
+	}
+	return DefaultHandlerTimeout
+}
 
 // Server is the daemon server that handles client connections.
 type Server struct {
@@ -271,9 +293,14 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 		return protocol.UnauthorizedError(req.ID)
 	}
 
+	// Create context with timeout for this request
+	timeout := getMethodTimeout(req.Method)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	// Create handler context
-	ctx := &HandlerContext{
-		Context: context.Background(), // TODO: Use connection context with timeout
+	handlerCtx := &HandlerContext{
+		Context: ctx,
 		Request: req,
 		UID:     client.uid,
 		GID:     client.gid,
@@ -283,8 +310,13 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 	}
 
 	// Execute handler
-	result, err := handler(ctx)
+	result, err := handler(handlerCtx)
 	if err != nil {
+		// Check if it was a timeout
+		if errors.Is(err, context.DeadlineExceeded) {
+			s.logger.Printf("WARN: Handler timeout for %s after %v (uid=%d)", req.Method, timeout, client.uid)
+			return protocol.NewErrorResponse(req.ID, protocol.ErrCodeTimeout, "Operation timed out", nil)
+		}
 		s.logger.Printf("Handler error for %s: %v", req.Method, err)
 		return protocol.OperationFailedError(req.ID, err)
 	}
