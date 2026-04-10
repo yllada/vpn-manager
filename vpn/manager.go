@@ -5,15 +5,12 @@ package vpn
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/yllada/vpn-manager/internal/errors"
 	"github.com/yllada/vpn-manager/internal/eventbus"
-	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/shutdown"
@@ -90,11 +87,8 @@ type Manager struct {
 	// Resilience
 	circuitBreaker *resilience.CircuitBreaker
 
-	// Trust management
-	trustConfig       *trust.TrustConfig
-	trustManager      *trust.TrustManager
-	networkMonitor    *trust.NetworkMonitor
-	trustSubscription *eventbus.Subscription
+	// Trust management (uses Coordinator pattern)
+	trustCoordinator *trust.Coordinator
 
 	// Traffic statistics
 	statsManager *stats.StatsManager
@@ -353,41 +347,27 @@ func (m *Manager) GetCurrentStats() *stats.SessionSummary {
 // =============================================================================
 
 // InitTrustManagement initializes the network trust management system.
-// This loads the trust configuration, creates the TrustManager and NetworkMonitor,
-// and subscribes to network change events if trust management is enabled.
+// This creates the TrustCoordinator which handles all trust-related operations.
 func (m *Manager) InitTrustManagement() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Load trust configuration
-	config, err := trust.LoadTrustConfig()
+	// Create trust coordinator with Manager as the dependency provider
+	coordinator, err := trust.NewCoordinator(trust.CoordinatorConfig{
+		VPNConnector:     m,
+		ProfileProvider:  m,
+		ProviderRegistry: m.providerRegistry,
+		KillSwitchCtrl:   m.killSwitch,
+		ConnectionLister: m,
+	})
 	if err != nil {
-		logger.LogWarn("trust", "Failed to load trust config, using defaults: %v", err)
-		config = trust.DefaultTrustConfig()
-	}
-	m.trustConfig = config
-
-	// Create trust manager
-	m.trustManager = trust.NewTrustManager(config)
-
-	// Create network monitor (always create, but only start if enabled)
-	m.networkMonitor = trust.NewNetworkMonitor(eventbus.GetEventBus())
-
-	// Subscribe to network change events
-	m.trustSubscription = eventbus.On(eventbus.EventNetworkChanged, m.handleNetworkChanged)
-
-	// Start network monitor if trust management is enabled
-	if config.Enabled {
-		if err := m.networkMonitor.Start(); err != nil {
-			logger.LogWarn("trust", "Failed to start network monitor: %v", err)
-		} else {
-			logger.LogDebug("trust", "Trust management initialized and active")
-		}
-	} else {
-		logger.LogDebug("trust", "Trust management initialized but disabled")
+		return err
 	}
 
-	return nil
+	m.trustCoordinator = coordinator
+
+	// Start the coordinator (subscribes to events, starts monitor if enabled)
+	return coordinator.Start()
 }
 
 // StopTrustManagement stops the network trust management system.
@@ -396,13 +376,8 @@ func (m *Manager) StopTrustManagement() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.trustSubscription != nil {
-		m.trustSubscription.Unsubscribe()
-		m.trustSubscription = nil
-	}
-
-	if m.networkMonitor != nil {
-		m.networkMonitor.Stop()
+	if m.trustCoordinator != nil {
+		m.trustCoordinator.Stop()
 	}
 
 	logger.LogDebug("trust", "Trust management stopped")
@@ -412,381 +387,68 @@ func (m *Manager) StopTrustManagement() {
 func (m *Manager) TrustManager() *trust.TrustManager {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.trustManager
+	if m.trustCoordinator == nil {
+		return nil
+	}
+	return m.trustCoordinator.Manager()
 }
 
 // TrustConfig returns the trust configuration.
 func (m *Manager) TrustConfig() *trust.TrustConfig {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.trustConfig
+	if m.trustCoordinator == nil {
+		return nil
+	}
+	return m.trustCoordinator.Config()
 }
 
 // NetworkMonitor returns the network monitor instance.
 func (m *Manager) NetworkMonitor() *trust.NetworkMonitor {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.networkMonitor
+	if m.trustCoordinator == nil {
+		return nil
+	}
+	return m.trustCoordinator.Monitor()
 }
 
 // SetTrustEnabled enables or disables trust management.
 func (m *Manager) SetTrustEnabled(enabled bool) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	coordinator := m.trustCoordinator
+	m.mu.RUnlock()
 
-	if m.trustConfig == nil {
+	if coordinator == nil {
 		return errors.WrapError(nil, "trust management not initialized")
 	}
 
-	m.trustConfig.Enabled = enabled
-
-	if enabled {
-		// Start network monitor if not already running
-		if m.networkMonitor != nil && !m.networkMonitor.IsRunning() {
-			if err := m.networkMonitor.Start(); err != nil {
-				return errors.WrapError(err, "failed to start network monitor")
-			}
-		}
-		logger.LogDebug("trust", "Trust management enabled")
-	} else {
-		// Stop network monitor
-		if m.networkMonitor != nil && m.networkMonitor.IsRunning() {
-			m.networkMonitor.Stop()
-		}
-		logger.LogDebug("trust", "Trust management disabled")
-	}
-
-	return m.trustConfig.Save()
+	return coordinator.SetEnabled(enabled)
 }
 
-// handleNetworkChanged handles network change events from the NetworkMonitor.
-// It evaluates the network against trust rules and takes appropriate action.
-func (m *Manager) handleNetworkChanged(event *eventbus.Event) {
-	// Accept both pointer and value types for NetworkChangedData
-	var data *eventbus.NetworkChangedData
-	switch d := event.Data.(type) {
-	case *eventbus.NetworkChangedData:
-		data = d
-	case eventbus.NetworkChangedData:
-		data = &d
-	default:
-		logger.LogWarn("trust", "Invalid event data type for network changed: %T", event.Data)
-		return
-	}
+// =============================================================================
+// TRUST COORDINATOR INTERFACE IMPLEMENTATIONS
+// =============================================================================
 
+// GetProfile implements trust.ProfileProvider.
+// Returns an OpenVPN profile by ID.
+func (m *Manager) GetProfile(id string) (*profile.Profile, error) {
+	return m.profileManager.Get(id)
+}
+
+// ListActiveProfileIDs implements trust.ConnectionLister.
+// Returns IDs of all connected/connecting profiles.
+func (m *Manager) ListActiveProfileIDs() []string {
 	m.mu.RLock()
-	trustMgr := m.trustManager
-	trustCfg := m.trustConfig
-	m.mu.RUnlock()
+	defer m.mu.RUnlock()
 
-	// Skip if trust management is not initialized or disabled
-	if trustMgr == nil || trustCfg == nil || !trustCfg.Enabled {
-		return
-	}
-
-	// Convert event data to NetworkInfo
-	netInfo := &trust.NetworkInfo{
-		SSID:      data.SSID,
-		BSSID:     data.BSSID,
-		Type:      trust.NetworkType(data.Type),
-		Connected: data.Connected,
-		Interface: data.Interface,
-	}
-
-	logger.LogDebug("trust", "Network changed: SSID=%q BSSID=%q Type=%s Connected=%v",
-		netInfo.SSID, netInfo.BSSID, netInfo.Type, netInfo.Connected)
-
-	// Evaluate trust rules
-	action, rule, err := trustMgr.Evaluate(netInfo)
-	if err != nil {
-		logger.LogError("trust", "Failed to evaluate trust rules: %v", err)
-		return
-	}
-
-	logger.LogDebug("trust", "Trust evaluation: action=%s rule=%v", action, rule != nil)
-
-	// Execute action
-	m.executeTrustAction(action, rule, netInfo)
-}
-
-// executeTrustAction executes the determined trust action.
-func (m *Manager) executeTrustAction(action trust.TrustAction, rule *trust.TrustRule, net *trust.NetworkInfo) {
-	m.mu.RLock()
-	trustCfg := m.trustConfig
-	m.mu.RUnlock()
-
-	switch action {
-	case trust.TrustActionConnectVPN:
-		m.handleTrustConnect(rule, net, trustCfg)
-
-	case trust.TrustActionDisconnectVPN:
-		m.handleTrustDisconnect(net)
-
-	case trust.TrustActionPrompt:
-		m.handleTrustPrompt(net, trustCfg)
-
-	case trust.TrustActionWarnEvilTwin:
-		m.handleEvilTwinWarning(rule, net)
-
-	case trust.TrustActionNone:
-		logger.LogDebug("trust", "No action required for network %q", net.SSID)
-	}
-}
-
-// handleTrustConnect connects to VPN when on an untrusted network.
-// Supports multiple providers via "provider:id" format for profileID.
-func (m *Manager) handleTrustConnect(rule *trust.TrustRule, net *trust.NetworkInfo, cfg *trust.TrustConfig) {
-	// Determine which profile to use
-	profileID := cfg.DefaultVPNProfile
-	if rule != nil && rule.VPNProfile != "" {
-		profileID = rule.VPNProfile
-	}
-
-	if profileID == "" {
-		logger.LogWarn("trust", "No VPN profile configured for auto-connect")
-		eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
-			Action:  string(trust.TrustActionConnectVPN),
-			SSID:    net.SSID,
-			Success: false,
-			Error:   "no VPN profile configured",
-		})
-		return
-	}
-
-	logger.LogDebug("trust", "Auto-connecting VPN profile %s for untrusted network %q", profileID, net.SSID)
-
-	// Parse provider:id format
-	providerType, actualID := m.parseProfileID(profileID)
-
-	// Handle connection based on provider type
-	ctx := context.Background()
-	var err error
-
-	switch providerType {
-	case vpntypes.ProviderTailscale, vpntypes.ProviderWireGuard:
-		// Use the provider interface for non-OpenVPN connections
-		provider, ok := m.providerRegistry.Get(providerType)
-		if !ok {
-			err = fmt.Errorf("provider %s not available", providerType)
-			break
-		}
-
-		// Find the profile
-		profiles, profErr := provider.GetProfiles(ctx)
-		if profErr != nil {
-			err = profErr
-			break
-		}
-
-		var targetProfile vpntypes.VPNProfile
-		for _, p := range profiles {
-			if p.ID() == actualID {
-				targetProfile = p
-				break
-			}
-		}
-
-		if targetProfile == nil {
-			err = fmt.Errorf("profile %s not found", actualID)
-			break
-		}
-
-		// Connect via provider (no auth needed for Tailscale/WireGuard auto-connect)
-		err = provider.Connect(ctx, targetProfile, vpntypes.AuthInfo{})
-
-	default:
-		// OpenVPN: use legacy ProfileManager
-		logger.LogInfo("trust", "OpenVPN auto-connect: looking up profile %s", actualID)
-		profile, profErr := m.profileManager.Get(actualID)
-		if profErr != nil {
-			logger.LogError("trust", "OpenVPN profile %s not found: %v", actualID, profErr)
-			err = profErr
-			break
-		}
-
-		logger.LogInfo("trust", "OpenVPN profile found: %s (RequiresOTP=%v, SavePassword=%v)",
-			profile.Name, profile.RequiresOTP, profile.SavePassword)
-
-		// Check if profile requires OTP - emit event for UI to handle
-		if profile.RequiresOTP {
-			logger.LogInfo("trust", "Profile %s requires OTP - emitting auth required event", profile.Name)
-			eventbus.Emit(eventbus.EventTrustAuthRequired, "TrustManager", eventbus.TrustAuthRequiredData{
-				SSID:        net.SSID,
-				ProfileID:   actualID,
-				ProfileName: profile.Name,
-				Username:    profile.Username,
-				NeedsOTP:    true,
-			})
-			return // Don't report as failure - UI will handle auth flow
-		}
-
-		// Get password from keyring if saved
-		password := ""
-		if profile.SavePassword {
-			savedPassword, keyErr := keyring.Get(profile.ID)
-			if keyErr != nil || savedPassword == "" {
-				logger.LogWarn("trust", "Profile %s has SavePassword=true but no password in keyring, prompting for auth", profile.Name)
-				// Emit auth required event to prompt user instead of connecting with empty password
-				eventbus.Emit(eventbus.EventTrustAuthRequired, "TrustManager", eventbus.TrustAuthRequiredData{
-					SSID:        net.SSID,
-					ProfileID:   actualID,
-					ProfileName: profile.Name,
-					Username:    profile.Username,
-					NeedsOTP:    false,
-				})
-				return // Don't report as failure - UI will handle auth flow
-			}
-			password = savedPassword
-		}
-
-		// Connect using stored credentials
-		err = m.Connect(actualID, profile.Username, password)
-	}
-
-	if err != nil {
-		logger.LogError("trust", "Failed to auto-connect VPN: %v", err)
-		m.handleConnectFailureOnUntrusted(net, cfg, err)
-		return
-	}
-
-	eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
-		Action:    string(trust.TrustActionConnectVPN),
-		SSID:      net.SSID,
-		ProfileID: profileID,
-		Success:   true,
-	})
-}
-
-// parseProfileID parses a profile ID that may be in "provider:id" format.
-// Returns the provider type and actual ID. For legacy IDs without provider prefix,
-// assumes OpenVPN.
-func (m *Manager) parseProfileID(profileID string) (vpntypes.VPNProviderType, string) {
-	// Check for known provider prefixes
-	for _, pt := range []vpntypes.VPNProviderType{vpntypes.ProviderTailscale, vpntypes.ProviderWireGuard, vpntypes.ProviderOpenVPN} {
-		prefix := string(pt) + ":"
-		if strings.HasPrefix(profileID, prefix) {
-			return pt, strings.TrimPrefix(profileID, prefix)
-		}
-	}
-	// Legacy format: assume OpenVPN
-	return vpntypes.ProviderOpenVPN, profileID
-}
-
-// handleConnectFailureOnUntrusted handles VPN connection failure on untrusted networks.
-// If BlockOnUntrustedFailure is enabled, activates the kill switch.
-func (m *Manager) handleConnectFailureOnUntrusted(net *trust.NetworkInfo, cfg *trust.TrustConfig, connectErr error) {
-	eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
-		Action:  string(trust.TrustActionConnectVPN),
-		SSID:    net.SSID,
-		Success: false,
-		Error:   connectErr.Error(),
-	})
-
-	// Activate kill switch if configured
-	if cfg.BlockOnUntrustedFailure {
-		logger.LogWarn("trust", "VPN connection failed on untrusted network, activating kill switch")
-		m.activateKillSwitchForUntrusted()
-	}
-}
-
-// handleTrustDisconnect disconnects VPN when on a trusted network.
-func (m *Manager) handleTrustDisconnect(net *trust.NetworkInfo) {
-	// Get all active connections and disconnect them
-	m.mu.RLock()
-	profileIDs := make([]string, 0, len(m.connections))
+	ids := make([]string, 0, len(m.connections))
 	for id, conn := range m.connections {
 		if conn.Status == StatusConnected || conn.Status == StatusConnecting {
-			profileIDs = append(profileIDs, id)
+			ids = append(ids, id)
 		}
 	}
-	m.mu.RUnlock()
-
-	if len(profileIDs) == 0 {
-		logger.LogDebug("trust", "No active VPN connections to disconnect")
-		return
-	}
-
-	logger.LogDebug("trust", "Auto-disconnecting VPN for trusted network %q", net.SSID)
-
-	var lastErr error
-	for _, profileID := range profileIDs {
-		if err := m.Disconnect(profileID); err != nil {
-			logger.LogError("trust", "Failed to disconnect profile %s: %v", profileID, err)
-			lastErr = err
-		}
-	}
-
-	success := lastErr == nil
-	errMsg := ""
-	if lastErr != nil {
-		errMsg = lastErr.Error()
-	}
-
-	eventbus.Emit(eventbus.EventTrustActionTaken, "TrustManager", eventbus.TrustActionTakenData{
-		Action:  string(trust.TrustActionDisconnectVPN),
-		SSID:    net.SSID,
-		Success: success,
-		Error:   errMsg,
-	})
-}
-
-// handleTrustPrompt emits an event for the UI to show a trust prompt dialog.
-func (m *Manager) handleTrustPrompt(net *trust.NetworkInfo, cfg *trust.TrustConfig) {
-	logger.LogDebug("trust", "Prompting user for unknown network %q", net.SSID)
-
-	eventbus.Emit(eventbus.EventTrustPrompt, "TrustManager", eventbus.TrustPromptData{
-		SSID:             net.SSID,
-		BSSID:            net.BSSID,
-		Type:             string(net.Type),
-		DefaultProfileID: cfg.DefaultVPNProfile,
-	})
-}
-
-// handleEvilTwinWarning emits an event for the UI to show an evil twin warning.
-func (m *Manager) handleEvilTwinWarning(rule *trust.TrustRule, net *trust.NetworkInfo) {
-	logger.LogWarn("trust", "Potential evil twin detected for network %q (new BSSID: %s)", net.SSID, net.BSSID)
-
-	ruleID := ""
-	var knownBSSIDs []string
-	if rule != nil {
-		ruleID = rule.ID
-		knownBSSIDs = rule.KnownBSSIDs
-	}
-
-	eventbus.Emit(eventbus.EventEvilTwinWarning, "TrustManager", eventbus.EvilTwinWarningData{
-		SSID:          net.SSID,
-		NewBSSID:      net.BSSID,
-		KnownBSSIDs:   knownBSSIDs,
-		MatchedRuleID: ruleID,
-	})
-}
-
-// activateKillSwitchForUntrusted activates the kill switch when VPN fails on untrusted network.
-func (m *Manager) activateKillSwitchForUntrusted() {
-	if m.killSwitch == nil || !m.killSwitch.IsAvailable() {
-		logger.LogWarn("trust", "Kill switch not available")
-		return
-	}
-
-	// Set mode to always to ensure it stays active
-	oldMode := m.killSwitch.GetMode()
-	m.killSwitch.SetMode(security.KillSwitchAlways)
-
-	// Enable with no VPN interface (block all non-local traffic)
-	// Use empty interface and server IP since we're blocking everything
-	if err := m.killSwitch.Enable("lo", "127.0.0.1"); err != nil {
-		logger.LogError("trust", "Failed to activate kill switch: %v", err)
-		m.killSwitch.SetMode(oldMode) // Restore mode on failure
-		return
-	}
-
-	logger.LogWarn("trust", "Kill switch activated - all non-local traffic blocked")
-
-	// Emit event
-	eventbus.Emit(eventbus.EventKillSwitchEnabled, "TrustManager", eventbus.SecurityEventData{
-		Feature: "killswitch",
-		Enabled: true,
-	})
+	return ids
 }
 
 // =============================================================================
