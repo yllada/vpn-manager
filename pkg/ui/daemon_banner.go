@@ -46,24 +46,23 @@ func NewDaemonStatusBanner(checkCallback func(available bool)) *DaemonStatusBann
 	icon.AddCSSClass("warning")
 	b.row.AddPrefix(icon)
 
-	// Check Again button
-	checkBtn := gtk.NewButton()
-	checkBtn.SetLabel("Start")
-	checkBtn.SetVAlign(gtk.AlignCenter)
-	checkBtn.AddCSSClass("suggested-action")
-	checkBtn.AddCSSClass("pill")
-	checkBtn.SetTooltipText("Run: sudo systemctl start vpn-managerd")
-	checkBtn.ConnectClicked(func() {
+	// Refresh button - checks daemon status again
+	refreshBtn := gtk.NewButton()
+	refreshBtn.SetIconName("view-refresh-symbolic")
+	refreshBtn.SetVAlign(gtk.AlignCenter)
+	refreshBtn.AddCSSClass("flat")
+	refreshBtn.SetTooltipText("Check daemon status")
+	refreshBtn.ConnectClicked(func() {
 		b.checkDaemonStatus()
 	})
-	b.row.AddSuffix(checkBtn)
+	b.row.AddSuffix(refreshBtn)
 
-	// Help button - shows instructions
+	// Help button - shows instructions (main action)
 	helpBtn := gtk.NewButton()
-	helpBtn.SetIconName("help-about-symbolic")
+	helpBtn.SetLabel("How to Start")
 	helpBtn.SetVAlign(gtk.AlignCenter)
-	helpBtn.AddCSSClass("flat")
-	helpBtn.SetTooltipText("How to start the daemon")
+	helpBtn.AddCSSClass("suggested-action")
+	helpBtn.AddCSSClass("pill")
 	helpBtn.ConnectClicked(func() {
 		b.showInstructions()
 	})
