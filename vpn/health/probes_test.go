@@ -34,7 +34,7 @@ func TestTCPProbe_Check_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start test server: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	go func() {
 		conn, _ := listener.Accept()

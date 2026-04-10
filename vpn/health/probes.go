@@ -43,7 +43,7 @@ func (p *TCPProbe) Check(ctx context.Context, host string) (time.Duration, error
 		}
 		return 0, fmt.Errorf("%w: %v", ErrProbeTimeout, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	return time.Since(start), nil
 }
@@ -109,7 +109,7 @@ func (p *ICMPProbe) Check(ctx context.Context, host string) (time.Duration, erro
 		p.markDisabled()
 		return 0, fmt.Errorf("%w: %v", ErrICMPNotAvailable, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set deadline
 	deadline, hasDeadline := ctx.Deadline()
@@ -197,7 +197,7 @@ func (p *ICMPProbe) detectCapability() {
 	// Try privileged first
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err == nil {
-		conn.Close()
+		_ = conn.Close()
 		icmpStateCache = icmpStatePrivileged
 		return
 	}
@@ -205,7 +205,7 @@ func (p *ICMPProbe) detectCapability() {
 	// Try unprivileged (UDP)
 	conn, err = icmp.ListenPacket("udp4", "0.0.0.0")
 	if err == nil {
-		conn.Close()
+		_ = conn.Close()
 		icmpStateCache = icmpStateUnprivileged
 		return
 	}
@@ -284,7 +284,7 @@ func (p *HTTPProbe) Check(ctx context.Context, _ string) (time.Duration, error) 
 			lastErr = err
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Any response (even non-2xx) means connectivity works
 		return time.Since(start), nil
