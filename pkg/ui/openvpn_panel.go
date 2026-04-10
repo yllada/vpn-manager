@@ -16,7 +16,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/health"
-	"github.com/yllada/vpn-manager/vpn/profile"
+	profilepkg "github.com/yllada/vpn-manager/vpn/profile"
 )
 
 // OpenVPNPanel represents the OpenVPN management panel.
@@ -173,7 +173,7 @@ type ProfileList struct {
 // Contains all widgets needed to display and control a VPN profile.
 // Uses AdwExpanderRow for progressive disclosure of connection details.
 type ProfileRow struct {
-	profile     *profile.Profile
+	profile     *profilepkg.Profile
 	expanderRow *adw.ExpanderRow
 	connectBtn  *gtk.Button
 	configBtn   *gtk.Button
@@ -342,7 +342,7 @@ func (op *OpenVPNPanel) showNotInstalledView() {
 // Creates an expandable row with progressive disclosure:
 // - Collapsed: profile name, status, connect button
 // - Expanded: uptime, latency, traffic stats
-func (pl *ProfileList) addProfileRow(profile *profile.Profile) {
+func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	// Create AdwExpanderRow for progressive disclosure
 	expanderRow := adw.NewExpanderRow()
 	expanderRow.SetTitle(profile.Name)
@@ -471,7 +471,7 @@ func createRowIcon(iconName string) *gtk.Image {
 }
 
 // onConfigClicked opens the Split Tunneling configuration dialog.
-func (pl *ProfileList) onConfigClicked(profile *profile.Profile) {
+func (pl *ProfileList) onConfigClicked(profile *profilepkg.Profile) {
 	dialog := NewSplitTunnelDialog(pl.mainWindow, profile)
 	dialog.Show()
 }
@@ -479,7 +479,7 @@ func (pl *ProfileList) onConfigClicked(profile *profile.Profile) {
 // onConnectClicked handles click on the connect button.
 // Manages both connection and disconnection depending on current state.
 // Implements intelligent OTP detection: only shows OTP dialog when profile.RequiresOTP is true.
-func (pl *ProfileList) onConnectClicked(profile *profile.Profile) {
+func (pl *ProfileList) onConnectClicked(profile *profilepkg.Profile) {
 	// Check if already connected
 	if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
 		if conn.GetStatus() == vpn.StatusConnected || conn.GetStatus() == vpn.StatusConnecting {
@@ -521,7 +521,7 @@ func (pl *ProfileList) onConnectClicked(profile *profile.Profile) {
 
 // showOTPDialog shows an AdwDialog to enter the OTP code.
 // Used after entering credentials or when already saved.
-func (pl *ProfileList) showOTPDialog(profile *profile.Profile, username, password string, saveCredentials bool) {
+func (pl *ProfileList) showOTPDialog(profile *profilepkg.Profile, username, password string, saveCredentials bool) {
 	dialog := adw.NewDialog()
 	dialog.SetTitle("OTP Verification")
 	dialog.SetContentWidth(380)
@@ -604,7 +604,7 @@ func (pl *ProfileList) showOTPDialog(profile *profile.Profile, username, passwor
 
 // showPasswordDialog shows an AdwDialog to enter username and password.
 // After validation, shows the OTP dialog.
-func (pl *ProfileList) showPasswordDialog(profile *profile.Profile) {
+func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 	dialog := adw.NewDialog()
 	dialog.SetTitle("VPN Credentials")
 	dialog.SetContentWidth(400)
@@ -720,7 +720,7 @@ func (pl *ProfileList) showPasswordDialog(profile *profile.Profile) {
 
 // connectWithCredentials initiates VPN connection with specific credentials.
 // It sets up an auth failure callback for intelligent OTP fallback.
-func (pl *ProfileList) connectWithCredentials(profile *profile.Profile, username, password string) {
+func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, username, password string) {
 	pl.updateRowStatus(profile.ID, vpn.StatusConnecting)
 	pl.mainWindow.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
 
@@ -739,7 +739,7 @@ func (pl *ProfileList) connectWithCredentials(profile *profile.Profile, username
 		savedUsername := username
 		savedPassword := password
 
-		conn.SetOnAuthFailed(func(failedProfile *profile.Profile, needsOTP bool) {
+		conn.SetOnAuthFailed(func(failedProfile *profilepkg.Profile, needsOTP bool) {
 			if needsOTP {
 				// Auto-enable OTP for this profile (learned from server)
 				// This can be done outside GTK thread
@@ -943,7 +943,7 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 
 // onDeleteClicked handles the delete button click.
 // Shows an AdwAlertDialog confirmation before deleting the profile.
-func (pl *ProfileList) onDeleteClicked(profile *profile.Profile) {
+func (pl *ProfileList) onDeleteClicked(profile *profilepkg.Profile) {
 	// Create AdwAlertDialog for delete confirmation
 	dialog := adw.NewAlertDialog(
 		fmt.Sprintf("Delete \"%s\"?", profile.Name),

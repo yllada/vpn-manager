@@ -12,6 +12,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/profile"
+	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
 
 // SplitTunnelDialog represents the split tunneling configuration dialog.
@@ -674,9 +675,9 @@ func (std *SplitTunnelDialog) showAppSelector() {
 	appList.SetSelectionMode(gtk.SelectionSingle)
 
 	// Load installed apps
-	apps, err := vpn.ListInstalledApps()
+	apps, err := tunnel.ListInstalledApps()
 	if err != nil {
-		apps = []vpn.AppConfig{}
+		apps = []tunnel.AppConfig{}
 	}
 
 	// Create rows for each app

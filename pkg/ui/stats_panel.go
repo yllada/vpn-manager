@@ -15,6 +15,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/network"
 	"github.com/yllada/vpn-manager/vpn/stats"
 )
 
@@ -31,7 +32,7 @@ type StatsPanel struct {
 
 	// Data sources
 	statsManager   *stats.StatsManager
-	qualityMonitor *vpn.QualityMonitor
+	qualityMonitor *network.QualityMonitor
 
 	// Current session widgets
 	sessionGroup     *adw.PreferencesGroup
@@ -546,13 +547,13 @@ func (sp *StatsPanel) updateQualityIndicator() {
 	var subtitle string
 
 	switch metrics.Status {
-	case vpn.QualityGood:
+	case network.QualityGood:
 		value = 100
 		subtitle = fmt.Sprintf("Good (%.0fms)", float64(metrics.Latency.Milliseconds()))
-	case vpn.QualityDegraded:
+	case network.QualityDegraded:
 		value = 60
 		subtitle = fmt.Sprintf("Degraded (%.0fms)", float64(metrics.Latency.Milliseconds()))
-	case vpn.QualityPoor:
+	case network.QualityPoor:
 		value = 25
 		subtitle = fmt.Sprintf("Poor (%.0fms)", float64(metrics.Latency.Milliseconds()))
 	default:
@@ -816,7 +817,7 @@ func getProviderBadgeClass(providerType vpntypes.VPNProviderType) string {
 // =============================================================================
 
 // SetQualityMonitor sets the quality monitor for connection quality display.
-func (sp *StatsPanel) SetQualityMonitor(qm *vpn.QualityMonitor) {
+func (sp *StatsPanel) SetQualityMonitor(qm *network.QualityMonitor) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.qualityMonitor = qm

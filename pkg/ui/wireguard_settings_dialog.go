@@ -8,7 +8,7 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/vpn/tunnel"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
@@ -635,9 +635,9 @@ func (d *WireGuardSettingsDialog) showAppSelector() {
 	appList.SetSelectionMode(gtk.SelectionSingle)
 
 	// Load installed apps
-	apps, err := vpn.ListInstalledApps()
+	apps, err := tunnel.ListInstalledApps()
 	if err != nil {
-		apps = []vpn.AppConfig{}
+		apps = []tunnel.AppConfig{}
 	}
 
 	// Create rows for each app
