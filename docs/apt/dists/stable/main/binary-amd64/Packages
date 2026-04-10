@@ -1,20 +1,23 @@
 Package: vpn-manager
-Version: 1.15.0
+Version: 2.0.0
 Architecture: amd64
 Maintainer: VPN Manager Team <yadian.llada@gmail.com>
-Installed-Size: 45188
-Depends: openvpn | openvpn3, libgtk-4-1, libadwaita-1-0
-Recommends: polkit-1
-Filename: pool/main/v/vpn-manager/vpn-manager_1.15.0_amd64.deb
-Size: 8446452
-MD5sum: 01adc990c6787949699b0948f54d7fbb
-SHA1: 23cafcfd6f55c576a150b930e8ecc610e9b0f57f
-SHA256: 2559d98ff0ef78ec8f571f5c9433a92894b855250a7c0c0e1041e8d607ddd289
+Installed-Size: 46496
+Depends: libgtk-4-1, libadwaita-1-0
+Recommends: openvpn | openvpn3, wireguard-tools, tailscale
+Filename: pool/main/v/vpn-manager/vpn-manager_2.0.0_amd64.deb
+Size: 9272970
+MD5sum: ed65154171c2de51f128acf305f60294
+SHA1: 674ecada1ed1a60b0511373e04eb4a41ef4b71dd
+SHA256: 810bc9553c211e7736f054829a1d5c9116a7c94aad407e94fcee7722af86d3cc
 Section: net
 Priority: optional
 Homepage: https://github.com/yllada/vpn-manager
 Description: Modern GTK4 VPN Manager for Linux
- VPN Manager is a modern OpenVPN client with GTK4 interface.
- Features profile management, secure credential storage,
- system tray integration, and split tunneling support.
+ VPN Manager is a modern VPN client with GTK4 interface supporting
+ OpenVPN, WireGuard, and Tailscale. Features include profile management,
+ secure credential storage, system tray integration, traffic statistics,
+ kill switch, DNS/IPv6 leak protection, and split tunneling.
+ .
+ Includes vpn-managerd daemon for privileged operations.
 
