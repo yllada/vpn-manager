@@ -14,7 +14,6 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
-	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/network"
 	"github.com/yllada/vpn-manager/vpn/stats"
 )
