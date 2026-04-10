@@ -75,9 +75,9 @@ func NewDaemonStatusBanner(checkCallback func(available bool)) *DaemonStatusBann
 	listBox.Append(b.row)
 
 	// Add margins
-	b.Box.SetMarginStart(12)
-	b.Box.SetMarginEnd(12)
-	b.Box.SetMarginTop(6)
+	b.SetMarginStart(12)
+	b.SetMarginEnd(12)
+	b.SetMarginTop(6)
 	b.Box.SetMarginBottom(6)
 	b.Box.Append(listBox)
 
