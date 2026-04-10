@@ -39,7 +39,7 @@ func TestTCPProbe_Check_Success(t *testing.T) {
 	go func() {
 		conn, _ := listener.Accept()
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 
