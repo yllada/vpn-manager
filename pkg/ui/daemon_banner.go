@@ -78,8 +78,8 @@ func NewDaemonStatusBanner(checkCallback func(available bool)) *DaemonStatusBann
 	b.SetMarginStart(12)
 	b.SetMarginEnd(12)
 	b.SetMarginTop(6)
-	b.Box.SetMarginBottom(6)
-	b.Box.Append(listBox)
+	b.SetMarginBottom(6)
+	b.Append(listBox)
 
 	// Initial check
 	b.checkDaemonStatus()
@@ -92,10 +92,10 @@ func (b *DaemonStatusBanner) checkDaemonStatus() {
 	available := daemon.IsDaemonAvailable()
 
 	if available {
-		b.Box.SetVisible(false)
+		b.SetVisible(false)
 		logger.LogInfo("Daemon is available")
 	} else {
-		b.Box.SetVisible(true)
+		b.SetVisible(true)
 		logger.LogWarn("Daemon is not available - privileged operations will fail")
 	}
 
