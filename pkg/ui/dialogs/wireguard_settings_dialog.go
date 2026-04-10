@@ -3,7 +3,6 @@
 package dialogs
 
 import (
-	"net"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -11,7 +10,6 @@ import (
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
-	"github.com/yllada/vpn-manager/vpn/tunnel"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
@@ -138,7 +136,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.modeRow.SetTitle("Traffic Mode")
 	d.modeRow.SetSubtitle("Choose which traffic passes through VPN")
 	d.modeRow.SetModel(modeModel)
-	d.modeRow.SetSelected(d.findModeIndex(d.profile.SplitTunnelMode))
+	d.modeRow.SetSelected(FindModeIndex(d.profile.SplitTunnelMode, d.modeIDs))
 	modeGroup.Add(d.modeRow)
 
 	// DNS option row
@@ -224,7 +222,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.appModeRow.SetTitle("App Routing Mode")
 	d.appModeRow.SetSubtitle("Choose which apps use VPN")
 	d.appModeRow.SetModel(appModeModel)
-	d.appModeRow.SetSelected(d.findAppModeIndex(d.profile.SplitTunnelAppMode))
+	d.appModeRow.SetSelected(FindModeIndex(d.profile.SplitTunnelAppMode, d.appModeIDs))
 	d.appOptionsGroup.Add(d.appModeRow)
 
 	d.prefsPage.Add(d.appOptionsGroup)
@@ -237,7 +235,7 @@ func (d *WireGuardSettingsDialog) build() {
 	addAppBtn := components.NewIconButton("list-add-symbolic", "Add Application")
 	addAppBtn.SetVAlign(gtk.AlignCenter)
 	addAppBtn.ConnectClicked(func() {
-		d.showAppSelector()
+		ShowAppSelector(d.dialog, d.addApp)
 	})
 	d.appsGroup.SetHeaderSuffix(addAppBtn)
 
@@ -315,29 +313,6 @@ func (d *WireGuardSettingsDialog) save() {
 	d.dialog.Close()
 }
 
-// findModeIndex returns the index for the given mode.
-func (d *WireGuardSettingsDialog) findModeIndex(mode string) uint {
-	for i, m := range d.modeIDs {
-		if m == mode {
-			return uint(i)
-		}
-	}
-	return 0
-}
-
-// validateRoute validates an IP or CIDR route.
-func (d *WireGuardSettingsDialog) validateRoute(route string) bool {
-	// Try CIDR
-	_, _, err := net.ParseCIDR(route)
-	if err == nil {
-		return true
-	}
-
-	// Try single IP
-	ip := net.ParseIP(route)
-	return ip != nil
-}
-
 // showAddRouteDialog shows a dialog to add a new route.
 func (d *WireGuardSettingsDialog) showAddRouteDialog() {
 	dialog := adw.NewAlertDialog("Add Route", "Enter an IP address or CIDR network")
@@ -361,7 +336,7 @@ func (d *WireGuardSettingsDialog) showAddRouteDialog() {
 	dialog.ConnectResponse(func(response string) {
 		if response == "add" {
 			route := strings.TrimSpace(routeEntry.Text())
-			if route != "" && d.validateRoute(route) {
+			if route != "" && ValidateRoute(route) {
 				d.addRoute(route)
 			}
 		}
@@ -372,15 +347,9 @@ func (d *WireGuardSettingsDialog) showAddRouteDialog() {
 
 // addRoute adds a route to the list.
 func (d *WireGuardSettingsDialog) addRoute(route string) {
-	// Check for duplicates
-	for _, r := range d.routes {
-		if r == route {
-			return
-		}
+	if AddRouteToSlice(&d.routes, route) {
+		d.refreshRoutesList()
 	}
-
-	d.routes = append(d.routes, route)
-	d.refreshRoutesList()
 }
 
 // showRemoveRouteConfirmation shows a confirmation dialog before removing a route.
@@ -392,13 +361,7 @@ func (d *WireGuardSettingsDialog) showRemoveRouteConfirmation(route string) {
 
 // removeRoute removes a route from the list.
 func (d *WireGuardSettingsDialog) removeRoute(route string) {
-	newRoutes := make([]string, 0, len(d.routes))
-	for _, r := range d.routes {
-		if r != route {
-			newRoutes = append(newRoutes, r)
-		}
-	}
-	d.routes = newRoutes
+	d.routes = RemoveRouteFromSlice(d.routes, route)
 	d.refreshRoutesList()
 }
 
@@ -446,16 +409,6 @@ func (d *WireGuardSettingsDialog) refreshRoutesList() {
 			d.routeRows = append(d.routeRows, row)
 		}
 	}
-}
-
-// findAppModeIndex returns the index for the given app mode.
-func (d *WireGuardSettingsDialog) findAppModeIndex(mode string) uint {
-	for i, m := range d.appModeIDs {
-		if m == mode {
-			return uint(i)
-		}
-	}
-	return 0
 }
 
 // refreshAppsList updates the apps list display by updating in-place.
@@ -513,23 +466,14 @@ func (d *WireGuardSettingsDialog) createAppRow(executable string) *adw.ActionRow
 
 // addApp adds an application to the list.
 func (d *WireGuardSettingsDialog) addApp(executable string) {
-	// Check for duplicates
-	for _, app := range d.apps {
-		if app == executable {
-			return
-		}
+	if AddAppToSlice(&d.apps, executable) {
+		d.refreshAppsList()
 	}
-
-	d.apps = append(d.apps, executable)
-	d.refreshAppsList()
 }
 
 // showRemoveAppConfirmation shows a confirmation dialog before removing an application.
 func (d *WireGuardSettingsDialog) showRemoveAppConfirmation(executable string) {
-	// Get app name from executable path
-	parts := strings.Split(executable, "/")
-	name := parts[len(parts)-1]
-
+	name := GetAppName(executable)
 	components.ShowRemoveConfirmation(d.dialog, "Remove Application", name, func() {
 		d.removeApp(executable)
 	})
@@ -537,149 +481,6 @@ func (d *WireGuardSettingsDialog) showRemoveAppConfirmation(executable string) {
 
 // removeApp removes an application from the list.
 func (d *WireGuardSettingsDialog) removeApp(executable string) {
-	newApps := make([]string, 0, len(d.apps))
-	for _, app := range d.apps {
-		if app != executable {
-			newApps = append(newApps, app)
-		}
-	}
-	d.apps = newApps
+	d.apps = RemoveAppFromSlice(d.apps, executable)
 	d.refreshAppsList()
-}
-
-// showAppSelector shows an AdwDialog to select an application.
-func (d *WireGuardSettingsDialog) showAppSelector() {
-	selectorDialog := adw.NewDialog()
-	selectorDialog.SetTitle("Select Application")
-	selectorDialog.SetContentWidth(400)
-	selectorDialog.SetContentHeight(500)
-
-	// Create toolbar view with header
-	toolbarView := adw.NewToolbarView()
-
-	headerBar := adw.NewHeaderBar()
-	headerBar.SetShowEndTitleButtons(false)
-	headerBar.SetShowStartTitleButtons(false)
-
-	cancelBtn := components.NewLabelButton("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		selectorDialog.Close()
-	})
-	headerBar.PackStart(cancelBtn)
-
-	selectBtn := components.NewLabelButtonWithStyle("Select", components.ButtonSuggested)
-	headerBar.PackEnd(selectBtn)
-
-	toolbarView.AddTopBar(headerBar)
-
-	// Content
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	contentBox.SetMarginTop(12)
-	contentBox.SetMarginStart(12)
-	contentBox.SetMarginEnd(12)
-
-	// Search entry
-	searchEntry := gtk.NewSearchEntry()
-	searchEntry.SetPlaceholderText("Search applications...")
-	contentBox.Append(searchEntry)
-
-	// Scrolled list
-	scrolled := gtk.NewScrolledWindow()
-	scrolled.SetVExpand(true)
-	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
-
-	appList := gtk.NewListBox()
-	appList.AddCSSClass("boxed-list")
-	appList.SetSelectionMode(gtk.SelectionSingle)
-
-	// Load installed apps
-	apps, err := tunnel.ListInstalledApps()
-	if err != nil {
-		apps = []tunnel.AppConfig{}
-	}
-
-	// Create rows for each app
-	for _, app := range apps {
-		appCopy := app
-		row := gtk.NewListBoxRow()
-
-		rowBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-		rowBox.SetMarginTop(8)
-		rowBox.SetMarginBottom(8)
-		rowBox.SetMarginStart(12)
-		rowBox.SetMarginEnd(12)
-
-		// App icon
-		icon := gtk.NewImage()
-		if app.Icon != "" {
-			icon.SetFromIconName(app.Icon)
-		} else {
-			icon.SetFromIconName("application-x-executable-symbolic")
-		}
-		icon.SetPixelSize(32)
-		rowBox.Append(icon)
-
-		// App info
-		infoBox := gtk.NewBox(gtk.OrientationVertical, 2)
-		infoBox.SetHExpand(true)
-
-		nameLabel := gtk.NewLabel(app.Name)
-		nameLabel.SetXAlign(0)
-		nameLabel.AddCSSClass("heading")
-		infoBox.Append(nameLabel)
-
-		execLabel := gtk.NewLabel(app.Executable)
-		execLabel.SetXAlign(0)
-		execLabel.AddCSSClass("dim-label")
-		execLabel.AddCSSClass("caption")
-		infoBox.Append(execLabel)
-
-		rowBox.Append(infoBox)
-		row.SetChild(rowBox)
-
-		// Store app info in row name for filtering and executable retrieval
-		row.SetName(strings.ToLower(app.Name+" "+app.Executable) + "|" + app.Executable)
-
-		row.ConnectActivate(func() {
-			d.addApp(appCopy.Executable)
-			selectorDialog.Close()
-		})
-
-		appList.Append(row)
-	}
-
-	// Filter function
-	var currentQuery string
-	appList.SetFilterFunc(func(row *gtk.ListBoxRow) bool {
-		if currentQuery == "" {
-			return true
-		}
-		name := row.Name()
-		if idx := strings.Index(name, "|"); idx > 0 {
-			name = name[:idx]
-		}
-		return strings.Contains(name, currentQuery)
-	})
-
-	searchEntry.ConnectSearchChanged(func() {
-		currentQuery = strings.ToLower(searchEntry.Text())
-		appList.InvalidateFilter()
-	})
-
-	selectBtn.ConnectClicked(func() {
-		if selected := appList.SelectedRow(); selected != nil {
-			name := selected.Name()
-			if idx := strings.Index(name, "|"); idx >= 0 && idx+1 < len(name) {
-				executable := name[idx+1:]
-				d.addApp(executable)
-				selectorDialog.Close()
-			}
-		}
-	})
-
-	scrolled.SetChild(appList)
-	contentBox.Append(scrolled)
-	toolbarView.SetContent(contentBox)
-	selectorDialog.SetChild(toolbarView)
-	selectorDialog.Present(d.host.GetWindow())
 }

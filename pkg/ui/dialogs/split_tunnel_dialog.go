@@ -4,7 +4,6 @@
 package dialogs
 
 import (
-	"net"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -13,7 +12,6 @@ import (
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
 	"github.com/yllada/vpn-manager/vpn/profile"
-	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
 
 // SplitTunnelDialog represents the split tunneling configuration dialog.
@@ -161,7 +159,7 @@ func (std *SplitTunnelDialog) build() {
 	std.modeRow.SetTitle("Traffic Mode")
 	std.modeRow.SetSubtitle("Choose which traffic passes through VPN")
 	std.modeRow.SetModel(modeModel)
-	std.modeRow.SetSelected(std.findModeIndex(std.profile.SplitTunnelMode))
+	std.modeRow.SetSelected(FindModeIndex(std.profile.SplitTunnelMode, std.modeIDs))
 	modeGroup.Add(std.modeRow)
 
 	// DNS option row
@@ -243,7 +241,7 @@ func (std *SplitTunnelDialog) build() {
 	std.appModeRow.SetTitle("App Routing Mode")
 	std.appModeRow.SetSubtitle("Choose which apps use VPN")
 	std.appModeRow.SetModel(appModeModel)
-	std.appModeRow.SetSelected(std.findAppModeIndex(std.profile.SplitTunnelAppMode))
+	std.appModeRow.SetSelected(FindModeIndex(std.profile.SplitTunnelAppMode, std.appModeIDs))
 	std.appOptionsGroup.Add(std.appModeRow)
 
 	std.prefsPage.Add(std.appOptionsGroup)
@@ -256,7 +254,7 @@ func (std *SplitTunnelDialog) build() {
 	addAppBtn := components.NewIconButton("list-add-symbolic", "Add Application")
 	addAppBtn.SetVAlign(gtk.AlignCenter)
 	addAppBtn.ConnectClicked(func() {
-		std.showAppSelector()
+		ShowAppSelector(std.dialog, std.addApp)
 	})
 	std.appsGroup.SetHeaderSuffix(addAppBtn)
 
@@ -319,19 +317,6 @@ func (std *SplitTunnelDialog) Show() {
 	std.dialog.Present(std.host.GetWindow())
 }
 
-// validateRoute validates an IP address or CIDR network.
-func (std *SplitTunnelDialog) validateRoute(route string) bool {
-	// Try parsing as CIDR
-	_, _, err := net.ParseCIDR(route)
-	if err == nil {
-		return true
-	}
-
-	// Try parsing as IP
-	ip := net.ParseIP(route)
-	return ip != nil
-}
-
 // showAddRouteDialog shows a dialog to add a new route.
 func (std *SplitTunnelDialog) showAddRouteDialog() {
 	dialog := adw.NewAlertDialog("Add Route", "Enter an IP address or CIDR network")
@@ -357,7 +342,7 @@ func (std *SplitTunnelDialog) showAddRouteDialog() {
 		if response == "add" {
 			route := strings.TrimSpace(routeEntry.Text())
 			logger.LogDebug("ui", "Route value: %q", route)
-			isValid := std.validateRoute(route)
+			isValid := ValidateRoute(route)
 			logger.LogDebug("ui", "Route validation result: %v", isValid)
 			if route != "" && isValid {
 				logger.LogDebug("ui", "Calling addRoute(%s)", route)
@@ -376,19 +361,14 @@ func (std *SplitTunnelDialog) showAddRouteDialog() {
 // addRoute adds a route to the list.
 func (std *SplitTunnelDialog) addRoute(route string) {
 	logger.LogDebug("ui", "addRoute() called with: %s", route)
-	// Check for duplicates
-	for _, r := range std.routes {
-		if r == route {
-			logger.LogDebug("ui", "Route %s already exists, skipping", route)
-			return
-		}
+	if AddRouteToSlice(&std.routes, route) {
+		logger.LogDebug("ui", "Routes slice length after append: %d", len(std.routes))
+		logger.LogDebug("ui", "Routes: %v", std.routes)
+		logger.LogDebug("ui", "Calling refreshRoutesList()")
+		std.refreshRoutesList()
+	} else {
+		logger.LogDebug("ui", "Route %s already exists, skipping", route)
 	}
-
-	std.routes = append(std.routes, route)
-	logger.LogDebug("ui", "Routes slice length after append: %d", len(std.routes))
-	logger.LogDebug("ui", "Routes: %v", std.routes)
-	logger.LogDebug("ui", "Calling refreshRoutesList()")
-	std.refreshRoutesList()
 }
 
 // showRemoveRouteConfirmation shows a confirmation dialog before removing a route.
@@ -400,13 +380,7 @@ func (std *SplitTunnelDialog) showRemoveRouteConfirmation(route string) {
 
 // removeRoute removes a route from the list.
 func (std *SplitTunnelDialog) removeRoute(route string) {
-	newRoutes := make([]string, 0, len(std.routes))
-	for _, r := range std.routes {
-		if r != route {
-			newRoutes = append(newRoutes, r)
-		}
-	}
-	std.routes = newRoutes
+	std.routes = RemoveRouteFromSlice(std.routes, route)
 	std.refreshRoutesList()
 }
 
@@ -470,32 +444,6 @@ func (std *SplitTunnelDialog) refreshRoutesList() {
 	logger.LogDebug("ui", "Routes list refreshed, %d rows added", len(std.routeRows))
 }
 
-// findModeIndex returns the index of a mode ID, or 0 if not found.
-func (std *SplitTunnelDialog) findModeIndex(modeID string) uint {
-	if modeID == "" {
-		return 0 // default to "include"
-	}
-	for i, id := range std.modeIDs {
-		if id == modeID {
-			return uint(i)
-		}
-	}
-	return 0
-}
-
-// findAppModeIndex returns the index of an app mode ID, or 0 if not found.
-func (std *SplitTunnelDialog) findAppModeIndex(modeID string) uint {
-	if modeID == "" {
-		return 0 // default to "include"
-	}
-	for i, id := range std.appModeIDs {
-		if id == modeID {
-			return uint(i)
-		}
-	}
-	return 0
-}
-
 // refreshAppsList updates the apps list display by updating in-place.
 // This maintains the group's position in the PreferencesPage.
 func (std *SplitTunnelDialog) refreshAppsList() {
@@ -551,23 +499,15 @@ func (std *SplitTunnelDialog) createAppRow(executable string) *adw.ActionRow {
 
 // addApp adds an application to the list.
 func (std *SplitTunnelDialog) addApp(executable string) {
-	// Check for duplicates
-	for _, app := range std.apps {
-		if app == executable {
-			return
-		}
+	if AddAppToSlice(&std.apps, executable) {
+		std.refreshAppsList()
 	}
-
-	std.apps = append(std.apps, executable)
-	std.refreshAppsList()
 }
 
 // showRemoveAppConfirmation shows a confirmation dialog before removing an application.
 func (std *SplitTunnelDialog) showRemoveAppConfirmation(executable string) {
 	// Get app name from executable path
-	parts := strings.Split(executable, "/")
-	name := parts[len(parts)-1]
-
+	name := GetAppName(executable)
 	components.ShowRemoveConfirmation(std.dialog, "Remove Application", name, func() {
 		std.removeApp(executable)
 	})
@@ -575,152 +515,8 @@ func (std *SplitTunnelDialog) showRemoveAppConfirmation(executable string) {
 
 // removeApp removes an application from the list.
 func (std *SplitTunnelDialog) removeApp(executable string) {
-	newApps := make([]string, 0, len(std.apps))
-	for _, app := range std.apps {
-		if app != executable {
-			newApps = append(newApps, app)
-		}
-	}
-	std.apps = newApps
+	std.apps = RemoveAppFromSlice(std.apps, executable)
 	std.refreshAppsList()
-}
-
-// showAppSelector shows an AdwDialog to select an application.
-func (std *SplitTunnelDialog) showAppSelector() {
-	selectorDialog := adw.NewDialog()
-	selectorDialog.SetTitle("Select Application")
-	selectorDialog.SetContentWidth(400)
-	selectorDialog.SetContentHeight(500)
-
-	// Create toolbar view with header
-	toolbarView := adw.NewToolbarView()
-
-	headerBar := adw.NewHeaderBar()
-	headerBar.SetShowEndTitleButtons(false)
-	headerBar.SetShowStartTitleButtons(false)
-
-	cancelBtn := components.NewLabelButton("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		selectorDialog.Close()
-	})
-	headerBar.PackStart(cancelBtn)
-
-	selectBtn := components.NewLabelButtonWithStyle("Select", components.ButtonSuggested)
-	headerBar.PackEnd(selectBtn)
-
-	toolbarView.AddTopBar(headerBar)
-
-	// Content
-	contentBox := gtk.NewBox(gtk.OrientationVertical, 12)
-	contentBox.SetMarginTop(12)
-	contentBox.SetMarginStart(12)
-	contentBox.SetMarginEnd(12)
-
-	// Search entry
-	searchEntry := gtk.NewSearchEntry()
-	searchEntry.SetPlaceholderText("Search applications...")
-	contentBox.Append(searchEntry)
-
-	// Scrolled list
-	scrolled := gtk.NewScrolledWindow()
-	scrolled.SetVExpand(true)
-	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
-
-	appList := gtk.NewListBox()
-	appList.AddCSSClass("boxed-list")
-	appList.SetSelectionMode(gtk.SelectionSingle)
-
-	// Load installed apps
-	apps, err := tunnel.ListInstalledApps()
-	if err != nil {
-		apps = []tunnel.AppConfig{}
-	}
-
-	// Create rows for each app
-	for _, app := range apps {
-		appCopy := app
-		row := gtk.NewListBoxRow()
-
-		rowBox := gtk.NewBox(gtk.OrientationHorizontal, 12)
-		rowBox.SetMarginTop(8)
-		rowBox.SetMarginBottom(8)
-		rowBox.SetMarginStart(12)
-		rowBox.SetMarginEnd(12)
-
-		// App icon
-		icon := gtk.NewImage()
-		if app.Icon != "" {
-			icon.SetFromIconName(app.Icon)
-		} else {
-			icon.SetFromIconName("application-x-executable-symbolic")
-		}
-		icon.SetPixelSize(32)
-		rowBox.Append(icon)
-
-		// App info
-		infoBox := gtk.NewBox(gtk.OrientationVertical, 2)
-		infoBox.SetHExpand(true)
-
-		nameLabel := gtk.NewLabel(app.Name)
-		nameLabel.SetXAlign(0)
-		nameLabel.AddCSSClass("heading")
-		infoBox.Append(nameLabel)
-
-		execLabel := gtk.NewLabel(app.Executable)
-		execLabel.SetXAlign(0)
-		execLabel.AddCSSClass("dim-label")
-		execLabel.AddCSSClass("caption")
-		infoBox.Append(execLabel)
-
-		rowBox.Append(infoBox)
-		row.SetChild(rowBox)
-
-		// Store app info in row name for filtering and executable retrieval
-		row.SetName(strings.ToLower(app.Name+" "+app.Executable) + "|" + app.Executable)
-
-		row.ConnectActivate(func() {
-			std.addApp(appCopy.Executable)
-			selectorDialog.Close()
-		})
-
-		appList.Append(row)
-	}
-
-	// Filter function
-	var currentQuery string
-	appList.SetFilterFunc(func(row *gtk.ListBoxRow) bool {
-		if currentQuery == "" {
-			return true
-		}
-		name := row.Name()
-		if idx := strings.Index(name, "|"); idx > 0 {
-			name = name[:idx]
-		}
-		return strings.Contains(name, currentQuery)
-	})
-
-	searchEntry.ConnectSearchChanged(func() {
-		currentQuery = strings.ToLower(searchEntry.Text())
-		appList.InvalidateFilter()
-	})
-
-	selectBtn.ConnectClicked(func() {
-		if selected := appList.SelectedRow(); selected != nil {
-			name := selected.Name()
-			if idx := strings.Index(name, "|"); idx >= 0 && idx+1 < len(name) {
-				executable := name[idx+1:]
-				std.addApp(executable)
-				selectorDialog.Close()
-			}
-		}
-	})
-
-	scrolled.SetChild(appList)
-	contentBox.Append(scrolled)
-	toolbarView.SetContent(contentBox)
-	selectorDialog.SetChild(toolbarView)
-	// Present as child of the split tunnel dialog for proper modal behavior
-	selectorDialog.Present(std.dialog)
 }
 
 // saveSettings saves the profile configuration including authentication and split tunnel settings.
