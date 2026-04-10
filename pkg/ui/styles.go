@@ -94,6 +94,11 @@ button.pill {
     color: @success_color;
 }
 
+/* Warning color class for icons */
+.warning {
+    color: @warning_color;
+}
+
 /* Login button styling - warning color for "needs attention" */
 button.login-button {
     background-color: @warning_bg_color;
