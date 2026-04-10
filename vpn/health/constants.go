@@ -31,6 +31,18 @@ var DefaultTestHosts = []string{
 	"208.67.222.222:53", // OpenDNS
 }
 
+// DefaultProbeOrder specifies the default order in which probes are tried.
+// TCP is tried first (most reliable), then ICMP, then HTTP as fallback.
+var DefaultProbeOrder = []string{"tcp", "icmp", "http"}
+
+// DefaultHTTPTargets are URLs used for HTTP probe connectivity checks.
+// These are connectivity-check endpoints that return quickly.
+var DefaultHTTPTargets = []string{
+	"http://1.1.1.1/",                       // Cloudflare - returns 301
+	"http://connectivity-check.ubuntu.com/", // Ubuntu connectivity check
+	"http://www.gstatic.com/generate_204",   // Google - returns 204
+}
+
 // DefaultConfig returns sensible defaults for health checking.
 func DefaultConfig() Config {
 	return Config{
@@ -42,5 +54,7 @@ func DefaultConfig() Config {
 		TestHosts:            DefaultTestHosts,
 		CheckTimeout:         DefaultCheckTimeout,
 		PostDisconnectDelay:  DefaultPostDisconnectDelay,
+		ProbeOrder:           DefaultProbeOrder,
+		HTTPTargets:          DefaultHTTPTargets,
 	}
 }

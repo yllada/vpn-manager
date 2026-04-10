@@ -154,3 +154,103 @@ func TestChecker_UpdateConfig(t *testing.T) {
 		t.Error("UpdateConfig should update AutoReconnect")
 	}
 }
+
+func TestChecker_UsesProbeChain(t *testing.T) {
+	config := DefaultConfig()
+	config.ProbeOrder = []string{"tcp", "http"}
+	config.CheckTimeout = 1 * time.Second
+
+	provider := &mockConnectionProvider{}
+	checker := NewChecker(provider, config)
+
+	if checker.probeChain == nil {
+		t.Fatal("probeChain should be initialized")
+	}
+
+	// Verify it's a FallbackChain
+	chain, ok := checker.probeChain.(*FallbackChain)
+	if !ok {
+		t.Fatalf("expected FallbackChain, got %T", checker.probeChain)
+	}
+
+	if chain.Name() != "fallback" {
+		t.Errorf("expected 'fallback', got %s", chain.Name())
+	}
+
+	if !chain.IsAvailable() {
+		t.Error("chain should be available")
+	}
+}
+
+func TestChecker_BuildProbeChain_DefaultOrder(t *testing.T) {
+	config := DefaultConfig()
+	// Ensure defaults are used
+	config.ProbeOrder = nil
+	config.HTTPTargets = nil
+
+	chain := buildProbeChain(config)
+
+	if chain == nil {
+		t.Fatal("buildProbeChain should return a chain")
+	}
+
+	fc, ok := chain.(*FallbackChain)
+	if !ok {
+		t.Fatalf("expected FallbackChain, got %T", chain)
+	}
+
+	// Should have 3 probes (tcp, icmp, http)
+	if len(fc.probes) != 3 {
+		t.Errorf("expected 3 probes, got %d", len(fc.probes))
+	}
+
+	// Verify order
+	expectedNames := []string{"tcp", "icmp", "http"}
+	for i, probe := range fc.probes {
+		if probe.Name() != expectedNames[i] {
+			t.Errorf("probe %d: expected %s, got %s", i, expectedNames[i], probe.Name())
+		}
+	}
+}
+
+func TestDefaultConfig_HasProbeSettings(t *testing.T) {
+	config := DefaultConfig()
+
+	if len(config.ProbeOrder) == 0 {
+		t.Error("ProbeOrder should not be empty")
+	}
+
+	if len(config.HTTPTargets) == 0 {
+		t.Error("HTTPTargets should not be empty")
+	}
+
+	// Verify default probe order
+	expected := []string{"tcp", "icmp", "http"}
+	if len(config.ProbeOrder) != len(expected) {
+		t.Errorf("expected %d probes in order, got %d", len(expected), len(config.ProbeOrder))
+	}
+	for i, name := range expected {
+		if config.ProbeOrder[i] != name {
+			t.Errorf("probe order[%d]: expected %s, got %s", i, name, config.ProbeOrder[i])
+		}
+	}
+}
+
+// mockConnectionProvider for testing
+type mockConnectionProvider struct{}
+
+func (m *mockConnectionProvider) ListConnections() []*ConnectionInfo {
+	return nil
+}
+
+func (m *mockConnectionProvider) GetConnection(_ string) (*ConnectionInfo, bool) {
+	return nil, false
+}
+
+func (m *mockConnectionProvider) Connect(_, _, _ string) error {
+	return nil
+}
+
+func (m *mockConnectionProvider) Disconnect(_ string) error {
+	return nil
+}

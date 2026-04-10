@@ -3,10 +3,27 @@
 package health
 
 import (
+	"context"
 	"time"
 
 	"github.com/yllada/vpn-manager/vpn/profile"
 )
+
+// HealthProbe defines the interface for connectivity probes.
+// Each probe type (TCP, ICMP, HTTP) implements this interface.
+type HealthProbe interface {
+	// Check tests connectivity to the given host.
+	// Returns latency on success, or an error on failure.
+	// The context should be used for timeout/cancellation.
+	Check(ctx context.Context, host string) (time.Duration, error)
+
+	// Name returns the probe type name (e.g., "tcp", "icmp", "http").
+	Name() string
+
+	// IsAvailable returns whether this probe can be used.
+	// For example, ICMP may not be available without root permissions.
+	IsAvailable() bool
+}
 
 // ConnectionStatus represents the state of a VPN connection.
 type ConnectionStatus int
@@ -81,12 +98,18 @@ type Config struct {
 	ReconnectDelay time.Duration
 	// MaxReconnectAttempts is the maximum number of reconnection attempts (0 = unlimited).
 	MaxReconnectAttempts int
-	// TestHosts are the hosts to ping for health checks.
+	// TestHosts are the hosts to ping for health checks (used by TCP probe).
 	TestHosts []string
 	// CheckTimeout is the timeout for individual health check probes.
 	CheckTimeout time.Duration
 	// PostDisconnectDelay is the delay after disconnect before reconnecting.
 	PostDisconnectDelay time.Duration
+	// ProbeOrder specifies the order in which probes are tried (e.g., ["tcp", "icmp", "http"]).
+	// If empty, defaults to DefaultProbeOrder.
+	ProbeOrder []string
+	// HTTPTargets are the URLs to use for HTTP probe connectivity checks.
+	// If empty, defaults to DefaultHTTPTargets.
+	HTTPTargets []string
 }
 
 // ConnectionHealth tracks the health of a specific connection.

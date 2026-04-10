@@ -2,8 +2,8 @@
 package health
 
 import (
+	"context"
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
@@ -18,6 +18,7 @@ type Checker struct {
 	mu                sync.RWMutex
 	config            Config
 	provider          ConnectionProvider
+	probeChain        HealthProbe
 	running           bool
 	stopChan          chan struct{}
 	connectionHealth  map[string]*ConnectionHealth
@@ -29,12 +30,45 @@ type Checker struct {
 
 // NewChecker creates a new health checker for the given connection provider.
 func NewChecker(provider ConnectionProvider, config Config) *Checker {
+	// Build probe chain from config
+	probeChain := buildProbeChain(config)
+
 	return &Checker{
 		config:           config,
 		provider:         provider,
+		probeChain:       probeChain,
 		stopChan:         make(chan struct{}),
 		connectionHealth: make(map[string]*ConnectionHealth),
 	}
+}
+
+// buildProbeChain creates a FallbackChain from the config.
+func buildProbeChain(config Config) HealthProbe {
+	probeOrder := config.ProbeOrder
+	if len(probeOrder) == 0 {
+		probeOrder = DefaultProbeOrder
+	}
+
+	httpTargets := config.HTTPTargets
+	if len(httpTargets) == 0 {
+		httpTargets = DefaultHTTPTargets
+	}
+
+	probes := make([]HealthProbe, 0, len(probeOrder))
+	for _, name := range probeOrder {
+		switch name {
+		case "tcp":
+			probes = append(probes, NewTCPProbe(config.CheckTimeout))
+		case "icmp":
+			probes = append(probes, NewICMPProbe(config.CheckTimeout))
+		case "http":
+			probes = append(probes, NewHTTPProbe(config.CheckTimeout, httpTargets))
+		default:
+			logger.LogWarn("Unknown probe type in config: %s", name)
+		}
+	}
+
+	return NewFallbackChain(probes)
 }
 
 // SetOnHealthChange sets a callback for health state changes.
@@ -212,19 +246,24 @@ func (c *Checker) checkConnection(conn *ConnectionInfo) {
 }
 
 // testConnectivity tests network connectivity through the VPN tunnel.
-// Returns latency and error.
+// Returns latency and error. Uses the configured probe chain with fallback.
 func (c *Checker) testConnectivity() (time.Duration, error) {
-	// Try each test host until one succeeds
-	for _, host := range c.config.TestHosts {
-		start := time.Now()
-		conn, err := net.DialTimeout("tcp", host, c.config.CheckTimeout)
-		if err == nil {
-			_ = conn.Close()
-			return time.Since(start), nil
-		}
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), c.config.CheckTimeout*3)
+	defer cancel()
+
+	// Use the first test host for probes that need it (TCP, ICMP)
+	host := "8.8.8.8:53"
+	if len(c.config.TestHosts) > 0 {
+		host = c.config.TestHosts[0]
 	}
 
-	return 0, errors.ErrConnectionFailed
+	latency, err := c.probeChain.Check(ctx, host)
+	if err != nil {
+		return 0, errors.ErrConnectionFailed
+	}
+
+	return latency, nil
 }
 
 // attemptReconnect attempts to reconnect a failed connection.
@@ -376,4 +415,5 @@ func (c *Checker) UpdateConfig(config Config) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.config = config
+	c.probeChain = buildProbeChain(config)
 }
