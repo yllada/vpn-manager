@@ -158,14 +158,21 @@ Includes vpn-managerd daemon for privileged operations.
 %setup -q
 
 %install
+# Create directories
+mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_unitdir}
+mkdir -p %{buildroot}%{_datadir}/applications
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
+mkdir -p %{buildroot}%{_docdir}/%{name}
+
 # Main binary
 install -Dm755 %{name} %{buildroot}%{_bindir}/%{name}
 
 # Daemon binary
 install -Dm755 ${DAEMON_NAME} %{buildroot}%{_bindir}/${DAEMON_NAME}
 
-# Systemd service
-install -Dm644 ${DAEMON_NAME}.service %{buildroot}%{_unitdir}/${DAEMON_NAME}.service
+# Systemd service (use explicit path, not macro in install target)
+install -Dm644 ${DAEMON_NAME}.service %{buildroot}/usr/lib/systemd/system/${DAEMON_NAME}.service
 
 # Desktop file
 install -Dm644 %{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
@@ -214,7 +221,7 @@ fi
 %doc README.md
 %{_bindir}/%{name}
 %{_bindir}/${DAEMON_NAME}
-%{_unitdir}/${DAEMON_NAME}.service
+/usr/lib/systemd/system/${DAEMON_NAME}.service
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_docdir}/%{name}/

@@ -224,7 +224,7 @@ func (m *OpenVPNManager) Disconnect(profileID string) error {
 	}
 
 	// Also try killall as backup (in case process escaped)
-	exec.Command("killall", "-q", "openvpn").Run()
+	_ = exec.Command("killall", "-q", "openvpn").Run()
 
 	// Remove from tracking
 	m.mu.Lock()
@@ -427,7 +427,7 @@ func createCredentialsFile(username, password string) (string, error) {
 
 func cleanupCredentialsFile(path string) {
 	if path != "" {
-		os.Remove(path)
+		_ = os.Remove(path)
 	}
 }
 

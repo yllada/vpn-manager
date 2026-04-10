@@ -58,12 +58,6 @@ type IPv6Protection struct {
 
 	// Backup of original sysctl settings
 	originalSysctl map[string]string
-
-	// Active interfaces at enable time
-	interfaces []string
-
-	// nftablesEnabled indicates if nftables inet family rules are active
-	nftablesEnabled bool
 }
 
 // NewIPv6Protection creates an IPv6 protection manager.
@@ -183,29 +177,6 @@ func (ip6 *IPv6Protection) getSysctl(key string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(content)), nil
-}
-
-// getNetworkInterfaces returns active network interfaces.
-func (ip6 *IPv6Protection) getNetworkInterfaces() ([]string, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-
-	var names []string
-	for _, iface := range interfaces {
-		// Skip loopback
-		if iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		// Skip down interfaces
-		if iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-		names = append(names, iface.Name)
-	}
-
-	return names, nil
 }
 
 // HasIPv6Address checks if an interface has an IPv6 address.

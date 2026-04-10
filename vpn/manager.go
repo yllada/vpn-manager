@@ -65,12 +65,10 @@ type Connection struct {
 	// LastError contains the last error message if Status is StatusError.
 	LastError string
 
-	cmd              *exec.Cmd
-	mu               sync.RWMutex
-	stopChan         chan struct{}
-	logHandler       func(string)
-	onAuthFailed     func(profile *profile.Profile, needsOTP bool)
-	authFailedCalled bool
+	mu           sync.RWMutex
+	stopChan     chan struct{}
+	logHandler   func(string)
+	onAuthFailed func(profile *profile.Profile, needsOTP bool)
 }
 
 // Manager orchestrates VPN connections.

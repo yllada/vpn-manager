@@ -106,7 +106,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Set socket permissions (world read/write so unprivileged clients can connect)
 	// Security note: The daemon validates operations via SO_PEERCRED (caller UID/GID)
 	if err := os.Chmod(s.socketPath, 0666); err != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 		return fmt.Errorf("set socket permissions: %w", err)
 	}
 
@@ -131,13 +131,13 @@ func (s *Server) Stop() error {
 
 	// Close listener to stop accepting new connections
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 
 	// Close all client connections
 	s.clientsMu.Lock()
 	for client := range s.clients {
-		client.conn.Close()
+		_ = client.conn.Close()
 	}
 	s.clientsMu.Unlock()
 
@@ -182,14 +182,14 @@ func (s *Server) acceptLoop(ctx context.Context) {
 		unixConn, ok := conn.(*net.UnixConn)
 		if !ok {
 			s.logger.Printf("Connection is not a Unix socket")
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 
 		creds, err := getPeerCredentials(unixConn)
 		if err != nil {
 			s.logger.Printf("Failed to get peer credentials: %v", err)
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 
@@ -225,7 +225,7 @@ func (s *Server) handleClient(client *clientConn) {
 		delete(s.clients, client)
 		s.clientsMu.Unlock()
 
-		client.conn.Close()
+		_ = client.conn.Close()
 		s.logger.Printf("Client disconnected: uid=%d pid=%d", client.uid, client.pid)
 	}()
 

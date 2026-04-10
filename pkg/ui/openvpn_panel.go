@@ -37,6 +37,9 @@ type OpenVPNPanel struct {
 	// Not installed state (shown when OpenVPN binary is missing)
 	notInstalledView *NotInstalledView
 
+	// Daemon not available state (shown when vpn-managerd is not running)
+	daemonNotAvailableView *DaemonNotAvailableView
+
 	// Normal UI elements (hidden when OpenVPN not installed)
 	statusBar *gtk.Box
 	buttonBox *gtk.Box

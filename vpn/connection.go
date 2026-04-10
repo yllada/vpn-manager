@@ -3,14 +3,10 @@
 package vpn
 
 import (
-	"bufio"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -431,121 +427,6 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 				conn.Status = StatusConnecting
 			}
 			conn.mu.Unlock()
-		}
-	}
-}
-
-// createCredentialsFile creates a temporary file with credentials
-func (m *Manager) createCredentialsFile(username, password string) (string, error) {
-	// If no credentials, return empty
-	if username == "" && password == "" {
-		return "", nil
-	}
-
-	// Create temporary directory if it doesn't exist
-	tmpDir := filepath.Join(os.TempDir(), "vpn-manager")
-	if err := os.MkdirAll(tmpDir, 0700); err != nil {
-		return "", err
-	}
-
-	// Create temporary file with cryptographically random name
-	randBytes := make([]byte, 16)
-	if _, err := rand.Read(randBytes); err != nil {
-		return "", fmt.Errorf("failed to generate random filename: %w", err)
-	}
-	credFile := filepath.Join(tmpDir, hex.EncodeToString(randBytes))
-	content := fmt.Sprintf("%s\n%s\n", username, password)
-
-	// Write with restrictive permissions
-	if err := os.WriteFile(credFile, []byte(content), 0600); err != nil {
-		return "", err
-	}
-
-	return credFile, nil
-}
-
-// monitorOutput monitors the OpenVPN process output
-func (m *Manager) monitorOutput(conn *Connection, pipe interface {
-	Read(p []byte) (n int, err error)
-}) {
-	scanner := bufio.NewScanner(pipe)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Log all OpenVPN output
-		logger.LogDebug("openvpn", "%s", line)
-
-		// Detect important events
-		if strings.Contains(line, "Initialization Sequence Completed") {
-			logger.LogDebug("vpn", "Connection established!")
-			conn.mu.Lock()
-			conn.Status = StatusConnected
-			profileID := conn.Profile.ID
-			profileName := conn.Profile.Name
-			ipAddress := conn.IPAddress
-			conn.mu.Unlock()
-
-			// Emit connection established event
-			eventbus.Emit(eventbus.EventConnectionEstablished, "Manager", eventbus.ConnectionEventData{
-				ProfileID:   profileID,
-				ProfileName: profileName,
-				IPAddress:   ipAddress,
-			})
-
-			// Enable post-connection features (kill switch, split tunnel, stats)
-			m.enablePostConnectionFeatures(conn)
-		}
-
-		// Detect authentication errors
-		if strings.Contains(line, "AUTH_FAILED") {
-			logger.LogError("vpn", "Authentication failed")
-			conn.mu.Lock()
-			conn.Status = StatusError
-			conn.LastError = "Authentication failed - verify username/password/OTP"
-
-			// Check if we should suggest OTP
-			// If profile doesn't have RequiresOTP enabled, this might be an OTP issue
-			needsOTP := !conn.Profile.RequiresOTP
-			onAuthFailed := conn.onAuthFailed
-			authFailedCalled := conn.authFailedCalled
-			conn.authFailedCalled = true
-			conn.mu.Unlock()
-
-			// Invoke auth failed callback if set and not already called
-			if onAuthFailed != nil && !authFailedCalled && needsOTP {
-				logger.LogDebug("vpn", "AUTH_FAILED detected without OTP - suggesting OTP retry")
-				resilience.SafeGoWithName("vpn-auth-failed-callback", func() {
-					onAuthFailed(conn.Profile, true)
-				})
-			}
-		}
-
-		// Detect CRV1 challenge (dynamic challenge from server)
-		// Format: AUTH:CRV1:R,E:base64:base64:message
-		if strings.Contains(line, "AUTH:CRV1") || strings.Contains(line, "CHALLENGE") {
-			logger.LogDebug("vpn", "Server requesting challenge/OTP authentication")
-			conn.mu.Lock()
-			needsOTP := !conn.Profile.RequiresOTP
-			onAuthFailed := conn.onAuthFailed
-			authFailedCalled := conn.authFailedCalled
-			conn.authFailedCalled = true
-			conn.mu.Unlock()
-
-			if onAuthFailed != nil && !authFailedCalled && needsOTP {
-				resilience.SafeGoWithName("vpn-challenge-callback", func() {
-					onAuthFailed(conn.Profile, true)
-				})
-			}
-		}
-
-		// Detect connection errors
-		if strings.Contains(line, "Connection refused") || strings.Contains(line, "SIGTERM") {
-			logger.LogError("vpn", "Connection refused or terminated")
-		}
-
-		// Invoke log handler if exists
-		if conn.logHandler != nil {
-			conn.logHandler(line)
 		}
 	}
 }

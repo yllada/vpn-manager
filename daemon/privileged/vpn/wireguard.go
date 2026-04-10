@@ -297,14 +297,13 @@ func (m *WireGuardManager) connectWithWg(ctx context.Context, ifaceName, configP
 
 func (m *WireGuardManager) disconnectWithWgQuick(ifaceName, configPath string) error {
 	cmd := exec.Command("wg-quick", "down", configPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
 		// Try alternative: wg-quick down <interface>
 		cmd = exec.Command("wg-quick", "down", ifaceName)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
+		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("wg-quick down failed: %w: %s", err, string(output))
 		}
+		_ = output // silence unused warning from outer scope
 	}
 	return nil
 }

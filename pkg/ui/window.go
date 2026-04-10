@@ -23,6 +23,7 @@ type MainWindow struct {
 	window          *adw.ApplicationWindow
 	toastOverlay    *adw.ToastOverlay
 	headerBar       *adw.HeaderBar
+	daemonBanner    *DaemonStatusBanner
 	openvpnPanel    *OpenVPNPanel
 	tailscalePanel  *TailscalePanel
 	wireguardPanel  *WireGuardPanel
@@ -32,6 +33,7 @@ type MainWindow struct {
 	viewSwitcherBar *adw.ViewSwitcherBar
 	statusBar       *gtk.Box
 	statusLabel     *gtk.Label
+	daemonAvailable bool
 }
 
 // NewMainWindow creates a new main window.
@@ -130,6 +132,14 @@ func (mw *MainWindow) createLayout() {
 
 	// Create main container for content (viewstack + status bar)
 	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
+
+	// Add daemon status banner (shown when daemon not available)
+	mw.daemonBanner = NewDaemonStatusBanner(func(available bool) {
+		mw.daemonAvailable = available
+		mw.onDaemonStatusChanged(available)
+	})
+	contentBox.Append(mw.daemonBanner)
+
 	contentBox.Append(mw.viewStack)
 
 	// Status bar
@@ -731,4 +741,32 @@ func (mw *MainWindow) onImportProfiles() {
 func hasYAMLExtension(path string) bool {
 	lower := strings.ToLower(path)
 	return strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml")
+}
+
+// onDaemonStatusChanged is called when daemon availability changes.
+// It updates UI elements that depend on daemon availability.
+func (mw *MainWindow) onDaemonStatusChanged(available bool) {
+	if available {
+		logger.LogInfo("Daemon is now available - all features enabled")
+		mw.SetStatus("Daemon connected")
+	} else {
+		logger.LogWarn("Daemon not available - some features disabled")
+		mw.SetStatus("Daemon not running - limited functionality")
+	}
+
+	// Refresh panels to update their state
+	// Panels will check daemon availability and show appropriate UI
+	mw.RefreshAllPanels()
+}
+
+// IsDaemonAvailable returns true if the daemon is currently available.
+func (mw *MainWindow) IsDaemonAvailable() bool {
+	return mw.daemonAvailable
+}
+
+// RefreshDaemonStatus checks daemon status and updates the banner.
+func (mw *MainWindow) RefreshDaemonStatus() {
+	if mw.daemonBanner != nil {
+		mw.daemonBanner.Refresh()
+	}
 }

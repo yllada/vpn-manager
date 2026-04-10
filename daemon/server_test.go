@@ -178,7 +178,7 @@ func TestServerIntegration(t *testing.T) {
 	if err := server.Start(ctx); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	// Wait for socket to be created
 	time.Sleep(50 * time.Millisecond)
@@ -193,7 +193,7 @@ func TestServerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	codec := protocol.NewCodec(conn)
 
@@ -235,7 +235,7 @@ func TestServerMethodNotFound(t *testing.T) {
 	if err := server.Start(ctx); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -243,7 +243,7 @@ func TestServerMethodNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	codec := protocol.NewCodec(conn)
 
@@ -282,7 +282,7 @@ func TestServerStateHandler(t *testing.T) {
 	if err := server.Start(ctx); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -290,7 +290,7 @@ func TestServerStateHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	codec := protocol.NewCodec(conn)
 
