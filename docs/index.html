@@ -372,7 +372,7 @@
               </svg>
             </div>
             <h3 class="font-semibold text-lg mb-2">Multi-Protocol</h3>
-            <p class="text-slate-500 dark:text-slate-400 text-sm">OpenVPN, WireGuard, and Tailscale support. GUI, CLI, and TUI interfaces included.</p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm">OpenVPN, WireGuard, and Tailscale in one beautiful app.</p>
           </div>
         </div>
       </div>
@@ -506,33 +506,25 @@
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
                 <h4 class="font-medium mb-2 flex items-center gap-2">
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  Graphical UI (GUI)
+                  Beautiful Interface
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Modern GTK4 + libadwaita interface. Dark/light theme support, responsive design.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Modern design with dark/light themes. Fits perfectly with your GNOME desktop.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
                 <h4 class="font-medium mb-2 flex items-center gap-2">
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  Command Line (CLI)
+                  Drag & Drop Setup
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Full control from terminal. JSON output for scripting. Perfect for automation.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Import VPN profiles by dragging .ovpn files. Passwords saved securely in your keyring.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
                 <h4 class="font-medium mb-2 flex items-center gap-2">
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  Terminal UI (TUI)
+                  System Tray
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Rich dashboard with bandwidth sparklines, health gauge, and fuzzy profile search.</p>
-              </article>
-              
-              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
-                <h4 class="font-medium mb-2 flex items-center gap-2">
-                  <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  Drag & Drop Import
-                </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Import .ovpn files easily. Credentials stored securely in system keyring.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Control your VPN from the system tray. Quick connect/disconnect without opening the app.</p>
               </article>
             </div>
           </div>
@@ -1135,7 +1127,7 @@
                 </li>
                 <li class="flex items-start gap-2">
                   <span class="w-1.5 h-1.5 bg-gnome rounded-full mt-2 shrink-0"></span>
-                  <span><strong>Manual recovery</strong> — Use <code class="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-sm">--recover-killswitch</code> or <code class="px-2 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-sm">--disable-killswitch</code> from CLI</span>
+                  <span><strong>Easy recovery</strong> — Right-click the tray icon → "Disable Kill Switch"</span>
                 </li>
               </ul>
             </div>
@@ -1181,27 +1173,17 @@
               <div class="flex items-center gap-4">
                 <div class="w-10 h-10 rounded-xl bg-gnome/10 flex items-center justify-center shrink-0 group-open:bg-gnome/20 transition-colors">
                   <svg class="w-5 h-5 text-gnome" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                   </svg>
                 </div>
-                <h3 class="font-semibold text-lg">Can I use it from the terminal?</h3>
+                <h3 class="font-semibold text-lg">Does it work on other desktops besides GNOME?</h3>
               </div>
               <svg class="w-5 h-5 text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
               </svg>
             </summary>
             <div class="px-6 pb-6 pt-2 text-slate-600 dark:text-slate-300">
-              <p><strong>Yes!</strong> VPN Manager includes both CLI and TUI (Terminal UI) interfaces:</p>
-              <div class="mt-3 bg-slate-900 rounded-xl p-4 overflow-x-auto">
-                <pre class="text-sm text-slate-300 font-mono"><code><span class="text-slate-500"># Quick commands</span>
-vpn-manager --list              <span class="text-slate-500"># List profiles</span>
-vpn-manager --connect "My VPN"  <span class="text-slate-500"># Connect</span>
-vpn-manager --status --json     <span class="text-slate-500"># JSON output for scripts</span>
-
-<span class="text-slate-500"># Interactive terminal UI</span>
-vpn-manager --tui</code></pre>
-              </div>
-              <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">The TUI includes bandwidth sparklines, health gauges, fuzzy profile search, and vim-style keybindings.</p>
+              <p><strong>Yes!</strong> While VPN Manager is designed for GNOME, it works on any Linux desktop with GTK4 support (KDE Plasma, XFCE, Cinnamon, etc.). The interface will adapt to your system theme.</p>
             </div>
           </details>
           

@@ -5,167 +5,153 @@
 <h1 align="center">VPN Manager</h1>
 
 <p align="center">
-  <strong>Enterprise-grade security, community-first freedom</strong><br>
-  <em>Simple VPN client for Linux with GUI — OpenVPN, WireGuard & Tailscale</em>
+  <strong>A GTK4 VPN client for Linux with enterprise-grade security features</strong><br>
+  <em>OpenVPN, WireGuard & Tailscale in one native interface</em>
 </p>
 
 <p align="center">
-  <a href="https://yllada.github.io/vpn-manager/"><strong>🌐 Visit Landing Page</strong></a>
+  <a href="https://yllada.github.io/vpn-manager/"><strong>🌐 Landing Page</strong></a> •
+  <a href="#installation"><strong>📦 Install</strong></a> •
+  <a href="#features"><strong>✨ Features</strong></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/yllada/vpn-manager/actions/workflows/ci.yml"><img src="https://github.com/yllada/vpn-manager/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/github/v/release/yllada/vpn-manager?label=version&color=blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/badge/platform-Linux-orange.svg" alt="Platform">
-  <img src="https://img.shields.io/github/downloads/yllada/vpn-manager/total" alt="Downloads">
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8.svg" alt="Go Version">
+  <img src="https://img.shields.io/badge/GTK-4.14+-4A86CF.svg" alt="GTK Version">
 </p>
 
 <p align="center">
   <img src="assets/screen/image.png" alt="VPN Manager Screenshot" width="600">
 </p>
 
-
 ---
 
-## Why?
+## Why VPN Manager?
 
-Most VPN clients on Linux require terminal knowledge. **VPN Manager** lets you connect to your VPN with a simple click — no CLI needed.
+Most Linux VPN solutions require terminal commands or lack modern security features. VPN Manager provides a native GTK4/libadwaita interface with enterprise security that works out of the box.
 
 ## Features
 
-- **Modern libadwaita UI** — Native GNOME experience with responsive layout
-- **Dark/Light theme support** — Follows system preference with accent color support
-- **GNOME HIG compliant** — Consistent with modern GNOME design guidelines
-- **OpenVPN, WireGuard, Tailscale** — All in one app
-- **Import .ovpn files** — Drag and drop configuration
-- **Secure credentials** — Stored in system keyring
-- **Split tunneling** — Choose what traffic goes through VPN
-- **Auto-reconnect** — Restores connection if lost
-- **System tray** — Quick access without opening the app
-- **Network Trust Rules** — Auto-manage VPN based on network trust (connect on untrusted, disconnect on trusted)
-- **Tailscale LAN Gateway** — Share your Tailscale exit node connection with other devices on your local network
+### Multi-Protocol Support
 
-<p align="center">
-  <img src="assets/screen/tailscale.png" alt="Tailscale Integration" width="600">
-</p>
+| Protocol | Features |
+|----------|----------|
+| **OpenVPN** | `.ovpn` import, credentials in system keyring, OTP support |
+| **WireGuard** | `.conf` import, wg-quick integration, interface stats from `/sys/class/net` |
+| **Tailscale** | Exit nodes, peers, Taildrop, LAN Gateway mode, SSH commands |
 
-### Security Features
+### Security
 
-VPN Manager provides enterprise-grade security that matches ProtonVPN and NordVPN:
-
+- **Kill Switch** — Three modes (Off/Auto/Always) with iptables + nftables backends
+  - LAN access control (RFC1918 bypass)
+  - State persistence with crash recovery
+  - Block-all mode for untrusted network failures
 - **DNS Leak Protection** — systemd-resolved strict mode with firewall fallback
-- **IPv6 Leak Protection** — Extended sysctl parameters and nftables inet rules
-- **Enterprise Kill Switch** — State persistence, crash recovery, and boot-persistent protection via systemd
-  - LAN access toggle while kill switch is enabled
-  - Pause/resume mode for captive portal authentication
-- **Evil Twin Detection** — Warns if a known network appears with a different access point
-- **Network-based Kill Switch** — Blocks traffic if VPN fails on untrusted networks
+  - Blocks DNS (port 53) and DoT (port 853) on non-VPN interfaces
+  - Pause mode for captive portal authentication
+- **IPv6 Leak Protection** — sysctl management + optional WebRTC STUN/TURN blocking
+- **Evil Twin Detection** — Warns when a known SSID appears with different BSSID
 
-### Traffic Statistics (Unique Feature)
+### Network Trust Management
 
-**No other Linux VPN client offers this.** VPN Manager includes comprehensive traffic visualization:
+Automatic VPN connection based on network classification:
 
-- **Real-time quality indicators** — Latency, jitter, and bandwidth monitoring
-- **Live bandwidth graph** — Cairo-rendered real-time visualization
-- **Weekly traffic charts** — Bar chart visualization of usage patterns
-- **Session history** — Detailed metrics with provider badges and 90-day SQLite-based retention
-- **Multi-provider tracking** — Stats for OpenVPN, Tailscale, and WireGuard sessions
-- **Pure Go implementation** — No CGO required (modernc.org/sqlite)
+| Trust Level | Action |
+|-------------|--------|
+| Trusted | VPN disconnects (home, office) |
+| Untrusted | VPN connects automatically (public WiFi) |
+| Unknown | Prompts for classification |
+
+Features:
+- Per-network VPN profile override
+- SSID + BSSID matching
+- Kill switch on connection failure for untrusted networks
+
+### Split Tunneling
+
+**Network-based** (IP/CIDR routes):
+- Include mode: only listed routes through VPN
+- Exclude mode: all traffic except listed routes
+
+**Per-app tunneling** (cgroup-based):
+- net_cls (v1) + cgroup v2 support
+- Policy routing with custom table + fwmark
+- Split DNS via DNAT
+
+### Traffic Statistics
+
+- SQLite-based session tracking with configurable retention
+- Real-time bandwidth and latency monitoring
+- Connection quality indicators (Good/Degraded/Poor based on latency)
+- Historical data: daily summaries, per-profile stats
 
 <p align="center">
-  <img src="assets/screen/statiscs.png" alt="Traffic Statistics Dashboard" width="600">
+  <img src="assets/screen/statiscs.png" alt="Traffic Statistics" width="600">
 </p>
 
-## Network Trust Rules
+### Health Monitoring
 
-Automatically manage your VPN connection based on network trust levels:
+- Multi-probe chain: TCP → ICMP → HTTP fallback
+- Auto-reconnect with configurable attempts
+- OTP callback support (no auto-reconnect when OTP required)
 
-| Trust Level | Behavior |
-|-------------|----------|
-| **Trusted** | VPN disconnects automatically (home, office) |
-| **Untrusted** | VPN connects automatically (public WiFi, hotels) |
-| **Unknown** | Prompts you to classify the network |
+## Architecture
 
-### Quick Actions
-- Right-click the tray icon → "Trust/Untrust This Network"
-- Preferences → Network Trust → Manage Rules
+VPN Manager uses a daemon architecture for privilege separation:
+
+```
+┌─────────────────┐     Unix Socket      ┌──────────────────┐
+│  vpn-manager    │ ◄──────────────────► │  vpn-managerd    │
+│  (GUI, user)    │                      │  (root daemon)   │
+└─────────────────┘                      └──────────────────┘
+                                                  │
+                                    ┌─────────────┼─────────────┐
+                                    ▼             ▼             ▼
+                              iptables/      wg-quick      openvpn
+                               nftables      tailscale     sysctl
+```
+
+The daemon handles all privileged operations: firewall rules, VPN process management, DNS configuration, and cgroup setup for per-app tunneling.
 
 ## Installation
 
 ### Requirements
 
-- **GTK4 4.14+**
-- **libadwaita 1.5+**
-- **Go 1.21+** (only for building from source)
+- GTK4 4.14+, libadwaita 1.5+
 - Linux (Ubuntu 24.04+, Fedora 40+, Arch)
-- OpenVPN, WireGuard, or Tailscale installed
+- At least one VPN backend: OpenVPN, WireGuard (`wg-quick`), or Tailscale
 
-### Quick Install (Recommended)
+### Ubuntu/Debian
 
-**Ubuntu/Debian:**
 ```bash
-# Add repository (one-time setup)
 curl -fsSL https://yllada.github.io/vpn-manager/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/vpn-manager.gpg
 echo "deb [signed-by=/usr/share/keyrings/vpn-manager.gpg] https://yllada.github.io/vpn-manager/apt stable main" | sudo tee /etc/apt/sources.list.d/vpn-manager.list
-
-# Install
 sudo apt update && sudo apt install vpn-manager
 ```
 
-**Fedora/RHEL:**
+### Fedora/RHEL
+
 ```bash
-# Download latest .rpm from releases
 wget https://github.com/yllada/vpn-manager/releases/latest/download/vpn-manager-*.x86_64.rpm
 sudo dnf install ./vpn-manager-*.x86_64.rpm
 ```
 
-### ⚠️ Important: Daemon Required
-
-VPN Manager uses a **daemon architecture** for security and better UX:
-
-- **vpn-managerd** runs as a systemd service with root privileges
-- **vpn-manager** (GUI/CLI) runs as a normal user — no sudo needed
-- Communication via Unix socket (`/var/run/vpn-manager/vpn-managerd.sock`)
-
-The daemon handles all privileged operations: kill switch, DNS/IPv6 protection, VPN connections (OpenVPN, WireGuard), Tailscale CLI, and split tunneling.
-
-**Packages (.deb/.rpm) install and enable the daemon automatically.**
-
-<details>
-<summary>Daemon management commands</summary>
-
-```bash
-# Check status
-sudo systemctl status vpn-managerd
-
-# View logs
-sudo journalctl -u vpn-managerd -f
-
-# Restart daemon
-sudo systemctl restart vpn-managerd
-
-# Manual install (if building from source)
-cd build && sudo ./install-daemon.sh
-```
-</details>
-
 ### Build from Source
 
 ```bash
-# Install dependencies (Ubuntu/Debian)
+# Dependencies (Ubuntu/Debian)
 sudo apt install golang gcc libgtk-4-dev libadwaita-1-dev
 
-# Clone and build
+# Build
 git clone https://github.com/yllada/vpn-manager.git
 cd vpn-manager
 go build -o vpn-manager .
 
-# Install the daemon (REQUIRED)
-cd build && sudo ./install-daemon.sh && cd ..
-
-# Run
-./vpn-manager
+# Install daemon (required for privileged operations)
+cd build && sudo ./install-daemon.sh
 ```
 
 <details>
@@ -175,88 +161,32 @@ cd build && sudo ./install-daemon.sh && cd ..
 # Fedora
 sudo dnf install golang gcc gtk4-devel libadwaita-devel
 
-# Arch Linux
+# Arch
 sudo pacman -S go gcc gtk4 libadwaita
 ```
 </details>
 
-## CLI Usage
+### Daemon Management
 
 ```bash
-vpn-manager --list                    # List profiles
-vpn-manager --connect "My VPN"        # Connect
-vpn-manager --disconnect all          # Disconnect all
-vpn-manager --status                  # Show status
-vpn-manager --status --json           # JSON output for scripting
-vpn-manager --tui                     # Launch interactive TUI
-vpn-manager --recover-killswitch      # Recover kill switch after crash
-vpn-manager --disable-killswitch      # Disable kill switch
+sudo systemctl status vpn-managerd   # Check status
+sudo journalctl -u vpn-managerd -f   # View logs
+sudo systemctl restart vpn-managerd  # Restart
 ```
-
-<details>
-<summary>All CLI options</summary>
-
-| Flag | Description |
-|------|-------------|
-| `--version` | Show version |
-| `--help` | Show help |
-| `--verbose` | Enable verbose logging |
-| `--list` | List all VPN profiles |
-| `--connect NAME` | Connect to a profile |
-| `--disconnect NAME\|all` | Disconnect from profile(s) |
-| `--status` | Show connection status |
-| `--json` | Output in JSON format (for scripting) |
-| `--tui` | Launch interactive terminal UI |
-| `--run COMMAND` | Run command through VPN tunnel |
-| `--list-apps` | List apps for split tunneling |
-| `--recover-killswitch` | Recover kill switch state after crash |
-| `--disable-killswitch` | Force disable kill switch |
-</details>
-
-## Interactive TUI
-
-Launch a full terminal interface with `--tui`:
-
-```bash
-vpn-manager --tui
-```
-
-The TUI provides a rich dashboard with real-time monitoring:
-
-- **Responsive ASCII banner** — Adapts to terminal width (full/compact/minimal)
-- **Connection progress bar** — Animated indeterminate mode during connection
-- **Bandwidth sparklines** — Real-time visualization (▁▂▃▅▇█)
-- **Health gauge** — Connection quality based on latency
-- **Toast notifications** — Connection events feedback
-- **Confirmation dialogs** — Safety prompts for destructive actions
-- **Profile selector** — Fuzzy search filtering
-
-### TUI Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `Tab` | Switch between Dashboard and Profiles |
-| `c` | Connect to selected profile |
-| `d` | Disconnect |
-| `j/k` or arrows | Navigate list |
-| `/` | Filter profiles (fuzzy search) |
-| `Enter` | Select profile |
-| `?` | Toggle help |
-| `Esc` | Cancel/back |
-| `q` | Quit |
 
 ## Configuration
 
-- **Profiles**: `~/.config/vpn-manager/profiles/`
-- **Settings**: `~/.config/vpn-manager/config.yaml`
-- **Logs**: `~/.config/vpn-manager/logs/`
-- **Trust Rules**: `~/.config/vpn-manager/trust-rules.yaml`
-- **Statistics**: `~/.config/vpn-manager/stats.db` (SQLite, 90-day retention)
-- **Kill Switch State**: `~/.config/vpn-manager/killswitch-state.json`
+| Path | Description |
+|------|-------------|
+| `~/.config/vpn-manager/profiles/` | OpenVPN profiles |
+| `~/.config/vpn-manager/wireguard/` | WireGuard configs |
+| `~/.config/vpn-manager/config.yaml` | App settings |
+| `~/.config/vpn-manager/trust-rules.yaml` | Network trust rules |
+| `~/.local/share/vpn-manager/stats.db` | Usage statistics (SQLite) |
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Please follow [Conventional Commits](https://www.conventionalcommits.org/).
+See [CONTRIBUTING.md](CONTRIBUTING.md). We follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## License
 
