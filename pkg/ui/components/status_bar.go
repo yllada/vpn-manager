@@ -1,9 +1,10 @@
-// Package ui provides shared panel components and helpers.
-// This file contains reusable UI building blocks to reduce code duplication
-// across OpenVPN, WireGuard, and Tailscale panels.
-package ui
+// Package components provides reusable UI widgets for VPN Manager panels.
+// This file contains the StatusBar component for displaying connection status.
+package components
 
 import (
+	"fmt"
+
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -68,5 +69,53 @@ func CreateStatusBar(cfg PanelConfig) *StatusBar {
 		Box:   statusBox,
 		Icon:  statusIcon,
 		Label: statusLabel,
+	}
+}
+
+// SetStatus updates the status bar with new icon, text, and CSS class.
+func (s *StatusBar) SetStatus(iconName, text, cssClass string) {
+	s.Icon.SetFromIconName(iconName)
+	s.Label.SetText(text)
+
+	// Remove old classes and add new one
+	s.Label.RemoveCSSClass("dim-label")
+	s.Label.RemoveCSSClass("success-label")
+	s.Label.RemoveCSSClass("warning-label")
+	s.Label.RemoveCSSClass("error-label")
+	if cssClass != "" {
+		s.Label.AddCSSClass(cssClass)
+	}
+}
+
+// =============================================================================
+// HELPER FUNCTIONS - shared across panels
+// =============================================================================
+
+// CreateRowIcon creates a small icon for ActionRow prefix.
+func CreateRowIcon(iconName string) *gtk.Image {
+	icon := gtk.NewImage()
+	icon.SetFromIconName(iconName)
+	icon.SetPixelSize(16)
+	icon.AddCSSClass("dim-label")
+	return icon
+}
+
+// FormatBytes formats a byte count in a human-readable format.
+func FormatBytes(bytes uint64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%.1fGB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1fMB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1fKB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%dB", bytes)
 	}
 }

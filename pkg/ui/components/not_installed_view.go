@@ -1,7 +1,7 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package components provides reusable UI widgets for VPN Manager.
 // This file contains the NotInstalledView component that displays installation guidance
 // when a VPN tool is not installed or its daemon is not running.
-package ui
+package components
 
 import (
 	"os/exec"
@@ -111,10 +111,7 @@ func (v *NotInstalledView) createCommandsSection(parent *gtk.Box) {
 	row.AddCSSClass("monospace")
 
 	// Copy button
-	copyBtn := gtk.NewButton()
-	copyBtn.SetIconName("edit-copy-symbolic")
-	copyBtn.SetTooltipText("Copy command")
-	copyBtn.AddCSSClass("flat")
+	copyBtn := NewIconButton("edit-copy-symbolic", "Copy command")
 	copyBtn.AddCSSClass("circular")
 	copyBtn.SetVAlign(gtk.AlignCenter)
 
@@ -164,10 +161,8 @@ func (v *NotInstalledView) createActionButtons(parent *gtk.Box) {
 	buttonBox.SetMarginTop(8)
 
 	// Check Again button
-	v.checkButton = gtk.NewButton()
-	v.checkButton.SetLabel("Check Again")
-	v.checkButton.AddCSSClass("pill")
-	v.checkButton.SetIconName("view-refresh-symbolic")
+	v.checkButton = NewActionButton("view-refresh-symbolic", "Check Again", ButtonPill)
+	v.checkButton.RemoveCSSClass("suggested-action") // Pill adds suggested, remove for neutral
 	if v.config.OnCheckAgain != nil {
 		v.checkButton.ConnectClicked(v.config.OnCheckAgain)
 	}
@@ -175,14 +170,12 @@ func (v *NotInstalledView) createActionButtons(parent *gtk.Box) {
 
 	// View Documentation button
 	if v.config.DocURL != "" {
-		v.docButton = gtk.NewButton()
 		label := v.config.DocLabel
 		if label == "" {
 			label = "View Documentation"
 		}
-		v.docButton.SetLabel(label)
-		v.docButton.AddCSSClass("pill")
-		v.docButton.SetIconName("web-browser-symbolic")
+		v.docButton = NewActionButton("web-browser-symbolic", label, ButtonPill)
+		v.docButton.RemoveCSSClass("suggested-action") // Pill adds suggested, remove for neutral
 
 		// Capture URL for closure
 		docURL := v.config.DocURL

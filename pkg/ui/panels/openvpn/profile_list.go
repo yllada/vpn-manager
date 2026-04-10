@@ -1,10 +1,9 @@
-// Package ui provides the graphical user interface for VPN Manager.
-// This file contains the ProfileList component that displays and manages VPN profiles.
-package ui
+// Package openvpn contains the OpenVPN panel components.
+// This file contains the ProfileList and ProfileRow components.
+package openvpn
 
 import (
 	"fmt"
-	"os/exec"
 	"sync"
 	"time"
 
@@ -13,160 +12,27 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/panels/common"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/health"
 	profilepkg "github.com/yllada/vpn-manager/vpn/profile"
 )
 
-// OpenVPNPanel represents the OpenVPN management panel.
-// Provides a consistent UI matching WireGuard and Tailscale panels.
-type OpenVPNPanel struct {
-	mainWindow  *MainWindow
-	box         *gtk.Box
-	profileList *ProfileList
-
-	// Status area
-	statusIcon  *gtk.Image
-	statusLabel *gtk.Label
-
-	// Empty state management
-	profilesGroup *adw.PreferencesGroup
-	emptyState    *adw.StatusPage
-
-	// Not installed state (shown when OpenVPN binary is missing)
-	notInstalledView *NotInstalledView
-
-	// Normal UI elements (hidden when OpenVPN not installed)
-	statusBar *gtk.Box
-	buttonBox *gtk.Box
-}
-
-// NewOpenVPNPanel creates a new OpenVPN panel.
-func NewOpenVPNPanel(mainWindow *MainWindow) *OpenVPNPanel {
-	panel := &OpenVPNPanel{
-		mainWindow: mainWindow,
-	}
-	panel.createLayout()
-
-	// Check availability and show appropriate view
-	panel.checkAvailability()
-
-	return panel
-}
-
-// GetWidget returns the panel widget.
-func (op *OpenVPNPanel) GetWidget() gtk.Widgetter {
-	return op.box
-}
-
-// GetProfileList returns the inner profile list.
-func (op *OpenVPNPanel) GetProfileList() *ProfileList {
-	return op.profileList
-}
-
-// createLayout builds the OpenVPN panel UI.
-func (op *OpenVPNPanel) createLayout() {
-	// Use shared panel helpers
-	cfg := DefaultPanelConfig("OpenVPN")
-	op.box = CreatePanelBox(cfg)
-
-	// Status box - using shared helper
-	statusBar := CreateStatusBar(cfg)
-	op.statusIcon = statusBar.Icon
-	op.statusLabel = statusBar.Label
-	op.statusBar = statusBar.Box
-	op.box.Append(statusBar.Box)
-
-	// Profiles section using AdwPreferencesGroup
-	op.profilesGroup = adw.NewPreferencesGroup()
-	op.profilesGroup.SetTitle("Profiles")
-	op.profilesGroup.SetMarginTop(12)
-
-	// Create profile list and add its ListBox to the group
-	op.profileList = NewProfileList(op.mainWindow, op)
-	op.profilesGroup.Add(op.profileList.GetWidget())
-	op.box.Append(op.profilesGroup)
-
-	// Empty state as sibling (not inside ListBox)
-	op.emptyState = adw.NewStatusPage()
-	op.emptyState.SetIconName("network-vpn-symbolic")
-	op.emptyState.SetTitle("No VPN Profiles")
-	op.emptyState.SetDescription("Import your OpenVPN configuration files to get started")
-	op.emptyState.SetMarginTop(12)
-	op.emptyState.SetVisible(false)
-
-	// Add an import button as the child
-	emptyImportBtn := gtk.NewButton()
-	emptyImportBtn.SetLabel("Import Profile")
-	emptyImportBtn.AddCSSClass("suggested-action")
-	emptyImportBtn.AddCSSClass("pill")
-	emptyImportBtn.SetHAlign(gtk.AlignCenter)
-	emptyImportBtn.ConnectClicked(op.onImportProfile)
-	op.emptyState.SetChild(emptyImportBtn)
-
-	op.box.Append(op.emptyState)
-
-	// Import button at bottom
-	op.buttonBox = gtk.NewBox(gtk.OrientationHorizontal, 8)
-	op.buttonBox.SetMarginTop(12)
-	op.buttonBox.SetHAlign(gtk.AlignEnd)
-
-	importBtn := gtk.NewButton()
-	importBtn.SetLabel("Import")
-	importBtn.SetIconName("document-open-symbolic")
-	importBtn.ConnectClicked(op.onImportProfile)
-	op.buttonBox.Append(importBtn)
-
-	op.box.Append(op.buttonBox)
-
-	// Not installed view (shown when OpenVPN is not installed)
-	op.notInstalledView = NewNotInstalledView(NewOpenVPNNotInstalledConfig(op.checkAvailability))
-	op.notInstalledView.SetVisible(false)
-	op.box.Append(op.notInstalledView.GetWidget())
-}
-
-// onImportProfile handles adding a new OpenVPN profile.
-func (op *OpenVPNPanel) onImportProfile() {
-	op.mainWindow.onAddProfile()
-}
-
-// LoadProfiles loads the profiles into the list.
-func (op *OpenVPNPanel) LoadProfiles() {
-	op.profileList.LoadProfiles()
-}
-
-// RefreshStatus refreshes the OpenVPN status from active connections.
-// Called when window is shown from systray to sync UI with actual VPN state.
-func (op *OpenVPNPanel) RefreshStatus() {
-	op.profileList.RefreshAllStatuses()
-}
-
-// UpdateStatus updates the global status display.
-func (op *OpenVPNPanel) UpdateStatus(connected bool, profileName string) {
-	if connected {
-		op.statusIcon.SetFromIconName("network-vpn-symbolic")
-		op.statusLabel.SetText("Connected: " + profileName)
-		op.statusLabel.RemoveCSSClass("dim-label")
-		op.statusLabel.AddCSSClass("success-label")
-	} else {
-		op.statusIcon.SetFromIconName("network-offline-symbolic")
-		op.statusLabel.SetText("Disconnected")
-		op.statusLabel.RemoveCSSClass("success-label")
-		op.statusLabel.AddCSSClass("dim-label")
-	}
-}
-
 // ProfileList represents the VPN profile list.
 // Manages the display and interactions with connection profiles.
 type ProfileList struct {
-	mainWindow    *MainWindow
-	panel         *OpenVPNPanel
-	listBox       *gtk.ListBox
-	rows          map[string]*ProfileRow
-	statsUpdating bool
-	stopStats     chan struct{}
-	stopStatsOnce sync.Once
+	host           ports.PanelHost
+	panel          *OpenVPNPanel
+	onStatusChange func(connected bool, profileName string)
+	listBox        *gtk.ListBox
+	rows           map[string]*ProfileRow
+	statsUpdating  bool
+	stopStats      chan struct{}
+	stopStatsOnce  sync.Once
 }
 
 // ProfileRow represents a profile row in the list.
@@ -189,12 +55,18 @@ type ProfileRow struct {
 
 // NewProfileList creates a new VPN profile list.
 // Initializes the ListBox container with appropriate styling.
-func NewProfileList(mainWindow *MainWindow, panel *OpenVPNPanel) *ProfileList {
+func NewProfileList(host ports.PanelHost, panel *OpenVPNPanel) *ProfileList {
 	pl := &ProfileList{
-		mainWindow: mainWindow,
-		panel:      panel,
-		listBox:    gtk.NewListBox(),
-		rows:       make(map[string]*ProfileRow),
+		host:    host,
+		panel:   panel,
+		listBox: gtk.NewListBox(),
+		rows:    make(map[string]*ProfileRow),
+	}
+
+	// Set up status change callback that updates both panel and tray
+	pl.onStatusChange = func(connected bool, profileName string) {
+		panel.UpdateStatus(connected, profileName)
+		host.UpdateTrayStatus(connected, profileName)
 	}
 
 	// List styling - use boxed-list for AdwExpanderRow compatibility
@@ -215,25 +87,23 @@ func (pl *ProfileList) RefreshAllStatuses() {
 	connectedProfile := ""
 
 	for profileID, row := range pl.rows {
-		if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profileID); exists {
+		if conn, exists := pl.host.VPNManager().GetConnection(profileID); exists {
 			status := conn.GetStatus()
-			pl.updateRowStatus(profileID, status)
+			pl.UpdateRowStatus(profileID, status)
 			if status == vpn.StatusConnected {
 				connectedProfile = row.profile.Name
 			}
 		} else {
 			// No connection exists - ensure row shows disconnected
-			pl.updateRowStatus(profileID, vpn.StatusDisconnected)
+			pl.UpdateRowStatus(profileID, vpn.StatusDisconnected)
 		}
 	}
 
 	// Update panel header status
-	if pl.mainWindow.openvpnPanel != nil {
-		if connectedProfile != "" {
-			pl.mainWindow.openvpnPanel.UpdateStatus(true, connectedProfile)
-		} else {
-			pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
-		}
+	if connectedProfile != "" {
+		pl.onStatusChange(true, connectedProfile)
+	} else {
+		pl.onStatusChange(false, "")
 	}
 }
 
@@ -247,7 +117,7 @@ func (pl *ProfileList) LoadProfiles() {
 	pl.rows = make(map[string]*ProfileRow)
 
 	// Get profiles from manager
-	profiles := pl.mainWindow.app.vpnManager.ProfileManager().List()
+	profiles := pl.host.VPNManager().ProfileManager().List()
 
 	if len(profiles) == 0 {
 		// Show empty state
@@ -263,7 +133,7 @@ func (pl *ProfileList) LoadProfiles() {
 	for _, profile := range profiles {
 		pl.addProfileRow(profile)
 		// Check if this profile is connected and update header
-		if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
+		if conn, exists := pl.host.VPNManager().GetConnection(profile.ID); exists {
 			if conn.GetStatus() == vpn.StatusConnected {
 				connectedProfile = profile.Name
 			}
@@ -271,71 +141,9 @@ func (pl *ProfileList) LoadProfiles() {
 	}
 
 	// Update panel header if there's a connected profile
-	if connectedProfile != "" && pl.mainWindow.openvpnPanel != nil {
-		pl.mainWindow.openvpnPanel.UpdateStatus(true, connectedProfile)
+	if connectedProfile != "" {
+		pl.onStatusChange(true, connectedProfile)
 	}
-}
-
-// updateEmptyState toggles between empty state and profiles list.
-func (op *OpenVPNPanel) updateEmptyState(isEmpty bool) {
-	if isEmpty {
-		op.profilesGroup.SetVisible(false)
-		op.emptyState.SetVisible(true)
-	} else {
-		op.profilesGroup.SetVisible(true)
-		op.emptyState.SetVisible(false)
-	}
-}
-
-// isOpenVPNInstalled checks if OpenVPN is available on the system.
-// Returns true if either openvpn3 or classic openvpn is found in PATH.
-func (op *OpenVPNPanel) isOpenVPNInstalled() bool {
-	// Check for OpenVPN 3 (preferred for modern systems)
-	if _, err := exec.LookPath("openvpn3"); err == nil {
-		return true
-	}
-	// Fallback to classic OpenVPN
-	if _, err := exec.LookPath("openvpn"); err == nil {
-		return true
-	}
-	return false
-}
-
-// checkAvailability checks if OpenVPN is installed and shows the appropriate view.
-// If OpenVPN is installed, shows normal UI. If not, shows NotInstalledView.
-// This is called on panel creation and when user clicks "Check Again".
-func (op *OpenVPNPanel) checkAvailability() {
-	if op.isOpenVPNInstalled() {
-		op.showNormalUI()
-	} else {
-		op.showNotInstalledView()
-	}
-}
-
-// showNormalUI shows the normal OpenVPN panel UI (status bar, profiles, buttons).
-func (op *OpenVPNPanel) showNormalUI() {
-	// Hide not installed view
-	op.notInstalledView.SetVisible(false)
-
-	// Show normal UI elements
-	op.statusBar.SetVisible(true)
-	op.profilesGroup.SetVisible(true)
-	op.buttonBox.SetVisible(true)
-
-	// Load profiles (this will show emptyState or profiles as appropriate)
-	op.LoadProfiles()
-}
-
-// showNotInstalledView hides normal UI and shows the NotInstalledView.
-func (op *OpenVPNPanel) showNotInstalledView() {
-	// Hide normal UI elements
-	op.statusBar.SetVisible(false)
-	op.profilesGroup.SetVisible(false)
-	op.emptyState.SetVisible(false)
-	op.buttonBox.SetVisible(false)
-
-	// Show not installed view
-	op.notInstalledView.SetVisible(true)
 }
 
 // addProfileRow adds a profile row to the list using AdwExpanderRow.
@@ -411,21 +219,21 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	uptimeRow := adw.NewActionRow()
 	uptimeRow.SetTitle("Uptime")
 	uptimeRow.SetSubtitle("--")
-	uptimeRow.AddPrefix(createRowIcon("appointment-symbolic"))
+	uptimeRow.AddPrefix(components.CreateRowIcon("appointment-symbolic"))
 	expanderRow.AddRow(uptimeRow)
 
 	// Latency row
 	latencyRow := adw.NewActionRow()
 	latencyRow.SetTitle("Latency")
 	latencyRow.SetSubtitle("--")
-	latencyRow.AddPrefix(createRowIcon("network-wireless-signal-good-symbolic"))
+	latencyRow.AddPrefix(components.CreateRowIcon("network-wireless-signal-good-symbolic"))
 	expanderRow.AddRow(latencyRow)
 
 	// Traffic row (combined TX/RX)
 	trafficRow := adw.NewActionRow()
 	trafficRow.SetTitle("Traffic")
 	trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
-	trafficRow.AddPrefix(createRowIcon("network-transmit-receive-symbolic"))
+	trafficRow.AddPrefix(components.CreateRowIcon("network-transmit-receive-symbolic"))
 	expanderRow.AddRow(trafficRow)
 
 	// Profile info row (created/last used)
@@ -436,7 +244,7 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 		infoText = fmt.Sprintf("Last used: %s", profile.LastUsed.Format("01/02/2006 15:04"))
 	}
 	infoRow.SetSubtitle(infoText)
-	infoRow.AddPrefix(createRowIcon("document-properties-symbolic"))
+	infoRow.AddPrefix(components.CreateRowIcon("document-properties-symbolic"))
 	expanderRow.AddRow(infoRow)
 
 	// Add to list
@@ -456,23 +264,18 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	}
 
 	// Update status if connected
-	if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
-		pl.updateRowStatus(profile.ID, conn.GetStatus())
+	if conn, exists := pl.host.VPNManager().GetConnection(profile.ID); exists {
+		pl.UpdateRowStatus(profile.ID, conn.GetStatus())
 	}
-}
-
-// createRowIcon creates a small icon for ActionRow prefix.
-func createRowIcon(iconName string) *gtk.Image {
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(16)
-	icon.AddCSSClass("dim-label")
-	return icon
 }
 
 // onConfigClicked opens the Split Tunneling configuration dialog.
 func (pl *ProfileList) onConfigClicked(profile *profilepkg.Profile) {
-	dialog := NewSplitTunnelDialog(pl.mainWindow, profile)
+	if pl.panel.splitTunnelDialogFactory == nil {
+		logger.LogError("openvpn_panel", "Split tunnel dialog factory not set")
+		return
+	}
+	dialog := pl.panel.splitTunnelDialogFactory(pl.host, profile)
 	dialog.Show()
 }
 
@@ -481,20 +284,18 @@ func (pl *ProfileList) onConfigClicked(profile *profilepkg.Profile) {
 // Implements intelligent OTP detection: only shows OTP dialog when profile.RequiresOTP is true.
 func (pl *ProfileList) onConnectClicked(profile *profilepkg.Profile) {
 	// Check if already connected
-	if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID); exists {
+	if conn, exists := pl.host.VPNManager().GetConnection(profile.ID); exists {
 		if conn.GetStatus() == vpn.StatusConnected || conn.GetStatus() == vpn.StatusConnecting {
 			// Disconnect
-			if err := pl.mainWindow.app.vpnManager.Disconnect(profile.ID); err != nil {
-				pl.mainWindow.showError("Error disconnecting", err.Error())
+			if err := pl.host.VPNManager().Disconnect(profile.ID); err != nil {
+				pl.host.ShowError("Error disconnecting", err.Error())
 			} else {
-				pl.updateRowStatus(profile.ID, vpn.StatusDisconnected)
-				pl.mainWindow.SetStatus(fmt.Sprintf("Disconnected from %s", profile.Name))
+				pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
+				pl.host.SetStatus(fmt.Sprintf("Disconnected from %s", profile.Name))
 				// Update panel header status
-				if pl.mainWindow.openvpnPanel != nil {
-					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
-				}
+				pl.onStatusChange(false, "")
 				// Disconnect notification
-				NotifyDisconnected(profile.Name)
+				notify.Disconnected(profile.Name)
 			}
 			return
 		}
@@ -506,7 +307,7 @@ func (pl *ProfileList) onConnectClicked(profile *profilepkg.Profile) {
 		if err == nil && savedPassword != "" {
 			// Password saved - check if OTP is required
 			if profile.RequiresOTP {
-				pl.showOTPDialog(profile, profile.Username, savedPassword, false)
+				pl.ShowOTPDialog(profile, profile.Username, savedPassword, false)
 			} else {
 				// No OTP required - connect directly with saved credentials
 				pl.connectWithCredentials(profile, profile.Username, savedPassword)
@@ -519,9 +320,9 @@ func (pl *ProfileList) onConnectClicked(profile *profilepkg.Profile) {
 	pl.showPasswordDialog(profile)
 }
 
-// showOTPDialog shows an AdwDialog to enter the OTP code.
+// ShowOTPDialog shows an AdwDialog to enter the OTP code.
 // Used after entering credentials or when already saved.
-func (pl *ProfileList) showOTPDialog(profile *profilepkg.Profile, username, password string, saveCredentials bool) {
+func (pl *ProfileList) ShowOTPDialog(profile *profilepkg.Profile, username, password string, saveCredentials bool) {
 	dialog := adw.NewDialog()
 	dialog.SetTitle("OTP Verification")
 	dialog.SetContentWidth(380)
@@ -535,17 +336,14 @@ func (pl *ProfileList) showOTPDialog(profile *profilepkg.Profile, username, pass
 	headerBar.SetShowStartTitleButtons(false)
 
 	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		dialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
 	// Connect button in header
-	connectBtn := gtk.NewButton()
-	connectBtn.SetLabel("Connect")
-	connectBtn.AddCSSClass("suggested-action")
+	connectBtn := components.NewLabelButtonWithStyle("Connect", components.ButtonSuggested)
 	headerBar.PackEnd(connectBtn)
 
 	toolbarView.AddTopBar(headerBar)
@@ -583,9 +381,9 @@ func (pl *ProfileList) showOTPDialog(profile *profilepkg.Profile, username, pass
 			profile.SavePassword = true
 			if err := keyring.Store(profile.ID, password); err != nil {
 				profile.SavePassword = false
-				pl.mainWindow.SetStatus("Warning: Could not save password")
+				pl.host.SetStatus("Warning: Could not save password")
 			}
-			_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
+			_ = pl.host.VPNManager().ProfileManager().Save()
 		}
 
 		dialog.Close()
@@ -599,7 +397,7 @@ func (pl *ProfileList) showOTPDialog(profile *profilepkg.Profile, username, pass
 
 	toolbarView.SetContent(prefsPage)
 	dialog.SetChild(toolbarView)
-	dialog.Present(pl.mainWindow.window)
+	dialog.Present(pl.host.GetWindow())
 }
 
 // showPasswordDialog shows an AdwDialog to enter username and password.
@@ -618,17 +416,14 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 	headerBar.SetShowStartTitleButtons(false)
 
 	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		dialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
 	// Next button in header
-	nextBtn := gtk.NewButton()
-	nextBtn.SetLabel("Next")
-	nextBtn.AddCSSClass("suggested-action")
+	nextBtn := components.NewLabelButtonWithStyle("Next", components.ButtonSuggested)
 	headerBar.PackEnd(nextBtn)
 
 	toolbarView.AddTopBar(headerBar)
@@ -681,7 +476,7 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 		saveCredentials := saveRow.Active()
 
 		if username == "" || password == "" {
-			pl.mainWindow.SetStatus("Enter username and password")
+			pl.host.SetStatus("Enter username and password")
 			return
 		}
 
@@ -693,15 +488,15 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 			profile.SavePassword = true
 			if err := keyring.Store(profile.ID, password); err != nil {
 				profile.SavePassword = false
-				pl.mainWindow.SetStatus("Warning: Could not save password")
+				pl.host.SetStatus("Warning: Could not save password")
 			}
-			_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
+			_ = pl.host.VPNManager().ProfileManager().Save()
 		}
 
 		// Check if OTP is required for this profile
 		if profile.RequiresOTP {
 			// Show OTP dialog (don't save credentials again, already saved above)
-			pl.showOTPDialog(profile, username, password, false)
+			pl.ShowOTPDialog(profile, username, password, false)
 		} else {
 			// No OTP required - connect directly
 			pl.connectWithCredentials(profile, username, password)
@@ -715,24 +510,24 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 
 	toolbarView.SetContent(prefsPage)
 	dialog.SetChild(toolbarView)
-	dialog.Present(pl.mainWindow.window)
+	dialog.Present(pl.host.GetWindow())
 }
 
 // connectWithCredentials initiates VPN connection with specific credentials.
 // It sets up an auth failure callback for intelligent OTP fallback.
 func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, username, password string) {
-	pl.updateRowStatus(profile.ID, vpn.StatusConnecting)
-	pl.mainWindow.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
+	pl.UpdateRowStatus(profile.ID, vpn.StatusConnecting)
+	pl.host.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
 
 	// Start connection
-	if err := pl.mainWindow.app.vpnManager.Connect(profile.ID, username, password); err != nil {
-		pl.mainWindow.showError("Connection error", err.Error())
-		pl.updateRowStatus(profile.ID, vpn.StatusDisconnected)
+	if err := pl.host.VPNManager().Connect(profile.ID, username, password); err != nil {
+		pl.host.ShowError("Connection error", err.Error())
+		pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
 		return
 	}
 
 	// Get the connection and set up auth failure callback for OTP fallback
-	conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profile.ID)
+	conn, exists := pl.host.VPNManager().GetConnection(profile.ID)
 	if exists && !profile.RequiresOTP {
 		// Only set callback if OTP wasn't already requested
 		// Capture credentials for potential OTP retry
@@ -745,21 +540,21 @@ func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, usern
 				// This can be done outside GTK thread
 				failedProfile.RequiresOTP = true
 				failedProfile.OTPAutoDetected = false // Learned from server, not config
-				_ = pl.mainWindow.app.vpnManager.ProfileManager().Save()
+				_ = pl.host.VPNManager().ProfileManager().Save()
 
 				// Disconnect failed connection first (done outside GTK thread)
-				if err := pl.mainWindow.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
+				if err := pl.host.VPNManager().Disconnect(failedProfile.ID); err != nil {
 					logger.LogError("openvpn_panel", "Disconnect after auth failure failed: %v", err)
 				}
 
 				// All GTK operations must be done on the main thread
 				glib.IdleAdd(func() {
 					// Update status
-					pl.mainWindow.SetStatus(fmt.Sprintf("%s requires OTP - please enter code", failedProfile.Name))
-					pl.updateRowStatus(failedProfile.ID, vpn.StatusDisconnected)
+					pl.host.SetStatus(fmt.Sprintf("%s requires OTP - please enter code", failedProfile.Name))
+					pl.UpdateRowStatus(failedProfile.ID, vpn.StatusDisconnected)
 
 					// Show OTP dialog with saved credentials
-					pl.showOTPDialog(failedProfile, savedUsername, savedPassword, false)
+					pl.ShowOTPDialog(failedProfile, savedUsername, savedPassword, false)
 				})
 			}
 		})
@@ -781,14 +576,12 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 	wasConnected := false
 
 	for range ticker.C {
-		conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profileID)
+		conn, exists := pl.host.VPNManager().GetConnection(profileID)
 		if !exists {
 			// Connection removed - update UI to disconnected
 			glib.IdleAdd(func() {
-				pl.updateRowStatus(profileID, vpn.StatusDisconnected)
-				if pl.mainWindow.openvpnPanel != nil {
-					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
-				}
+				pl.UpdateRowStatus(profileID, vpn.StatusDisconnected)
+				pl.onStatusChange(false, "")
 			})
 			break
 		}
@@ -801,7 +594,7 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 
 		// Update UI on main GTK thread
 		glib.IdleAdd(func() {
-			pl.updateRowStatus(currentProfileID, currentStatus)
+			pl.UpdateRowStatus(currentProfileID, currentStatus)
 		})
 
 		if status == vpn.StatusConnected {
@@ -811,36 +604,30 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 				// Capture profile name for the closure
 				profileName := profile.Name
 				glib.IdleAdd(func() {
-					pl.mainWindow.SetStatus(fmt.Sprintf("Connected to %s", profileName))
+					pl.host.SetStatus(fmt.Sprintf("Connected to %s", profileName))
 					// Update panel header status
-					if pl.mainWindow.openvpnPanel != nil {
-						pl.mainWindow.openvpnPanel.UpdateStatus(true, profileName)
-					}
+					pl.onStatusChange(true, profileName)
 				})
 			}
 			// Keep monitoring - don't break, wait for disconnect
 		} else if status == vpn.StatusError {
 			glib.IdleAdd(func() {
-				if pl.mainWindow.openvpnPanel != nil {
-					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
-				}
+				pl.onStatusChange(false, "")
 			})
 			break
 		} else if status == vpn.StatusDisconnected {
 			glib.IdleAdd(func() {
-				if pl.mainWindow.openvpnPanel != nil {
-					pl.mainWindow.openvpnPanel.UpdateStatus(false, "")
-				}
+				pl.onStatusChange(false, "")
 			})
 			break
 		}
 	}
 }
 
-// updateRowStatus updates the visual state of a profile row.
+// UpdateRowStatus updates the visual state of a profile row.
 // Uses AdwExpanderRow subtitle for status display.
 // Only sends notifications when status actually changes to prevent spam.
-func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionStatus) {
+func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionStatus) {
 	row, exists := pl.rows[profileID]
 	if !exists {
 		return
@@ -876,21 +663,6 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.uptimeRow.SetSubtitle("--")
 		row.latencyRow.SetSubtitle("--")
 		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
-		// Update tray indicator if no other active connections
-		if tray := pl.mainWindow.app.GetTray(); tray != nil {
-			hasConnected := false
-			for _, r := range pl.rows {
-				if conn, exists := pl.mainWindow.app.vpnManager.GetConnection(r.profile.ID); exists {
-					if conn.GetStatus() == vpn.StatusConnected {
-						hasConnected = true
-						break
-					}
-				}
-			}
-			if !hasConnected {
-				tray.SetDisconnected()
-			}
-		}
 
 	case vpn.StatusConnecting:
 		row.spinner.SetVisible(true)
@@ -902,7 +674,7 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.deleteBtn.SetSensitive(false)
 		// Connection in progress notification - only if status changed
 		if statusChanged {
-			NotifyConnecting(row.profile.Name)
+			notify.Connecting(row.profile.Name)
 		}
 
 	case vpn.StatusConnected:
@@ -919,11 +691,7 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		pl.startStatsUpdate(profileID)
 		// Successful connection notification - only if status changed
 		if statusChanged {
-			NotifyConnected(row.profile.Name)
-		}
-		// Update tray indicator
-		if tray := pl.mainWindow.app.GetTray(); tray != nil {
-			tray.SetConnected(row.profile.Name)
+			notify.Connected(row.profile.Name)
 		}
 
 	case vpn.StatusError:
@@ -936,7 +704,7 @@ func (pl *ProfileList) updateRowStatus(profileID string, status vpn.ConnectionSt
 		row.deleteBtn.SetSensitive(true)
 		// Error notification - only if status changed
 		if statusChanged {
-			NotifyError(row.profile.Name, "Connection error")
+			notify.ConnectionError(row.profile.Name, "Connection error")
 		}
 	}
 }
@@ -966,22 +734,22 @@ func (pl *ProfileList) onDeleteClicked(profile *profilepkg.Profile) {
 			_ = keyring.Delete(profile.ID)
 
 			// Delete profile
-			if err := pl.mainWindow.app.vpnManager.ProfileManager().Remove(profile.ID); err != nil {
-				pl.mainWindow.showError("Error deleting", err.Error())
+			if err := pl.host.VPNManager().ProfileManager().Remove(profile.ID); err != nil {
+				pl.host.ShowError("Error deleting", err.Error())
 			} else {
 				pl.LoadProfiles()
-				pl.mainWindow.SetStatus(fmt.Sprintf("Profile '%s' deleted", profile.Name))
+				pl.host.SetStatus(fmt.Sprintf("Profile '%s' deleted", profile.Name))
 			}
 		}
 	})
 
 	// Present the dialog using the AdwApplicationWindow
-	dialog.Present(pl.mainWindow.window)
+	dialog.Present(pl.host.GetWindow())
 }
 
-// updateHealthIndicator updates the visual health indicator for a profile.
+// UpdateHealthIndicator updates the visual health indicator for a profile.
 // Updates the subtitle of the ExpanderRow to reflect health state.
-func (pl *ProfileList) updateHealthIndicator(profileID string, state health.State) {
+func (pl *ProfileList) UpdateHealthIndicator(profileID string, state health.State) {
 	row, exists := pl.rows[profileID]
 	if !exists {
 		return
@@ -1053,17 +821,17 @@ func (pl *ProfileList) updateStats(profileID string) {
 		return
 	}
 
-	conn, exists := pl.mainWindow.app.vpnManager.GetConnection(profileID)
+	conn, exists := pl.host.VPNManager().GetConnection(profileID)
 	if !exists || conn.GetStatus() != vpn.StatusConnected {
 		return
 	}
 
 	// Update uptime
 	uptime := conn.GetUptime()
-	row.uptimeRow.SetSubtitle(formatDuration(uptime))
+	row.uptimeRow.SetSubtitle(common.FormatDuration(uptime))
 
 	// Update latency from health checker if available
-	hc := pl.mainWindow.app.vpnManager.HealthChecker()
+	hc := pl.host.VPNManager().HealthChecker()
 	if hc != nil {
 		if health, exists := hc.GetHealth(profileID); exists && health.Latency > 0 {
 			row.latencyRow.SetSubtitle(fmt.Sprintf("%dms", health.Latency.Milliseconds()))
@@ -1074,40 +842,5 @@ func (pl *ProfileList) updateStats(profileID string) {
 
 	// Update TX/RX statistics from interface
 	conn.UpdateStats()
-	row.trafficRow.SetSubtitle(fmt.Sprintf("↑ %s  ↓ %s", formatBytes(conn.BytesSent), formatBytes(conn.BytesRecv)))
-}
-
-// formatBytes formats a byte count in a human-readable format.
-func formatBytes(bytes uint64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.1fGB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1fMB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1fKB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%dB", bytes)
-	}
-}
-
-// formatDuration formats a duration in a human-readable format.
-func formatDuration(d time.Duration) string {
-	hours := int(d.Hours())
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
-
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
-	}
-	if minutes > 0 {
-		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	}
-	return fmt.Sprintf("%ds", seconds)
+	row.trafficRow.SetSubtitle(fmt.Sprintf("↑ %s  ↓ %s", components.FormatBytes(conn.BytesSent), components.FormatBytes(conn.BytesRecv)))
 }

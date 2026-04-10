@@ -1,6 +1,6 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package components provides reusable UI widgets for VPN Manager.
 // This file contains the BandwidthGraph component for real-time bandwidth visualization.
-package ui
+package components
 
 import (
 	"sync"

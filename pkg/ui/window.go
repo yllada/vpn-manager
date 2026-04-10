@@ -7,15 +7,28 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
+	"github.com/yllada/vpn-manager/pkg/ui/panels/openvpn"
+	"github.com/yllada/vpn-manager/pkg/ui/panels/stats"
+	tailscalepanel "github.com/yllada/vpn-manager/pkg/ui/panels/tailscale"
+	wireguardpanel "github.com/yllada/vpn-manager/pkg/ui/panels/wireguard"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
+	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/profile"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
+
+// Compile-time assertion: MainWindow implements ports.PanelHost
+var _ ports.PanelHost = (*MainWindow)(nil)
 
 // MainWindow represents the main application window.
 type MainWindow struct {
@@ -23,11 +36,11 @@ type MainWindow struct {
 	window          *adw.ApplicationWindow
 	toastOverlay    *adw.ToastOverlay
 	headerBar       *adw.HeaderBar
-	daemonBanner    *DaemonStatusBanner
-	openvpnPanel    *OpenVPNPanel
-	tailscalePanel  *TailscalePanel
-	wireguardPanel  *WireGuardPanel
-	statsPanel      *StatsPanel
+	daemonBanner    *components.DaemonStatusBanner
+	openvpnPanel    *openvpn.OpenVPNPanel
+	tailscalePanel  *tailscalepanel.TailscalePanel
+	wireguardPanel  *wireguardpanel.WireGuardPanel
+	statsPanel      *stats.StatsPanel
 	viewStack       *adw.ViewStack
 	viewSwitcher    *adw.ViewSwitcher
 	viewSwitcherBar *adw.ViewSwitcherBar
@@ -74,10 +87,7 @@ func (mw *MainWindow) createLayout() {
 	mw.headerBar = adw.NewHeaderBar()
 
 	// Add profile button (left side)
-	addBtn := gtk.NewButton()
-	addBtn.SetIconName("list-add-symbolic")
-	addBtn.SetTooltipText("Add profile")
-	addBtn.AddCSSClass("flat")
+	addBtn := components.NewIconButton("list-add-symbolic", "Add profile")
 	addBtn.ConnectClicked(func() { mw.onAddProfile() })
 	mw.headerBar.PackStart(addBtn)
 
@@ -88,10 +98,7 @@ func (mw *MainWindow) createLayout() {
 	mw.headerBar.PackEnd(menuButton)
 
 	// Refresh button (right side, left of menu button)
-	refreshBtn := gtk.NewButton()
-	refreshBtn.SetIconName("view-refresh-symbolic")
-	refreshBtn.SetTooltipText("Refresh profiles")
-	refreshBtn.AddCSSClass("flat")
+	refreshBtn := components.NewIconButton("view-refresh-symbolic", "Refresh profiles")
 	refreshBtn.ConnectClicked(func() { mw.RefreshAllPanels() })
 	mw.headerBar.PackEnd(refreshBtn)
 
@@ -103,7 +110,11 @@ func (mw *MainWindow) createLayout() {
 	mw.viewStack = adw.NewViewStack()
 
 	// OpenVPN page with icon
-	mw.openvpnPanel = NewOpenVPNPanel(mw)
+	// Create SplitTunnel dialog factory
+	splitTunnelFactory := func(host ports.PanelHost, profile *profile.Profile) openvpn.SplitTunnelDialog {
+		return dialogs.NewSplitTunnelDialog(host, profile)
+	}
+	mw.openvpnPanel = openvpn.NewOpenVPNPanel(mw, mw.onAddProfile, splitTunnelFactory)
 	scrolledOpenVPN := gtk.NewScrolledWindow()
 	scrolledOpenVPN.SetVExpand(true)
 	scrolledOpenVPN.SetChild(mw.openvpnPanel.GetWidget())
@@ -134,7 +145,7 @@ func (mw *MainWindow) createLayout() {
 	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
 
 	// Add daemon status banner (shown when daemon not available)
-	mw.daemonBanner = NewDaemonStatusBanner(func(available bool) {
+	mw.daemonBanner = components.NewDaemonStatusBanner(func(available bool) {
 		mw.daemonAvailable = available
 		mw.onDaemonStatusChanged(available)
 	})
@@ -190,7 +201,7 @@ func (mw *MainWindow) createTailscalePage() {
 	}
 
 	// Always create Tailscale panel - it handles nil provider by showing NotInstalledView
-	mw.tailscalePanel = NewTailscalePanel(mw, provider)
+	mw.tailscalePanel = tailscalepanel.NewTailscalePanel(mw, provider)
 
 	scrolledTailscale := gtk.NewScrolledWindow()
 	scrolledTailscale.SetVExpand(true)
@@ -219,8 +230,13 @@ func (mw *MainWindow) createWireGuardPage() {
 	// Register provider with manager
 	mw.app.vpnManager.RegisterProvider(provider)
 
+	// Create WireGuard settings dialog factory
+	settingsFactory := func(host ports.PanelHost, profile *wireguard.Profile, onSave func()) wireguardpanel.SettingsDialog {
+		return dialogs.NewWireGuardSettingsDialog(host, profile, onSave)
+	}
+
 	// Create WireGuard panel (pass provider - handles unavailable state internally)
-	mw.wireguardPanel = NewWireGuardPanel(mw, provider)
+	mw.wireguardPanel = wireguardpanel.NewWireGuardPanel(mw, provider, settingsFactory)
 
 	scrolledWireGuard := gtk.NewScrolledWindow()
 	scrolledWireGuard.SetVExpand(true)
@@ -241,7 +257,7 @@ func (mw *MainWindow) createStatsPage() {
 	statsManager := mw.app.vpnManager.StatsManager()
 
 	// Create stats panel
-	mw.statsPanel = NewStatsPanel(mw, statsManager)
+	mw.statsPanel = stats.NewStatsPanel(mw, statsManager)
 
 	scrolledStats := gtk.NewScrolledWindow()
 	scrolledStats.SetVExpand(true)
@@ -512,17 +528,14 @@ func (mw *MainWindow) showAddProfileDialog(configPath string) {
 	headerBar.SetShowStartTitleButtons(false)
 
 	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		dialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
 	// Accept button in header
-	acceptBtn := gtk.NewButton()
-	acceptBtn.SetLabel("Add")
-	acceptBtn.AddCSSClass("suggested-action")
+	acceptBtn := components.NewLabelButtonWithStyle("Add", components.ButtonSuggested)
 	headerBar.PackEnd(acceptBtn)
 
 	toolbarView.AddTopBar(headerBar)
@@ -560,7 +573,7 @@ func (mw *MainWindow) showAddProfileDialog(configPath string) {
 
 		// Add profile
 		if err := mw.app.vpnManager.ProfileManager().Add(profile); err != nil {
-			mw.showError("Error adding profile", err.Error())
+			mw.ShowError("Error adding profile", err.Error())
 		} else {
 			mw.openvpnPanel.LoadProfiles()
 			mw.SetStatus(fmt.Sprintf("Profile '%s' added", name))
@@ -606,30 +619,14 @@ func (mw *MainWindow) onAbout() {
 	about.Present(&mw.window.Window)
 }
 
-// showError displays an error dialog using AdwAlertDialog.
-func (mw *MainWindow) showError(title, message string) {
-	dialog := adw.NewAlertDialog(title, message)
-
-	// Add OK response
-	dialog.AddResponse("ok", "OK")
-	dialog.SetDefaultResponse("ok")
-	dialog.SetCloseResponse("ok")
-
-	// Present the dialog
-	dialog.Present(mw.window)
+// ShowError displays an error dialog using AdwAlertDialog.
+func (mw *MainWindow) ShowError(title, message string) {
+	components.ShowAlert(mw.window, title, message)
 }
 
-// showInfo displays an information dialog using AdwAlertDialog.
-func (mw *MainWindow) showInfo(title, message string) {
-	dialog := adw.NewAlertDialog(title, message)
-
-	// Add OK response
-	dialog.AddResponse("ok", "OK")
-	dialog.SetDefaultResponse("ok")
-	dialog.SetCloseResponse("ok")
-
-	// Present the dialog
-	dialog.Present(mw.window)
+// ShowInfo displays an information dialog using AdwAlertDialog.
+func (mw *MainWindow) ShowInfo(title, message string) {
+	components.ShowAlert(mw.window, title, message)
 }
 
 // =============================================================================
@@ -680,11 +677,11 @@ func (mw *MainWindow) onExportProfiles() {
 
 		err = mw.app.vpnManager.ProfileManager().Export(filePath)
 		if err != nil {
-			mw.showError("Export Failed", fmt.Sprintf("Failed to export profiles: %v", err))
+			mw.ShowError("Export Failed", fmt.Sprintf("Failed to export profiles: %v", err))
 			return
 		}
 
-		mw.showInfo("Export Complete",
+		mw.ShowInfo("Export Complete",
 			fmt.Sprintf("Successfully exported %d profile(s) to:\n%s",
 				len(profiles), filePath))
 		mw.SetStatus(fmt.Sprintf("Exported %d profiles", len(profiles)))
@@ -719,7 +716,7 @@ func (mw *MainWindow) onImportProfiles() {
 
 		count, err := mw.app.vpnManager.ProfileManager().Import(filePath)
 		if err != nil {
-			mw.showError("Import Failed", fmt.Sprintf("Failed to import profiles: %v", err))
+			mw.ShowError("Import Failed", fmt.Sprintf("Failed to import profiles: %v", err))
 			return
 		}
 
@@ -731,7 +728,7 @@ func (mw *MainWindow) onImportProfiles() {
 		// Reload the profile list
 		mw.openvpnPanel.LoadProfiles()
 
-		mw.showInfo("Import Complete",
+		mw.ShowInfo("Import Complete",
 			fmt.Sprintf("Successfully imported %d profile(s).\n\nNote: You'll need to re-enter credentials for imported profiles.", count))
 		mw.SetStatus(fmt.Sprintf("Imported %d profiles", count))
 	})
@@ -768,5 +765,41 @@ func (mw *MainWindow) IsDaemonAvailable() bool {
 func (mw *MainWindow) RefreshDaemonStatus() {
 	if mw.daemonBanner != nil {
 		mw.daemonBanner.Refresh()
+	}
+}
+
+// GetWindow returns the parent window for presenting dialogs.
+func (mw *MainWindow) GetWindow() gtk.Widgetter {
+	return mw.window
+}
+
+// GetGtkWindow returns the GTK window for file dialogs.
+func (mw *MainWindow) GetGtkWindow() *gtk.Window {
+	return &mw.window.Window
+}
+
+// GetClipboard returns the clipboard for copy operations.
+func (mw *MainWindow) GetClipboard() *gdk.Clipboard {
+	return mw.window.Clipboard()
+}
+
+// VPNManager returns the VPN manager for connection operations.
+func (mw *MainWindow) VPNManager() *vpn.Manager {
+	return mw.app.vpnManager
+}
+
+// GetConfig returns the application configuration.
+func (mw *MainWindow) GetConfig() *config.Config {
+	return mw.app.config
+}
+
+// UpdateTrayStatus updates the system tray icon status.
+func (mw *MainWindow) UpdateTrayStatus(connected bool, profileName string) {
+	if tray := mw.app.GetTray(); tray != nil {
+		if connected {
+			tray.SetConnected(profileName)
+		} else {
+			tray.SetDisconnected()
+		}
 	}
 }

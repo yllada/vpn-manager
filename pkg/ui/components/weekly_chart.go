@@ -1,6 +1,6 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package components provides reusable UI widgets for VPN Manager.
 // This file contains the WeeklyChart component for displaying 7-day traffic history.
-package ui
+package components
 
 import (
 	"fmt"
@@ -246,7 +246,11 @@ func (wc *WeeklyChart) drawRoundedRect(cr *cairo.Context, x, y, w, h, radius flo
 }
 
 // getMaxTotal returns the maximum combined (download + upload) value.
+// Thread-safe: acquires read lock before accessing data.
 func (wc *WeeklyChart) getMaxTotal() uint64 {
+	wc.mu.RLock()
+	defer wc.mu.RUnlock()
+
 	var max uint64
 	for _, day := range wc.data {
 		total := day.Download + day.Upload
@@ -285,11 +289,11 @@ func (wc *WeeklyChart) GetTotalUpload() uint64 {
 func (wc *WeeklyChart) FormatDataSummary() string {
 	dl := wc.GetTotalDownload()
 	ul := wc.GetTotalUpload()
-	return fmt.Sprintf("Week total: ↓ %s  ↑ %s", formatBytesCompact(dl), formatBytesCompact(ul))
+	return fmt.Sprintf("Week total: ↓ %s  ↑ %s", FormatBytesCompact(dl), FormatBytesCompact(ul))
 }
 
-// formatBytesCompact formats bytes in a compact form (e.g., "1.2 GB").
-func formatBytesCompact(bytes uint64) string {
+// FormatBytesCompact formats bytes in a compact form (e.g., "1.2 GB").
+func FormatBytesCompact(bytes uint64) string {
 	const (
 		KB = 1024
 		MB = KB * 1024

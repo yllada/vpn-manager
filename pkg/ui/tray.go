@@ -22,8 +22,10 @@ import (
 	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	trayicons "github.com/yllada/vpn-manager/pkg/ui/systray"
 	"github.com/yllada/vpn-manager/vpn"
 	profilepkg "github.com/yllada/vpn-manager/vpn/profile"
 	"github.com/yllada/vpn-manager/vpn/trust"
@@ -40,7 +42,7 @@ var (
 // getConnectedIcon returns the connected icon, initializing it on first use.
 func getConnectedIcon() []byte {
 	iconConnectedOnce.Do(func() {
-		iconConnected = GenerateConnectedIcon()
+		iconConnected = trayicons.GenerateConnectedIcon()
 	})
 	return iconConnected
 }
@@ -48,7 +50,7 @@ func getConnectedIcon() []byte {
 // getDisconnectedIcon returns the disconnected icon, initializing it on first use.
 func getDisconnectedIcon() []byte {
 	iconDisconnectedOnce.Do(func() {
-		iconDisconnected = GenerateDisconnectedIcon()
+		iconDisconnected = trayicons.GenerateDisconnectedIcon()
 	})
 	return iconDisconnected
 }
@@ -85,6 +87,9 @@ type TrayIndicator struct {
 	networkMu    sync.RWMutex
 	currentSSID  string
 	currentBSSID string
+
+	// Event subscriptions for cleanup
+	networkChangeSub *eventbus.Subscription
 
 	// Done channel for graceful shutdown of click handlers
 	done chan struct{}
@@ -182,7 +187,7 @@ func (t *TrayIndicator) onReady() {
 	systray.AddSeparator()
 
 	// Subscribe to network change events to update menu items
-	eventbus.On(eventbus.EventNetworkChanged, func(event *eventbus.Event) {
+	t.networkChangeSub = eventbus.On(eventbus.EventNetworkChanged, func(event *eventbus.Event) {
 		if data, ok := event.Data.(*eventbus.NetworkChangedData); ok {
 			t.updateNetworkTrustMenu(data.SSID, data.BSSID, data.Connected)
 		}
@@ -225,6 +230,12 @@ func (t *TrayIndicator) onReady() {
 func (t *TrayIndicator) onExit() {
 	// Signal all click handler goroutines to stop
 	close(t.done)
+
+	// Unsubscribe from event bus to prevent callbacks on destroyed objects
+	if t.networkChangeSub != nil {
+		t.networkChangeSub.Unsubscribe()
+		t.networkChangeSub = nil
+	}
 
 	t.stopUptimeCounter()
 
@@ -396,7 +407,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 				// Update main window UI only on successful disconnect
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.openvpnPanel != nil {
-						t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusDisconnected)
+						t.app.window.openvpnPanel.GetProfileList().UpdateRowStatus(profileID, vpn.StatusDisconnected)
 						t.app.window.openvpnPanel.UpdateStatus(false, "")
 					}
 				})
@@ -413,11 +424,11 @@ func (t *TrayIndicator) disconnectCurrent() {
 				allDisconnected = false
 			} else {
 				logger.LogInfo("tray", "Tailscale disconnected from tray")
-				NotifyDisconnected("Tailscale")
+				notify.Disconnected("Tailscale")
 				// Update Tailscale panel UI
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.tailscalePanel != nil {
-						t.app.window.tailscalePanel.updateStatus()
+						t.app.window.tailscalePanel.UpdateStatus()
 					}
 				})
 			}
@@ -433,7 +444,7 @@ func (t *TrayIndicator) disconnectCurrent() {
 				allDisconnected = false
 			} else {
 				logger.LogInfo("tray", "WireGuard disconnected from tray")
-				NotifyDisconnected("WireGuard")
+				notify.Disconnected("WireGuard")
 				// Update WireGuard panel UI
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.wireguardPanel != nil {
@@ -569,7 +580,7 @@ func (t *TrayIndicator) trustCurrentNetwork() {
 	}
 
 	// Show notification
-	NotifyNetworkTrusted(ssid)
+	notify.NetworkTrusted(ssid)
 
 	// Update main window status
 	glib.IdleAdd(func() {
@@ -638,7 +649,7 @@ func (t *TrayIndicator) untrustCurrentNetwork() {
 	}
 
 	// Show notification
-	NotifyNetworkUntrusted(ssid)
+	notify.NetworkUntrusted(ssid)
 
 	// Update main window status
 	glib.IdleAdd(func() {
@@ -660,7 +671,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *profilepkg.Profile, username, p
 	// Update window UI if visible
 	glib.IdleAdd(func() {
 		if t.app.window != nil && t.app.window.openvpnPanel != nil {
-			t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusConnecting)
+			t.app.window.openvpnPanel.GetProfileList().UpdateRowStatus(profile.ID, vpn.StatusConnecting)
 			t.app.window.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
 		}
 	})
@@ -670,7 +681,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *profilepkg.Profile, username, p
 		t.SetDisconnected()
 		glib.IdleAdd(func() {
 			if t.app.window != nil && t.app.window.openvpnPanel != nil {
-				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profile.ID, vpn.StatusDisconnected)
+				t.app.window.openvpnPanel.GetProfileList().UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
 			}
 		})
 		return
@@ -726,7 +737,7 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 
 		glib.IdleAdd(func() {
 			if t.app.window != nil && t.app.window.openvpnPanel != nil {
-				t.app.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, status)
+				t.app.window.openvpnPanel.GetProfileList().UpdateRowStatus(profileID, status)
 			}
 		})
 
@@ -743,7 +754,7 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 					}
 				}
 			})
-			NotifyConnected(profileName)
+			notify.Connected(profileName)
 			return
 		case vpn.StatusError, vpn.StatusDisconnected:
 			t.SetDisconnected()

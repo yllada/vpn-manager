@@ -1,7 +1,7 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package dialogs provides the graphical user interface for VPN Manager.
 // This file contains the SplitTunnelDialog component for configuring
 // split tunneling routes per VPN profile.
-package ui
+package dialogs
 
 import (
 	"net"
@@ -10,6 +10,8 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 	"github.com/yllada/vpn-manager/vpn/profile"
 	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
@@ -17,7 +19,7 @@ import (
 // SplitTunnelDialog represents the split tunneling configuration dialog.
 type SplitTunnelDialog struct {
 	dialog      *adw.Dialog
-	mainWindow  *MainWindow
+	host        ports.PanelHost
 	profile     *profile.Profile
 	prefsPage   *adw.PreferencesPage // Store reference for dynamic updates
 	otpRow      *adw.SwitchRow
@@ -44,12 +46,12 @@ type SplitTunnelDialog struct {
 }
 
 // NewSplitTunnelDialog creates a new split tunneling configuration dialog.
-func NewSplitTunnelDialog(mainWindow *MainWindow, profile *profile.Profile) *SplitTunnelDialog {
+func NewSplitTunnelDialog(host ports.PanelHost, profile *profile.Profile) *SplitTunnelDialog {
 	std := &SplitTunnelDialog{
-		mainWindow: mainWindow,
-		profile:    profile,
-		routes:     make([]string, 0),
-		apps:       make([]string, 0),
+		host:    host,
+		profile: profile,
+		routes:  make([]string, 0),
+		apps:    make([]string, 0),
 	}
 
 	// Copy existing routes
@@ -81,17 +83,14 @@ func (std *SplitTunnelDialog) build() {
 	headerBar.SetShowStartTitleButtons(false)
 
 	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		std.dialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
 	// Save button in header
-	saveBtn := gtk.NewButton()
-	saveBtn.SetLabel("Save")
-	saveBtn.AddCSSClass("suggested-action")
+	saveBtn := components.NewLabelButtonWithStyle("Save", components.ButtonSuggested)
 	saveBtn.ConnectClicked(func() {
 		std.saveSettings()
 	})
@@ -182,10 +181,7 @@ func (std *SplitTunnelDialog) build() {
 	std.routesGroup.SetDescription("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
 
 	// Add route button as header suffix
-	addRouteBtn := gtk.NewButton()
-	addRouteBtn.SetIconName("list-add-symbolic")
-	addRouteBtn.AddCSSClass("flat")
-	addRouteBtn.SetTooltipText("Add Route")
+	addRouteBtn := components.NewIconButton("list-add-symbolic", "Add Route")
 	addRouteBtn.SetVAlign(gtk.AlignCenter)
 	addRouteBtn.ConnectClicked(func() {
 		std.showAddRouteDialog()
@@ -195,9 +191,7 @@ func (std *SplitTunnelDialog) build() {
 	// Create Quick Add row (will be managed by refreshRoutesList)
 	quickAddBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 
-	privateBtn := gtk.NewButton()
-	privateBtn.SetLabel("Private Networks")
-	privateBtn.AddCSSClass("flat")
+	privateBtn := components.NewLabelButtonWithStyle("Private Networks", components.ButtonFlat)
 	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
 	privateBtn.ConnectClicked(func() {
 		std.addRoute("10.0.0.0/8")
@@ -206,9 +200,7 @@ func (std *SplitTunnelDialog) build() {
 	})
 	quickAddBox.Append(privateBtn)
 
-	localBtn := gtk.NewButton()
-	localBtn.SetLabel("Local Network")
-	localBtn.AddCSSClass("flat")
+	localBtn := components.NewLabelButtonWithStyle("Local Network", components.ButtonFlat)
 	localBtn.SetTooltipText("192.168.0.0/16")
 	localBtn.ConnectClicked(func() {
 		std.addRoute("192.168.0.0/16")
@@ -261,10 +253,7 @@ func (std *SplitTunnelDialog) build() {
 	std.appsGroup.SetTitle("Applications")
 
 	// Add app button as header suffix
-	addAppBtn := gtk.NewButton()
-	addAppBtn.SetIconName("list-add-symbolic")
-	addAppBtn.AddCSSClass("flat")
-	addAppBtn.SetTooltipText("Add Application")
+	addAppBtn := components.NewIconButton("list-add-symbolic", "Add Application")
 	addAppBtn.SetVAlign(gtk.AlignCenter)
 	addAppBtn.ConnectClicked(func() {
 		std.showAppSelector()
@@ -278,7 +267,7 @@ func (std *SplitTunnelDialog) build() {
 	// ═══════════════════════════════════════════════════════════════════
 	// SYSTEM INTEGRATION SECTION
 	// ═══════════════════════════════════════════════════════════════════
-	nmAvailable := std.mainWindow.app.vpnManager.NetworkManagerAvailable()
+	nmAvailable := std.host.VPNManager().NetworkManagerAvailable()
 	var sysGroup *adw.PreferencesGroup
 	if nmAvailable {
 		sysGroup = adw.NewPreferencesGroup()
@@ -327,7 +316,7 @@ func (std *SplitTunnelDialog) build() {
 
 // Show displays the dialog.
 func (std *SplitTunnelDialog) Show() {
-	std.dialog.Present(std.mainWindow.window)
+	std.dialog.Present(std.host.GetWindow())
 }
 
 // validateRoute validates an IP address or CIDR network.
@@ -404,21 +393,9 @@ func (std *SplitTunnelDialog) addRoute(route string) {
 
 // showRemoveRouteConfirmation shows a confirmation dialog before removing a route.
 func (std *SplitTunnelDialog) showRemoveRouteConfirmation(route string) {
-	dialog := adw.NewAlertDialog("Remove Route", "Are you sure you want to remove "+route+"?")
-
-	dialog.AddResponse("cancel", "Cancel")
-	dialog.AddResponse("remove", "Remove")
-	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
-	dialog.SetDefaultResponse("cancel")
-	dialog.SetCloseResponse("cancel")
-
-	dialog.ConnectResponse(func(response string) {
-		if response == "remove" {
-			std.removeRoute(route)
-		}
+	components.ShowRemoveConfirmation(std.dialog, "Remove Route", route, func() {
+		std.removeRoute(route)
 	})
-
-	dialog.Present(std.dialog)
 }
 
 // removeRoute removes a route from the list.
@@ -473,9 +450,7 @@ func (std *SplitTunnelDialog) refreshRoutesList() {
 			row.AddPrefix(icon)
 
 			// Delete button
-			delBtn := gtk.NewButton()
-			delBtn.SetIconName("edit-delete-symbolic")
-			delBtn.AddCSSClass("flat")
+			delBtn := components.NewIconButton("edit-delete-symbolic", "Remove route")
 			delBtn.SetVAlign(gtk.AlignCenter)
 			delBtn.ConnectClicked(func() {
 				std.showRemoveRouteConfirmation(routeCopy)
@@ -564,11 +539,8 @@ func (std *SplitTunnelDialog) createAppRow(executable string) *adw.ActionRow {
 	row.AddPrefix(icon)
 
 	// Delete button
-	deleteBtn := gtk.NewButton()
-	deleteBtn.SetIconName("edit-delete-symbolic")
-	deleteBtn.AddCSSClass("flat")
+	deleteBtn := components.NewIconButton("edit-delete-symbolic", "Remove application")
 	deleteBtn.SetVAlign(gtk.AlignCenter)
-	deleteBtn.SetTooltipText("Remove application")
 	deleteBtn.ConnectClicked(func() {
 		std.showRemoveAppConfirmation(executable)
 	})
@@ -596,21 +568,9 @@ func (std *SplitTunnelDialog) showRemoveAppConfirmation(executable string) {
 	parts := strings.Split(executable, "/")
 	name := parts[len(parts)-1]
 
-	dialog := adw.NewAlertDialog("Remove Application", "Are you sure you want to remove "+name+"?")
-
-	dialog.AddResponse("cancel", "Cancel")
-	dialog.AddResponse("remove", "Remove")
-	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
-	dialog.SetDefaultResponse("cancel")
-	dialog.SetCloseResponse("cancel")
-
-	dialog.ConnectResponse(func(response string) {
-		if response == "remove" {
-			std.removeApp(executable)
-		}
+	components.ShowRemoveConfirmation(std.dialog, "Remove Application", name, func() {
+		std.removeApp(executable)
 	})
-
-	dialog.Present(std.dialog)
 }
 
 // removeApp removes an application from the list.
@@ -639,16 +599,13 @@ func (std *SplitTunnelDialog) showAppSelector() {
 	headerBar.SetShowEndTitleButtons(false)
 	headerBar.SetShowStartTitleButtons(false)
 
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		selectorDialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
-	selectBtn := gtk.NewButton()
-	selectBtn.SetLabel("Select")
-	selectBtn.AddCSSClass("suggested-action")
+	selectBtn := components.NewLabelButtonWithStyle("Select", components.ButtonSuggested)
 	headerBar.PackEnd(selectBtn)
 
 	toolbarView.AddTopBar(headerBar)
@@ -807,11 +764,11 @@ func (std *SplitTunnelDialog) saveSettings() {
 	}
 
 	// Save profile
-	if err := std.mainWindow.app.vpnManager.ProfileManager().Save(); err != nil {
-		std.mainWindow.showError("Error", "Could not save configuration: "+err.Error())
+	if err := std.host.VPNManager().ProfileManager().Save(); err != nil {
+		std.host.ShowError("Error", "Could not save configuration: "+err.Error())
 		return
 	}
 
-	std.mainWindow.SetStatus("Profile settings saved")
+	std.host.SetStatus("Profile settings saved")
 	std.dialog.Close()
 }

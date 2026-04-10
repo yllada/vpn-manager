@@ -1,7 +1,7 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package components provides reusable UI widgets for VPN Manager panels.
 // This file contains the DaemonStatusBanner component that displays a warning
 // when the vpn-managerd daemon is not running.
-package ui
+package components
 
 import (
 	"os/exec"
@@ -47,22 +47,16 @@ func NewDaemonStatusBanner(checkCallback func(available bool)) *DaemonStatusBann
 	b.row.AddPrefix(icon)
 
 	// Refresh button - checks daemon status again
-	refreshBtn := gtk.NewButton()
-	refreshBtn.SetIconName("view-refresh-symbolic")
+	refreshBtn := NewIconButton("view-refresh-symbolic", "Check daemon status")
 	refreshBtn.SetVAlign(gtk.AlignCenter)
-	refreshBtn.AddCSSClass("flat")
-	refreshBtn.SetTooltipText("Check daemon status")
 	refreshBtn.ConnectClicked(func() {
 		b.checkDaemonStatus()
 	})
 	b.row.AddSuffix(refreshBtn)
 
 	// Help button - shows instructions (main action)
-	helpBtn := gtk.NewButton()
-	helpBtn.SetLabel("How to Start")
+	helpBtn := NewPillButton("", "How to Start")
 	helpBtn.SetVAlign(gtk.AlignCenter)
-	helpBtn.AddCSSClass("suggested-action")
-	helpBtn.AddCSSClass("pill")
 	helpBtn.ConnectClicked(func() {
 		b.showInstructions()
 	})
@@ -131,10 +125,7 @@ func (b *DaemonStatusBanner) showInstructions() {
 	cmdLabel.SetSelectable(true)
 	cmdBox.Append(cmdLabel)
 
-	copyBtn := gtk.NewButton()
-	copyBtn.SetIconName("edit-copy-symbolic")
-	copyBtn.AddCSSClass("flat")
-	copyBtn.SetTooltipText("Copy command")
+	copyBtn := NewIconButton("edit-copy-symbolic", "Copy command")
 	copyBtn.ConnectClicked(func() {
 		if b.display != nil {
 			clipboard := b.display.Clipboard()
@@ -220,11 +211,8 @@ func (v *DaemonNotAvailableView) createInstallSection(parent *gtk.Box) {
 	installRow.SetSubtitle("sudo ./build/install-daemon.sh")
 	installRow.AddCSSClass("monospace")
 
-	copyInstallBtn := gtk.NewButton()
-	copyInstallBtn.SetIconName("edit-copy-symbolic")
-	copyInstallBtn.SetTooltipText("Copy command")
+	copyInstallBtn := NewIconButton("edit-copy-symbolic", "Copy command")
 	copyInstallBtn.SetVAlign(gtk.AlignCenter)
-	copyInstallBtn.AddCSSClass("flat")
 	copyInstallBtn.ConnectClicked(func() {
 		v.copyToClipboard("sudo ./build/install-daemon.sh")
 	})
@@ -237,11 +225,8 @@ func (v *DaemonNotAvailableView) createInstallSection(parent *gtk.Box) {
 	startRow.SetSubtitle("sudo systemctl start vpn-managerd")
 	startRow.AddCSSClass("monospace")
 
-	copyStartBtn := gtk.NewButton()
-	copyStartBtn.SetIconName("edit-copy-symbolic")
-	copyStartBtn.SetTooltipText("Copy command")
+	copyStartBtn := NewIconButton("edit-copy-symbolic", "Copy command")
 	copyStartBtn.SetVAlign(gtk.AlignCenter)
-	copyStartBtn.AddCSSClass("flat")
 	copyStartBtn.ConnectClicked(func() {
 		v.copyToClipboard("sudo systemctl start vpn-managerd")
 	})
@@ -254,11 +239,8 @@ func (v *DaemonNotAvailableView) createInstallSection(parent *gtk.Box) {
 	enableRow.SetSubtitle("sudo systemctl enable vpn-managerd")
 	enableRow.AddCSSClass("monospace")
 
-	copyEnableBtn := gtk.NewButton()
-	copyEnableBtn.SetIconName("edit-copy-symbolic")
-	copyEnableBtn.SetTooltipText("Copy command")
+	copyEnableBtn := NewIconButton("edit-copy-symbolic", "Copy command")
 	copyEnableBtn.SetVAlign(gtk.AlignCenter)
-	copyEnableBtn.AddCSSClass("flat")
 	copyEnableBtn.ConnectClicked(func() {
 		v.copyToClipboard("sudo systemctl enable vpn-managerd")
 	})
@@ -275,10 +257,7 @@ func (v *DaemonNotAvailableView) createActionButtons(parent *gtk.Box) {
 	buttonBox.SetMarginTop(16)
 
 	// Check again button
-	checkBtn := gtk.NewButton()
-	checkBtn.SetLabel("Check Again")
-	checkBtn.AddCSSClass("suggested-action")
-	checkBtn.AddCSSClass("pill")
+	checkBtn := NewPillButton("", "Check Again")
 	checkBtn.ConnectClicked(func() {
 		if v.checkCallback != nil {
 			v.checkCallback()
@@ -287,9 +266,8 @@ func (v *DaemonNotAvailableView) createActionButtons(parent *gtk.Box) {
 	buttonBox.Append(checkBtn)
 
 	// Open terminal button (to run commands)
-	terminalBtn := gtk.NewButton()
-	terminalBtn.SetLabel("Open Terminal")
-	terminalBtn.AddCSSClass("pill")
+	terminalBtn := NewLabelButtonWithStyle("Open Terminal", ButtonPill)
+	terminalBtn.RemoveCSSClass("suggested-action") // Pill adds suggested, remove for secondary
 	terminalBtn.ConnectClicked(func() {
 		v.openTerminal()
 	})

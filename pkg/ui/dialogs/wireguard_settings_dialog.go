@@ -1,6 +1,6 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package dialogs provides the graphical user interface dialogs for VPN Manager.
 // This file contains the WireGuardSettingsDialog for configuring WireGuard profiles.
-package ui
+package dialogs
 
 import (
 	"net"
@@ -8,6 +8,9 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/notify"
+	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 	"github.com/yllada/vpn-manager/vpn/tunnel"
 	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
@@ -15,7 +18,7 @@ import (
 // WireGuardSettingsDialog represents the settings dialog for WireGuard profiles.
 type WireGuardSettingsDialog struct {
 	dialog      *adw.Dialog
-	mainWindow  *MainWindow
+	host        ports.PanelHost
 	profile     *wireguard.Profile
 	onSave      func()
 	prefsPage   *adw.PreferencesPage // Store reference for dynamic updates
@@ -38,13 +41,13 @@ type WireGuardSettingsDialog struct {
 }
 
 // NewWireGuardSettingsDialog creates a new WireGuard settings dialog.
-func NewWireGuardSettingsDialog(mainWindow *MainWindow, profile *wireguard.Profile, onSave func()) *WireGuardSettingsDialog {
+func NewWireGuardSettingsDialog(host ports.PanelHost, profile *wireguard.Profile, onSave func()) *WireGuardSettingsDialog {
 	d := &WireGuardSettingsDialog{
-		mainWindow: mainWindow,
-		profile:    profile,
-		onSave:     onSave,
-		routes:     make([]string, 0),
-		apps:       make([]string, 0),
+		host:    host,
+		profile: profile,
+		onSave:  onSave,
+		routes:  make([]string, 0),
+		apps:    make([]string, 0),
 	}
 
 	// Copy existing routes
@@ -76,17 +79,14 @@ func (d *WireGuardSettingsDialog) build() {
 	headerBar.SetShowStartTitleButtons(false)
 
 	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		d.dialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
 	// Save button in header
-	saveBtn := gtk.NewButton()
-	saveBtn.SetLabel("Save")
-	saveBtn.AddCSSClass("suggested-action")
+	saveBtn := components.NewLabelButtonWithStyle("Save", components.ButtonSuggested)
 	saveBtn.ConnectClicked(func() {
 		d.save()
 	})
@@ -158,10 +158,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.routesGroup.SetDescription("Enter IP addresses (e.g., 192.168.1.100) or CIDR networks (e.g., 10.0.0.0/8)")
 
 	// Add route button as header suffix
-	addRouteBtn := gtk.NewButton()
-	addRouteBtn.SetIconName("list-add-symbolic")
-	addRouteBtn.AddCSSClass("flat")
-	addRouteBtn.SetTooltipText("Add Route")
+	addRouteBtn := components.NewIconButton("list-add-symbolic", "Add Route")
 	addRouteBtn.SetVAlign(gtk.AlignCenter)
 	addRouteBtn.ConnectClicked(func() {
 		d.showAddRouteDialog()
@@ -176,9 +173,7 @@ func (d *WireGuardSettingsDialog) build() {
 	quickAddBox.SetMarginTop(8)
 	quickAddBox.SetHAlign(gtk.AlignCenter)
 
-	privateBtn := gtk.NewButton()
-	privateBtn.SetLabel("Private Networks")
-	privateBtn.AddCSSClass("flat")
+	privateBtn := components.NewLabelButtonWithStyle("Private Networks", components.ButtonFlat)
 	privateBtn.SetTooltipText("10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16")
 	privateBtn.ConnectClicked(func() {
 		d.addRoute("10.0.0.0/8")
@@ -187,9 +182,7 @@ func (d *WireGuardSettingsDialog) build() {
 	})
 	quickAddBox.Append(privateBtn)
 
-	localBtn := gtk.NewButton()
-	localBtn.SetLabel("Local Network")
-	localBtn.AddCSSClass("flat")
+	localBtn := components.NewLabelButtonWithStyle("Local Network", components.ButtonFlat)
 	localBtn.SetTooltipText("192.168.0.0/16")
 	localBtn.ConnectClicked(func() {
 		d.addRoute("192.168.0.0/16")
@@ -241,10 +234,7 @@ func (d *WireGuardSettingsDialog) build() {
 	d.appsGroup.SetTitle("Applications")
 
 	// Add app button as header suffix
-	addAppBtn := gtk.NewButton()
-	addAppBtn.SetIconName("list-add-symbolic")
-	addAppBtn.AddCSSClass("flat")
-	addAppBtn.SetTooltipText("Add Application")
+	addAppBtn := components.NewIconButton("list-add-symbolic", "Add Application")
 	addAppBtn.SetVAlign(gtk.AlignCenter)
 	addAppBtn.ConnectClicked(func() {
 		d.showAppSelector()
@@ -287,7 +277,7 @@ func (d *WireGuardSettingsDialog) build() {
 
 // Show displays the dialog.
 func (d *WireGuardSettingsDialog) Show() {
-	d.dialog.Present(d.mainWindow.window)
+	d.dialog.Present(d.host.GetWindow())
 }
 
 // save saves the settings and closes the dialog.
@@ -314,7 +304,7 @@ func (d *WireGuardSettingsDialog) save() {
 
 	// Save to metadata file
 	if err := d.profile.SaveSettings(); err != nil {
-		NotifyError("Save Failed", err.Error())
+		notify.ConnectionError("Save Failed", err.Error())
 		return
 	}
 
@@ -377,7 +367,7 @@ func (d *WireGuardSettingsDialog) showAddRouteDialog() {
 		}
 	})
 
-	dialog.Present(d.mainWindow.window)
+	dialog.Present(d.host.GetWindow())
 }
 
 // addRoute adds a route to the list.
@@ -395,21 +385,9 @@ func (d *WireGuardSettingsDialog) addRoute(route string) {
 
 // showRemoveRouteConfirmation shows a confirmation dialog before removing a route.
 func (d *WireGuardSettingsDialog) showRemoveRouteConfirmation(route string) {
-	dialog := adw.NewAlertDialog("Remove Route", "Are you sure you want to remove "+route+"?")
-
-	dialog.AddResponse("cancel", "Cancel")
-	dialog.AddResponse("remove", "Remove")
-	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
-	dialog.SetDefaultResponse("cancel")
-	dialog.SetCloseResponse("cancel")
-
-	dialog.ConnectResponse(func(response string) {
-		if response == "remove" {
-			d.removeRoute(route)
-		}
+	components.ShowRemoveConfirmation(d.dialog, "Remove Route", route, func() {
+		d.removeRoute(route)
 	})
-
-	dialog.Present(d.dialog)
 }
 
 // removeRoute removes a route from the list.
@@ -457,9 +435,7 @@ func (d *WireGuardSettingsDialog) refreshRoutesList() {
 			row.AddPrefix(icon)
 
 			// Delete button
-			delBtn := gtk.NewButton()
-			delBtn.SetIconName("edit-delete-symbolic")
-			delBtn.AddCSSClass("flat")
+			delBtn := components.NewIconButton("edit-delete-symbolic", "Remove route")
 			delBtn.SetVAlign(gtk.AlignCenter)
 			delBtn.ConnectClicked(func() {
 				d.showRemoveRouteConfirmation(routeCopy)
@@ -525,11 +501,8 @@ func (d *WireGuardSettingsDialog) createAppRow(executable string) *adw.ActionRow
 	row.AddPrefix(icon)
 
 	// Delete button
-	deleteBtn := gtk.NewButton()
-	deleteBtn.SetIconName("edit-delete-symbolic")
-	deleteBtn.AddCSSClass("flat")
+	deleteBtn := components.NewIconButton("edit-delete-symbolic", "Remove application")
 	deleteBtn.SetVAlign(gtk.AlignCenter)
-	deleteBtn.SetTooltipText("Remove application")
 	deleteBtn.ConnectClicked(func() {
 		d.showRemoveAppConfirmation(executable)
 	})
@@ -557,21 +530,9 @@ func (d *WireGuardSettingsDialog) showRemoveAppConfirmation(executable string) {
 	parts := strings.Split(executable, "/")
 	name := parts[len(parts)-1]
 
-	dialog := adw.NewAlertDialog("Remove Application", "Are you sure you want to remove "+name+"?")
-
-	dialog.AddResponse("cancel", "Cancel")
-	dialog.AddResponse("remove", "Remove")
-	dialog.SetResponseAppearance("remove", adw.ResponseDestructive)
-	dialog.SetDefaultResponse("cancel")
-	dialog.SetCloseResponse("cancel")
-
-	dialog.ConnectResponse(func(response string) {
-		if response == "remove" {
-			d.removeApp(executable)
-		}
+	components.ShowRemoveConfirmation(d.dialog, "Remove Application", name, func() {
+		d.removeApp(executable)
 	})
-
-	dialog.Present(d.dialog)
 }
 
 // removeApp removes an application from the list.
@@ -600,16 +561,13 @@ func (d *WireGuardSettingsDialog) showAppSelector() {
 	headerBar.SetShowEndTitleButtons(false)
 	headerBar.SetShowStartTitleButtons(false)
 
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		selectorDialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
-	selectBtn := gtk.NewButton()
-	selectBtn.SetLabel("Select")
-	selectBtn.AddCSSClass("suggested-action")
+	selectBtn := components.NewLabelButtonWithStyle("Select", components.ButtonSuggested)
 	headerBar.PackEnd(selectBtn)
 
 	toolbarView.AddTopBar(headerBar)
@@ -723,5 +681,5 @@ func (d *WireGuardSettingsDialog) showAppSelector() {
 	contentBox.Append(scrolled)
 	toolbarView.SetContent(contentBox)
 	selectorDialog.SetChild(toolbarView)
-	selectorDialog.Present(d.mainWindow.window)
+	selectorDialog.Present(d.host.GetWindow())
 }

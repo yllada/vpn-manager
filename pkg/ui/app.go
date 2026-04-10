@@ -14,7 +14,9 @@ import (
 	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/pkg/ui/theme"
 	"github.com/yllada/vpn-manager/vpn"
 	"github.com/yllada/vpn-manager/vpn/health"
 )
@@ -87,7 +89,7 @@ func (a *Application) onActivate() {
 	a.setupAppIcon()
 
 	// Load custom CSS styles
-	LoadStyles()
+	theme.LoadStyles()
 
 	// Check for orphaned VPN on startup (before showing window)
 	if detected, info := a.vpnManager.DetectOrphanedVPN(); detected {
@@ -276,7 +278,7 @@ func (a *Application) setupHealthChecker() {
 		// Update UI on health state change
 		glib.IdleAdd(func() {
 			if a.window != nil && a.window.openvpnPanel != nil {
-				a.window.openvpnPanel.GetProfileList().updateHealthIndicator(profileID, newState)
+				a.window.openvpnPanel.GetProfileList().UpdateHealthIndicator(profileID, newState)
 			}
 		})
 
@@ -286,10 +288,10 @@ func (a *Application) setupHealthChecker() {
 			if err == nil {
 				switch newState {
 				case health.StateUnhealthy:
-					NotifyError(profile.Name, "Connection lost - attempting to reconnect...")
+					notify.ConnectionError(profile.Name, "Connection lost - attempting to reconnect...")
 				case health.StateHealthy:
 					if oldState == health.StateUnhealthy {
-						NotifyConnected(profile.Name + " (reconnected)")
+						notify.Connected(profile.Name + " (reconnected)")
 					}
 				}
 			}
@@ -314,7 +316,7 @@ func (a *Application) setupHealthChecker() {
 				if profile != nil {
 					a.window.SetStatus(fmt.Sprintf("Failed to reconnect to %s", profile.Name))
 					if a.window.openvpnPanel != nil {
-						a.window.openvpnPanel.GetProfileList().updateRowStatus(profileID, vpn.StatusError)
+						a.window.openvpnPanel.GetProfileList().UpdateRowStatus(profileID, vpn.StatusError)
 					}
 				}
 			}
@@ -324,7 +326,7 @@ func (a *Application) setupHealthChecker() {
 		if a.config.ShowNotifications {
 			profile, _ := a.vpnManager.ProfileManager().Get(profileID)
 			if profile != nil {
-				NotifyError(profile.Name, "Auto-reconnect failed after multiple attempts")
+				notify.ConnectionError(profile.Name, "Auto-reconnect failed after multiple attempts")
 			}
 		}
 	})
@@ -344,13 +346,13 @@ func (a *Application) setupHealthChecker() {
 				// Show OTP dialog for reconnection
 				if a.window.openvpnPanel != nil {
 					pl := a.window.openvpnPanel.GetProfileList()
-					pl.showOTPDialog(profile, username, savedPassword, false)
+					pl.ShowOTPDialog(profile, username, savedPassword, false)
 				}
 			}
 
 			// Also notify user
 			if a.config.ShowNotifications {
-				NotifyError(profile.Name, "Connection lost - OTP required to reconnect")
+				notify.ConnectionError(profile.Name, "Connection lost - OTP required to reconnect")
 			}
 		})
 	})
@@ -372,7 +374,7 @@ func (a *Application) handleTrustAuthRequired(data eventbus.TrustAuthRequiredDat
 
 		// Show notification to user
 		if a.config.ShowNotifications {
-			NotifyError(profile.Name,
+			notify.ConnectionError(profile.Name,
 				fmt.Sprintf("Connected to untrusted network '%s' - OTP required", data.SSID))
 		}
 
@@ -386,7 +388,7 @@ func (a *Application) handleTrustAuthRequired(data eventbus.TrustAuthRequiredDat
 				if pl != nil {
 					// Get saved password from keyring if available
 					savedPassword, _ := keyring.Get(profile.ID)
-					pl.showOTPDialog(profile, data.Username, savedPassword, false)
+					pl.ShowOTPDialog(profile, data.Username, savedPassword, false)
 
 					// Bring window to front for user attention
 					a.showWindow()

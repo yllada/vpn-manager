@@ -1,7 +1,6 @@
-// Package ui provides the graphical user interface for VPN Manager.
-// This file contains tray icon assets embedded from pre-rendered PNGs.
-// Icons are designed to match enterprise VPN standards (clean, professional).
-package ui
+// Package systray provides system tray icon generation for VPN Manager.
+// Icons are embedded from pre-rendered PNGs at build time.
+package systray
 
 import (
 	_ "embed"

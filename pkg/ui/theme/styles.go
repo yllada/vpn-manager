@@ -1,6 +1,6 @@
-// Package ui provides the graphical user interface for VPN Manager.
-// This file contains the CSS styles and theming for a modern, clean UI.
-package ui
+// Package theme provides CSS styles and theming for VPN Manager.
+// This file contains the CSS styles for a modern, clean UI.
+package theme
 
 import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"

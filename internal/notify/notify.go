@@ -1,40 +1,40 @@
-// Package ui provides the graphical user interface for VPN Manager.
-// This file contains the notification system for connection events.
-package ui
+// Package notify provides system notification functionality for VPN Manager.
+// Uses notify-send for desktop notifications on Linux systems.
+package notify
 
 import (
 	"log"
 	"os/exec"
 )
 
-// NotificationType represents the type of notification
-type NotificationType int
+// Type represents the type of notification
+type Type int
 
 const (
-	NotificationInfo NotificationType = iota
-	NotificationSuccess
-	NotificationWarning
-	NotificationError
+	Info Type = iota
+	Success
+	Warning
+	Error
 )
 
 // Notification represents a system notification
 type Notification struct {
 	Title   string
 	Message string
-	Type    NotificationType
+	Type    Type
 	Icon    string
 }
 
-// ShowNotification displays a system notification using notify-send
-func ShowNotification(n Notification) {
+// Show displays a system notification using notify-send
+func Show(n Notification) {
 	icon := n.Icon
 	if icon == "" {
 		switch n.Type {
-		case NotificationSuccess:
+		case Success:
 			icon = "network-vpn-symbolic"
-		case NotificationWarning:
+		case Warning:
 			icon = "dialog-warning-symbolic"
-		case NotificationError:
+		case Error:
 			icon = "dialog-error-symbolic"
 		default:
 			icon = "network-vpn-symbolic"
@@ -43,9 +43,9 @@ func ShowNotification(n Notification) {
 
 	var urgency string
 	switch n.Type {
-	case NotificationError:
+	case Error:
 		urgency = "critical"
-	case NotificationWarning:
+	case Warning:
 		urgency = "normal"
 	default:
 		urgency = "low"
@@ -64,42 +64,42 @@ func ShowNotification(n Notification) {
 	}
 }
 
-// NotifyConnected shows a notification when VPN connects
-func NotifyConnected(profileName string) {
-	ShowNotification(Notification{
+// Connected shows a notification when VPN connects
+func Connected(profileName string) {
+	Show(Notification{
 		Title:   "VPN Connected",
 		Message: "Connected to " + profileName,
-		Type:    NotificationSuccess,
+		Type:    Success,
 		Icon:    "network-vpn-symbolic",
 	})
 }
 
-// NotifyDisconnected shows a notification when VPN disconnects
-func NotifyDisconnected(profileName string) {
-	ShowNotification(Notification{
+// Disconnected shows a notification when VPN disconnects
+func Disconnected(profileName string) {
+	Show(Notification{
 		Title:   "VPN Disconnected",
 		Message: "Disconnected from " + profileName,
-		Type:    NotificationInfo,
+		Type:    Info,
 		Icon:    "network-vpn-disconnected-symbolic",
 	})
 }
 
-// NotifyError shows a notification for connection errors
-func NotifyError(profileName, errorMsg string) {
-	ShowNotification(Notification{
+// ConnectionError shows a notification for connection errors
+func ConnectionError(profileName, errorMsg string) {
+	Show(Notification{
 		Title:   "Connection Error",
 		Message: profileName + ": " + errorMsg,
-		Type:    NotificationError,
+		Type:    Error,
 		Icon:    "network-vpn-error-symbolic",
 	})
 }
 
-// NotifyConnecting shows a notification when VPN is connecting
-func NotifyConnecting(profileName string) {
-	ShowNotification(Notification{
+// Connecting shows a notification when VPN is connecting
+func Connecting(profileName string) {
+	Show(Notification{
 		Title:   "Connecting VPN",
 		Message: "Connecting to " + profileName + "...",
-		Type:    NotificationInfo,
+		Type:    Info,
 		Icon:    "network-vpn-acquiring-symbolic",
 	})
 }
@@ -108,61 +108,61 @@ func NotifyConnecting(profileName string) {
 // NETWORK TRUST NOTIFICATIONS
 // ════════════════════════════════════════════════════════════════════════════
 
-// NotifyNetworkTrusted shows a notification when a network is marked as trusted.
-func NotifyNetworkTrusted(ssid string) {
-	ShowNotification(Notification{
+// NetworkTrusted shows a notification when a network is marked as trusted.
+func NetworkTrusted(ssid string) {
+	Show(Notification{
 		Title:   "Network Trusted",
 		Message: "\"" + ssid + "\" is now trusted. VPN will disconnect on this network.",
-		Type:    NotificationSuccess,
+		Type:    Success,
 		Icon:    "network-wireless-symbolic",
 	})
 }
 
-// NotifyNetworkUntrusted shows a notification when a network is marked as untrusted.
-func NotifyNetworkUntrusted(ssid string) {
-	ShowNotification(Notification{
+// NetworkUntrusted shows a notification when a network is marked as untrusted.
+func NetworkUntrusted(ssid string) {
+	Show(Notification{
 		Title:   "Network Untrusted",
 		Message: "\"" + ssid + "\" is now untrusted. VPN will auto-connect on this network.",
-		Type:    NotificationWarning,
+		Type:    Warning,
 		Icon:    "network-wireless-symbolic",
 	})
 }
 
-// NotifyUnknownNetwork shows a notification prompting user about an unknown network.
+// UnknownNetwork shows a notification prompting user about an unknown network.
 // This is called when TrustManager returns "prompt" action for an unknown network.
-func NotifyUnknownNetwork(ssid string) {
-	ShowNotificationWithActions(Notification{
+func UnknownNetwork(ssid string) {
+	ShowWithActions(Notification{
 		Title:   "Unknown Network Detected",
 		Message: "Connected to \"" + ssid + "\". How should VPN Manager treat this network?",
-		Type:    NotificationWarning,
+		Type:    Warning,
 		Icon:    "network-wireless-signal-excellent-symbolic",
 	}, ssid)
 }
 
-// NotifyEvilTwinWarning shows a warning notification about potential evil twin attack.
-func NotifyEvilTwinWarning(ssid, newBSSID string) {
-	ShowNotification(Notification{
+// EvilTwinWarning shows a warning notification about potential evil twin attack.
+func EvilTwinWarning(ssid, newBSSID string) {
+	Show(Notification{
 		Title:   "Security Warning",
 		Message: "Network \"" + ssid + "\" has a new access point (BSSID: " + newBSSID + "). This could be a spoofed network.",
-		Type:    NotificationError,
+		Type:    Error,
 		Icon:    "dialog-warning-symbolic",
 	})
 }
 
-// NotifyVPNFailedOnUntrusted shows a notification when VPN fails on untrusted network.
-func NotifyVPNFailedOnUntrusted(ssid string) {
-	ShowNotification(Notification{
+// VPNFailedOnUntrusted shows a notification when VPN fails on untrusted network.
+func VPNFailedOnUntrusted(ssid string) {
+	Show(Notification{
 		Title:   "VPN Connection Failed",
 		Message: "Failed to connect VPN on untrusted network \"" + ssid + "\". Traffic may be blocked.",
-		Type:    NotificationError,
+		Type:    Error,
 		Icon:    "network-vpn-error-symbolic",
 	})
 }
 
-// ShowNotificationWithActions displays a notification with action buttons.
+// ShowWithActions displays a notification with action buttons.
 // Note: notify-send action support varies by desktop environment.
 // Falls back to standard notification if actions not supported.
-func ShowNotificationWithActions(n Notification, ssid string) {
+func ShowWithActions(n Notification, ssid string) {
 	icon := n.Icon
 	if icon == "" {
 		icon = "network-wireless-symbolic"
@@ -183,7 +183,7 @@ func ShowNotificationWithActions(n Notification, ssid string) {
 	output, err := cmd.Output()
 	if err != nil {
 		// Actions not supported, show regular notification
-		ShowNotification(n)
+		Show(n)
 		return
 	}
 

@@ -1,8 +1,8 @@
-// Package ui provides the graphical user interface for VPN Manager.
+// Package dialogs provides dialog components for VPN Manager.
 // This file contains the TrustRulesDialog component for managing network trust rules.
 // Users can add, edit, and remove rules that determine VPN behavior per network.
 // Uses AdwDialog and AdwPreferencesGroup for modern GNOME HIG-compliant UI.
-package ui
+package dialogs
 
 import (
 	"context"
@@ -13,13 +13,15 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/logger"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
 // TrustRulesDialog represents the dialog for managing network trust rules.
 type TrustRulesDialog struct {
 	dialog       *adw.Dialog
-	mainWindow   *MainWindow
+	host         ports.PanelHost
 	prefsPage    *adw.PreferencesPage // Store reference for dynamic updates
 	rulesGroup   *adw.PreferencesGroup
 	ruleRows     []*adw.ActionRow // Track dynamic rule rows for cleanup
@@ -32,16 +34,16 @@ type TrustRulesDialog struct {
 
 // NewTrustRulesDialog creates a new trust rules management dialog.
 // Returns nil if the TrustManager is not initialized.
-func NewTrustRulesDialog(mainWindow *MainWindow) *TrustRulesDialog {
-	trustMgr := mainWindow.app.vpnManager.TrustManager()
+func NewTrustRulesDialog(host ports.PanelHost) *TrustRulesDialog {
+	trustMgr := host.VPNManager().TrustManager()
 	if trustMgr == nil {
 		// TrustManager not initialized - show error and return nil
-		mainWindow.ShowToast("Trust management not available", 3)
+		host.ShowToast("Trust management not available", 3)
 		return nil
 	}
 
 	trd := &TrustRulesDialog{
-		mainWindow:   mainWindow,
+		host:         host,
 		trustManager: trustMgr,
 		rules:        trustMgr.GetRules(),
 	}
@@ -81,10 +83,7 @@ func (trd *TrustRulesDialog) build() {
 	trd.rulesGroup.SetDescription("Define how VPN behaves on specific networks")
 
 	// Add "Add Rule" button as header suffix
-	addBtn := gtk.NewButton()
-	addBtn.SetIconName("list-add-symbolic")
-	addBtn.AddCSSClass("flat")
-	addBtn.SetTooltipText("Add Rule")
+	addBtn := components.NewIconButton("list-add-symbolic", "Add Rule")
 	addBtn.SetVAlign(gtk.AlignCenter)
 	addBtn.ConnectClicked(func() {
 		trd.showRuleForm(nil)
@@ -177,11 +176,8 @@ func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *adw.ActionRow
 	row.AddPrefix(icon)
 
 	// Edit button as suffix
-	editBtn := gtk.NewButton()
-	editBtn.SetIconName("document-edit-symbolic")
-	editBtn.AddCSSClass("flat")
+	editBtn := components.NewIconButton("document-edit-symbolic", "Edit Rule")
 	editBtn.SetVAlign(gtk.AlignCenter)
-	editBtn.SetTooltipText("Edit Rule")
 	ruleCopy := rule // Capture for closure
 	editBtn.ConnectClicked(func() {
 		trd.showRuleForm(ruleCopy)
@@ -189,11 +185,8 @@ func (trd *TrustRulesDialog) createRuleRow(rule *trust.TrustRule) *adw.ActionRow
 	row.AddSuffix(editBtn)
 
 	// Delete button as suffix
-	deleteBtn := gtk.NewButton()
-	deleteBtn.SetIconName("edit-delete-symbolic")
-	deleteBtn.AddCSSClass("flat")
+	deleteBtn := components.NewIconButton("edit-delete-symbolic", "Delete Rule")
 	deleteBtn.SetVAlign(gtk.AlignCenter)
-	deleteBtn.SetTooltipText("Delete Rule")
 	ruleID := rule.ID
 	deleteBtn.ConnectClicked(func() {
 		trd.showDeleteConfirmation(ruleID)
@@ -229,7 +222,7 @@ func (trd *TrustRulesDialog) cacheProfileNames() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
+	for _, provider := range trd.host.VPNManager().AvailableProviders() {
 		profiles, err := provider.GetProfiles(ctx)
 		if err != nil {
 			logger.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
@@ -244,7 +237,7 @@ func (trd *TrustRulesDialog) cacheProfileNames() {
 	}
 
 	// Also include OpenVPN profiles from ProfileManager (legacy format)
-	for _, p := range trd.mainWindow.app.vpnManager.ProfileManager().List() {
+	for _, p := range trd.host.VPNManager().ProfileManager().List() {
 		trd.profileNameCache[p.ID] = p.Name
 	}
 }
@@ -283,17 +276,14 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	headerBar.SetShowStartTitleButtons(false)
 
 	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
+	cancelBtn := components.NewLabelButton("Cancel")
 	cancelBtn.ConnectClicked(func() {
 		formDialog.Close()
 	})
 	headerBar.PackStart(cancelBtn)
 
 	// Save button in header
-	saveBtn := gtk.NewButton()
-	saveBtn.SetLabel("Save")
-	saveBtn.AddCSSClass("suggested-action")
+	saveBtn := components.NewLabelButtonWithStyle("Save", components.ButtonSuggested)
 	headerBar.PackEnd(saveBtn)
 
 	toolbarView.AddTopBar(headerBar)
@@ -339,7 +329,7 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	// Get profiles from all available VPN providers with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for _, provider := range trd.mainWindow.app.vpnManager.AvailableProviders() {
+	for _, provider := range trd.host.VPNManager().AvailableProviders() {
 		profiles, err := provider.GetProfiles(ctx)
 		if err != nil {
 			logger.LogWarn("trust", "Failed to get profiles from %s: %v", provider.Type(), err)
@@ -355,7 +345,7 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	}
 
 	// Also include OpenVPN profiles from ProfileManager (legacy format for compatibility)
-	for _, p := range trd.mainWindow.app.vpnManager.ProfileManager().List() {
+	for _, p := range trd.host.VPNManager().ProfileManager().List() {
 		// Skip if we already have this profile (from OpenVPN provider)
 		openvpnID := fmt.Sprintf("%s:%s", vpntypes.ProviderOpenVPN, p.ID)
 		alreadyAdded := false
@@ -402,7 +392,7 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 	saveBtn.ConnectClicked(func() {
 		ssid := ssidRow.Text()
 		if ssid == "" {
-			trd.mainWindow.ShowToast("Network name (SSID) is required", 3)
+			trd.host.ShowToast("Network name (SSID) is required", 3)
 			return
 		}
 
@@ -432,17 +422,17 @@ func (trd *TrustRulesDialog) showRuleForm(existingRule *trust.TrustRule) {
 		}
 
 		if err != nil {
-			trd.mainWindow.ShowToast("Failed to save rule: "+err.Error(), 5)
+			trd.host.ShowToast("Failed to save rule: "+err.Error(), 5)
 			return
 		}
 
 		formDialog.Close()
 		trd.refreshRulesList()
-		trd.mainWindow.ShowToast("Trust rule saved", 2)
+		trd.host.ShowToast("Trust rule saved", 2)
 	})
 
 	formDialog.SetChild(toolbarView)
-	formDialog.Present(&trd.mainWindow.window.Widget)
+	formDialog.Present(trd.host.GetWindow())
 }
 
 // showDeleteConfirmation shows a confirmation dialog before deleting a rule.
@@ -467,18 +457,18 @@ func (trd *TrustRulesDialog) showDeleteConfirmation(ruleID string) {
 	alertDialog.ConnectResponse(func(response string) {
 		if response == "delete" {
 			if err := trd.trustManager.RemoveRule(ruleID); err != nil {
-				trd.mainWindow.ShowToast("Failed to delete rule: "+err.Error(), 5)
+				trd.host.ShowToast("Failed to delete rule: "+err.Error(), 5)
 				return
 			}
 			trd.refreshRulesList()
-			trd.mainWindow.ShowToast("Trust rule deleted", 2)
+			trd.host.ShowToast("Trust rule deleted", 2)
 		}
 	})
 
-	alertDialog.Present(&trd.mainWindow.window.Widget)
+	alertDialog.Present(trd.host.GetWindow())
 }
 
 // Show displays the trust rules dialog.
 func (trd *TrustRulesDialog) Show() {
-	trd.dialog.Present(&trd.mainWindow.window.Widget)
+	trd.dialog.Present(trd.host.GetWindow())
 }

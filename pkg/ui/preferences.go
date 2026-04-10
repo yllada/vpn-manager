@@ -13,6 +13,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 	"github.com/yllada/vpn-manager/vpn/tailscale"
 	"github.com/yllada/vpn-manager/vpn/trust"
 )
@@ -252,7 +253,7 @@ func (pd *PreferencesDialog) buildNetworkTrustPage() *adw.PreferencesPage {
 	manageRulesRow.AddSuffix(chevron)
 
 	manageRulesRow.ConnectActivated(func() {
-		dialog := NewTrustRulesDialog(pd.mainWindow)
+		dialog := dialogs.NewTrustRulesDialog(pd.mainWindow)
 		if dialog != nil {
 			dialog.Show()
 		}
@@ -413,10 +414,10 @@ func (pd *PreferencesDialog) savePreferences() {
 
 	// Refresh Tailscale panel to trigger LAN Gateway auto-config if needed
 	if pd.mainWindow.tailscalePanel != nil {
-		logger.LogInfo("[Preferences] Triggering Tailscale panel updateStatus after saving preferences")
-		pd.mainWindow.tailscalePanel.updateStatus()
+		logger.LogInfo("[Preferences] Triggering Tailscale panel UpdateStatus after saving preferences")
+		pd.mainWindow.tailscalePanel.UpdateStatus()
 	} else {
-		logger.LogWarn("[Preferences] tailscalePanel is nil, cannot trigger updateStatus")
+		logger.LogWarn("[Preferences] tailscalePanel is nil, cannot trigger UpdateStatus")
 	}
 }
 
