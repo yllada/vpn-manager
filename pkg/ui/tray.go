@@ -644,7 +644,7 @@ func (t *TrayIndicator) ConnectFromTray(profile *profilepkg.Profile, username, p
 		conn.SetOnAuthFailed(func(failedProfile *profilepkg.Profile, needsOTP bool) {
 			if needsOTP {
 				failedProfile.RequiresOTP = true
-				if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
+				if err := t.app.vpnManager.ProfileManager().Update(failedProfile); err != nil {
 					logger.LogWarn("tray", "Failed to save profile after OTP detection: %v", err)
 				}
 				if err := t.app.vpnManager.Disconnect(failedProfile.ID); err != nil {
@@ -880,7 +880,7 @@ func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *profilepkg.Profile) 
 			if err := keyring.Store(profile.ID, password); err != nil {
 				logger.LogWarn("tray", "Failed to store password in keyring: %v", err)
 			}
-			if err := t.app.vpnManager.ProfileManager().Save(); err != nil {
+			if err := t.app.vpnManager.ProfileManager().Update(profile); err != nil {
 				logger.LogWarn("tray", "Failed to save profile after credential update: %v", err)
 			}
 		}

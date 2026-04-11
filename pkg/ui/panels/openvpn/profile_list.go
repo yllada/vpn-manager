@@ -383,7 +383,7 @@ func (pl *ProfileList) ShowOTPDialog(profile *profilepkg.Profile, username, pass
 				profile.SavePassword = false
 				pl.host.SetStatus("Warning: Could not save password")
 			}
-			_ = pl.host.VPNManager().ProfileManager().Save()
+			_ = pl.host.VPNManager().ProfileManager().Update(profile)
 		}
 
 		dialog.Close()
@@ -490,7 +490,7 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 				profile.SavePassword = false
 				pl.host.SetStatus("Warning: Could not save password")
 			}
-			_ = pl.host.VPNManager().ProfileManager().Save()
+			_ = pl.host.VPNManager().ProfileManager().Update(profile)
 		}
 
 		// Check if OTP is required for this profile
@@ -540,7 +540,7 @@ func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, usern
 				// This can be done outside GTK thread
 				failedProfile.RequiresOTP = true
 				failedProfile.OTPAutoDetected = false // Learned from server, not config
-				_ = pl.host.VPNManager().ProfileManager().Save()
+				_ = pl.host.VPNManager().ProfileManager().Update(failedProfile)
 
 				// Disconnect failed connection first (done outside GTK thread)
 				if err := pl.host.VPNManager().Disconnect(failedProfile.ID); err != nil {

@@ -560,7 +560,7 @@ func (std *SplitTunnelDialog) saveSettings() {
 	}
 
 	// Save profile
-	if err := std.host.VPNManager().ProfileManager().Save(); err != nil {
+	if err := std.host.VPNManager().ProfileManager().Update(std.profile); err != nil {
 		std.host.ShowError("Error", "Could not save configuration: "+err.Error())
 		return
 	}
