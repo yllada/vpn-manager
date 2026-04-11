@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -93,7 +94,9 @@ func NewOpenVPNManager(logger *log.Logger) *OpenVPNManager {
 }
 
 // Connect starts an OpenVPN connection.
-func (m *OpenVPNManager) Connect(ctx context.Context, params OpenVPNConnectParams) (*OpenVPNConnectResult, error) {
+// Note: The context parameter is kept for API compatibility but not used,
+// because OpenVPN processes must outlive the request that starts them.
+func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams) (*OpenVPNConnectResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -143,7 +146,10 @@ func (m *OpenVPNManager) Connect(ctx context.Context, params OpenVPNConnectParam
 	}
 
 	// Create the process
-	cmd := exec.CommandContext(ctx, "openvpn", args...)
+	// NOTE: We use exec.Command instead of exec.CommandContext because OpenVPN
+	// must outlive the RPC request that started it. The process lifecycle is
+	// managed by Disconnect() and the stopChan, not by context cancellation.
+	cmd := exec.Command("openvpn", args...)
 
 	proc := &OpenVPNProcess{
 		ProfileID:  params.ProfileID,
@@ -339,7 +345,10 @@ func (m *OpenVPNManager) parseOutputLine(proc *OpenVPNProcess, line string) {
 	}
 
 	// Check for IP address assignment
-	if strings.Contains(line, "PUSH: Received control message") ||
+	// OpenVPN 2.6+ uses "net_addr_v4_add: IP/CIDR dev tunX" format
+	// Older versions use "ifconfig IP netmask" in PUSH_REPLY
+	if strings.Contains(line, "net_addr_v4_add:") ||
+		strings.Contains(line, "PUSH: Received control message") ||
 		strings.Contains(line, "ifconfig") {
 		// Try to extract IP
 		if ip := extractIPFromLine(line); ip != "" {
@@ -452,31 +461,49 @@ func parseRouteForOpenVPN(route string) (network, netmask string) {
 }
 
 // extractIPFromLine tries to extract an IP address from a log line.
+// ipv4Regex matches IPv4 addresses in various contexts
+var ipv4Regex = regexp.MustCompile(`\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b`)
+
+// ifconfigIPRegex matches "ifconfig <IP>" pattern in PUSH_REPLY messages
+// Example: "...,ifconfig 10.8.0.6 255.255.255.0,..."
+var ifconfigIPRegex = regexp.MustCompile(`ifconfig\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
+
+// netAddrRegex matches OpenVPN 2.6+ format "net_addr_v4_add: IP/CIDR dev tunX"
+// Example: "net_addr_v4_add: 10.120.100.5/24 dev tun0"
+var netAddrRegex = regexp.MustCompile(`net_addr_v4_add:\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
+
 func extractIPFromLine(line string) string {
-	// Look for ifconfig patterns like "ifconfig 10.8.0.2 255.255.255.0"
-	if strings.Contains(line, "ifconfig") {
-		parts := strings.Fields(line)
-		for i, part := range parts {
-			if part == "ifconfig" && i+1 < len(parts) {
-				ip := net.ParseIP(parts[i+1])
-				if ip != nil && !ip.IsLoopback() {
-					return ip.String()
-				}
+	// OpenVPN 2.6+ format: "net_addr_v4_add: 10.120.100.5/24 dev tun0"
+	if strings.Contains(line, "net_addr_v4_add:") {
+		if matches := netAddrRegex.FindStringSubmatch(line); len(matches) >= 2 {
+			ip := net.ParseIP(matches[1])
+			if ip != nil && ip.To4() != nil && !ip.IsLoopback() {
+				return ip.String()
 			}
 		}
 	}
 
-	// Look for "ip addr" patterns
-	if strings.Contains(line, "ip/") || strings.Contains(line, "local") {
-		parts := strings.Fields(line)
-		for _, part := range parts {
-			// Remove CIDR suffix if present
-			if idx := strings.Index(part, "/"); idx > 0 {
-				part = part[:idx]
-			}
-			ip := net.ParseIP(part)
+	// Legacy format: "ifconfig <IP>" pattern in PUSH_REPLY messages
+	// This handles both comma-separated PUSH_REPLY and standalone ifconfig lines
+	if strings.Contains(line, "ifconfig") {
+		if matches := ifconfigIPRegex.FindStringSubmatch(line); len(matches) >= 2 {
+			ip := net.ParseIP(matches[1])
 			if ip != nil && ip.To4() != nil && !ip.IsLoopback() {
 				return ip.String()
+			}
+		}
+	}
+
+	// Look for "ip addr" patterns or "local" keyword
+	if strings.Contains(line, "ip/") || strings.Contains(line, "local") {
+		// Find all IPv4 addresses in the line
+		matches := ipv4Regex.FindAllStringSubmatch(line, -1)
+		for _, match := range matches {
+			if len(match) >= 2 {
+				ip := net.ParseIP(match[1])
+				if ip != nil && ip.To4() != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
+					return ip.String()
+				}
 			}
 		}
 	}
