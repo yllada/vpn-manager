@@ -14,6 +14,10 @@ import (
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/vpn"
+	"github.com/yllada/vpn-manager/internal/vpn/profile"
+	"github.com/yllada/vpn-manager/internal/vpn/tailscale"
+	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/openvpn"
@@ -21,10 +25,6 @@ import (
 	tailscalepanel "github.com/yllada/vpn-manager/pkg/ui/panels/tailscale"
 	wireguardpanel "github.com/yllada/vpn-manager/pkg/ui/panels/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
-	"github.com/yllada/vpn-manager/vpn"
-	"github.com/yllada/vpn-manager/vpn/profile"
-	"github.com/yllada/vpn-manager/vpn/tailscale"
-	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
 // Compile-time assertion: MainWindow implements ports.PanelHost

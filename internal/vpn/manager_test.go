@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/yllada/vpn-manager/internal/vpn/profile"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
-	"github.com/yllada/vpn-manager/vpn/profile"
 )
 
 func TestNewManager(t *testing.T) {

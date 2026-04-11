@@ -12,9 +12,9 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
-	tailscalevpn "github.com/yllada/vpn-manager/vpn/tailscale"
 )
 
 // TailscalePanel represents the Tailscale management panel.

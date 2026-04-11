@@ -12,10 +12,10 @@ import (
 	"github.com/yllada/vpn-manager/internal/autostart"
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/vpn/tailscale"
+	"github.com/yllada/vpn-manager/internal/vpn/trust"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
-	"github.com/yllada/vpn-manager/vpn/tailscale"
-	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
 // PreferencesDialog represents the preferences dialog using AdwPreferencesDialog.

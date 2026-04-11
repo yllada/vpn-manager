@@ -6,9 +6,9 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	profilepkg "github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
-	profilepkg "github.com/yllada/vpn-manager/vpn/profile"
 )
 
 // SplitTunnelDialogFactory creates SplitTunnel dialogs.

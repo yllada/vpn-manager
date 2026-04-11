@@ -7,7 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/config"
-	"github.com/yllada/vpn-manager/vpn"
+	"github.com/yllada/vpn-manager/internal/vpn"
 )
 
 // PanelHost defines the interface that panels use to communicate with the host window.

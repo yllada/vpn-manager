@@ -14,14 +14,14 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/shutdown"
+	"github.com/yllada/vpn-manager/internal/vpn/health"
+	"github.com/yllada/vpn-manager/internal/vpn/network"
+	"github.com/yllada/vpn-manager/internal/vpn/profile"
+	"github.com/yllada/vpn-manager/internal/vpn/security"
+	"github.com/yllada/vpn-manager/internal/vpn/stats"
+	"github.com/yllada/vpn-manager/internal/vpn/trust"
+	"github.com/yllada/vpn-manager/internal/vpn/tunnel"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
-	"github.com/yllada/vpn-manager/vpn/health"
-	"github.com/yllada/vpn-manager/vpn/network"
-	"github.com/yllada/vpn-manager/vpn/profile"
-	"github.com/yllada/vpn-manager/vpn/security"
-	"github.com/yllada/vpn-manager/vpn/stats"
-	"github.com/yllada/vpn-manager/vpn/trust"
-	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
 
 // Common errors - re-exported from errors package for convenience.

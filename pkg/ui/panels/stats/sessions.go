@@ -5,10 +5,10 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/vpn/stats"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/common"
-	"github.com/yllada/vpn-manager/vpn/stats"
 
 	"github.com/yllada/vpn-manager/internal/logger"
 )

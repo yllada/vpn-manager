@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/yllada/vpn-manager/internal/logger"
-	tailscalevpn "github.com/yllada/vpn-manager/vpn/tailscale"
+	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════

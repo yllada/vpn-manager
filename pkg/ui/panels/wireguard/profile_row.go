@@ -5,8 +5,8 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
-	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
 // WireGuardRow represents a single WireGuard profile in the list.

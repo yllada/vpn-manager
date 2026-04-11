@@ -8,9 +8,9 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/vpn/network"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/common"
-	"github.com/yllada/vpn-manager/vpn/network"
 )
 
 // StartUpdates begins periodic UI updates.

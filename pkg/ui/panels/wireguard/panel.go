@@ -8,9 +8,9 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
+	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
-	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
 // SettingsDialogFactory creates WireGuard settings dialogs.

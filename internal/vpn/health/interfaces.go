@@ -6,8 +6,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/yllada/vpn-manager/internal/vpn/profile"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
-	"github.com/yllada/vpn-manager/vpn/profile"
 )
 
 // HealthProbe defines the interface for connectivity probes.

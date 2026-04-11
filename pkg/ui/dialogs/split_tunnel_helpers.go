@@ -9,8 +9,8 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/vpn/tunnel"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
-	"github.com/yllada/vpn-manager/vpn/tunnel"
 )
 
 // =============================================================================

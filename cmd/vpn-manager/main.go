@@ -30,8 +30,8 @@ import (
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/vpn/security"
 	"github.com/yllada/vpn-manager/pkg/ui"
-	"github.com/yllada/vpn-manager/vpn/security"
 )
 
 // Build-time variables injected via ldflags (-X main.appVersion=x.y.z)

@@ -12,9 +12,9 @@ import (
 	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/keyring"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/vpn/profile"
+	"github.com/yllada/vpn-manager/internal/vpn/security"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
-	"github.com/yllada/vpn-manager/vpn/profile"
-	"github.com/yllada/vpn-manager/vpn/security"
 )
 
 // =============================================================================

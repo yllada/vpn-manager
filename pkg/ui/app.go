@@ -16,9 +16,9 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/vpn"
+	"github.com/yllada/vpn-manager/internal/vpn/health"
 	"github.com/yllada/vpn-manager/pkg/ui/theme"
-	"github.com/yllada/vpn-manager/vpn"
-	"github.com/yllada/vpn-manager/vpn/health"
 )
 
 // Application represents the main application

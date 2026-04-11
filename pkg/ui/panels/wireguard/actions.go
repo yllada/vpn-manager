@@ -10,8 +10,8 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
-	"github.com/yllada/vpn-manager/vpn/wireguard"
 )
 
 // onImportProfile handles importing a WireGuard config file.

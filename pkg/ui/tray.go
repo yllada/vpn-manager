@@ -24,11 +24,11 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/vpn"
+	profilepkg "github.com/yllada/vpn-manager/internal/vpn/profile"
+	"github.com/yllada/vpn-manager/internal/vpn/trust"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	trayicons "github.com/yllada/vpn-manager/pkg/ui/systray"
-	"github.com/yllada/vpn-manager/vpn"
-	profilepkg "github.com/yllada/vpn-manager/vpn/profile"
-	"github.com/yllada/vpn-manager/vpn/trust"
 )
 
 // Icon variables - initialized lazily via sync.Once to avoid init() pattern.

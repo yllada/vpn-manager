@@ -10,8 +10,8 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
-	tailscalevpn "github.com/yllada/vpn-manager/vpn/tailscale"
 )
 
 // createPeersSection creates the peers list section with Exit Node selector and Devices list.

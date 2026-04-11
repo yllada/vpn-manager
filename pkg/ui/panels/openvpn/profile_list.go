@@ -14,12 +14,12 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
+	"github.com/yllada/vpn-manager/internal/vpn"
+	"github.com/yllada/vpn-manager/internal/vpn/health"
+	profilepkg "github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/common"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
-	"github.com/yllada/vpn-manager/vpn"
-	"github.com/yllada/vpn-manager/vpn/health"
-	profilepkg "github.com/yllada/vpn-manager/vpn/profile"
 )
 
 // ProfileList represents the VPN profile list.

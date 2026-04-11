@@ -2,7 +2,7 @@
 // This file contains the adapter that wraps Manager to implement health.ConnectionProvider.
 package vpn
 
-import "github.com/yllada/vpn-manager/vpn/health"
+import "github.com/yllada/vpn-manager/internal/vpn/health"
 
 // HealthAdapter wraps Manager to implement health.ConnectionProvider.
 // This allows decoupling the health package from the concrete Manager type.

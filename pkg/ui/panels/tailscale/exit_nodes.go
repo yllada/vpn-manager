@@ -14,7 +14,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
-	tailscalevpn "github.com/yllada/vpn-manager/vpn/tailscale"
+	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 )
 
 // rebuildExitNodePopover rebuilds the exit node list in the popover.
