@@ -148,7 +148,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 			glib.IdleAdd(func() {
 				tp.connectBtn.SetSensitive(true)
 				tp.host.SetStatus("Tailscale disconnected")
-				notify.Disconnected("Tailscale")
+				if tp.host.GetConfig().ShowNotifications {
+					notify.Disconnected("Tailscale")
+				}
 				// Update tray indicator only if no other VPNs active
 				tp.updateTrayIfNoOtherConnections()
 				tp.UpdateStatus()
@@ -165,7 +167,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 			glib.IdleAdd(func() {
 				tp.connectBtn.SetSensitive(true)
 				tp.host.SetStatus("Tailscale connected")
-				notify.Connected("Tailscale")
+				if tp.host.GetConfig().ShowNotifications {
+					notify.Connected("Tailscale")
+				}
 				// Update tray indicator
 				tp.host.UpdateTrayStatus(true, "Tailscale")
 				// Start stats collection for Tailscale

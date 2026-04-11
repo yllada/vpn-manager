@@ -302,7 +302,9 @@ func (d *WireGuardSettingsDialog) save() {
 
 	// Save to metadata file
 	if err := d.profile.SaveSettings(); err != nil {
-		notify.ConnectionError("Save Failed", err.Error())
+		if d.host.GetConfig().ShowNotifications {
+			notify.ConnectionError("Save Failed", err.Error())
+		}
 		return
 	}
 

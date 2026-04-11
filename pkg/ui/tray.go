@@ -424,7 +424,9 @@ func (t *TrayIndicator) disconnectCurrent() {
 				allDisconnected = false
 			} else {
 				logger.LogInfo("tray", "Tailscale disconnected from tray")
-				notify.Disconnected("Tailscale")
+				if t.app.config.ShowNotifications {
+					notify.Disconnected("Tailscale")
+				}
 				// Update Tailscale panel UI
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.tailscalePanel != nil {
@@ -444,7 +446,9 @@ func (t *TrayIndicator) disconnectCurrent() {
 				allDisconnected = false
 			} else {
 				logger.LogInfo("tray", "WireGuard disconnected from tray")
-				notify.Disconnected("WireGuard")
+				if t.app.config.ShowNotifications {
+					notify.Disconnected("WireGuard")
+				}
 				// Update WireGuard panel UI
 				glib.IdleAdd(func() {
 					if t.app.window != nil && t.app.window.wireguardPanel != nil {
@@ -702,7 +706,9 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 					}
 				}
 			})
-			notify.Connected(profileName)
+			if t.app.config.ShowNotifications {
+				notify.Connected(profileName)
+			}
 			return
 		case vpn.StatusError, vpn.StatusDisconnected:
 			t.SetDisconnected()

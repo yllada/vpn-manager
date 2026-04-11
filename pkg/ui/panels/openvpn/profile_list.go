@@ -295,7 +295,9 @@ func (pl *ProfileList) onConnectClicked(profile *profilepkg.Profile) {
 				// Update panel header status
 				pl.onStatusChange(false, "")
 				// Disconnect notification
-				notify.Disconnected(profile.Name)
+				if pl.host.GetConfig().ShowNotifications {
+					notify.Disconnected(profile.Name)
+				}
 			}
 			return
 		}
@@ -673,7 +675,7 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		row.connectBtn.AddCSSClass("destructive-action")
 		row.deleteBtn.SetSensitive(false)
 		// Connection in progress notification - only if status changed
-		if statusChanged {
+		if statusChanged && pl.host.GetConfig().ShowNotifications {
 			notify.Connecting(row.profile.Name)
 		}
 
@@ -690,7 +692,7 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		// Start statistics update
 		pl.startStatsUpdate(profileID)
 		// Successful connection notification - only if status changed
-		if statusChanged {
+		if statusChanged && pl.host.GetConfig().ShowNotifications {
 			notify.Connected(row.profile.Name)
 		}
 
@@ -703,7 +705,7 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		row.connectBtn.AddCSSClass("flat")
 		row.deleteBtn.SetSensitive(true)
 		// Error notification - only if status changed
-		if statusChanged {
+		if statusChanged && pl.host.GetConfig().ShowNotifications {
 			notify.ConnectionError(row.profile.Name, "Connection error")
 		}
 	}

@@ -362,10 +362,14 @@ func (tp *TailscalePanel) setExitNodeFromPeer(nodeIdentifier, peerName string, e
 		glib.IdleAdd(func() {
 			if enable {
 				tp.host.SetStatus(fmt.Sprintf("Now using %s as gateway", peerName))
-				notify.Connected(fmt.Sprintf("Gateway: %s", peerName))
+				if tp.host.GetConfig().ShowNotifications {
+					notify.Connected(fmt.Sprintf("Gateway: %s", peerName))
+				}
 			} else {
 				tp.host.SetStatus("Gateway disabled - direct connection")
-				notify.Disconnected("Gateway")
+				if tp.host.GetConfig().ShowNotifications {
+					notify.Disconnected("Gateway")
+				}
 			}
 			// Force rebuild of exit nodes section by clearing signature cache
 			// This ensures the stop/use buttons update immediately after changing exit node

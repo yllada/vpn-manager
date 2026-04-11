@@ -208,5 +208,7 @@ func (wp *WireGuardPanel) hideNormalUI() {
 
 // showError displays an error notification.
 func (wp *WireGuardPanel) showError(title, message string) {
-	notify.ConnectionError(title, message)
+	if wp.host.GetConfig().ShowNotifications {
+		notify.ConnectionError(title, message)
+	}
 }
