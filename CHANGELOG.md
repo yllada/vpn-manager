@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [2.0.1] - 2026-04-11
+
+### Fixed
+- **Credentials not saving**: Fixed bug where "Save Credentials" checkbox wasn't persisting username/password across app restarts. Profile modifications now use `Update()` instead of `Save()` to correctly persist changes.
+- **Notifications preference ignored**: Fixed bug where disabling "Show Notifications" in Preferences had no effect. Notifications are now properly suppressed when the setting is disabled.
+- **OpenVPN process dying immediately**: Fixed daemon bug where OpenVPN connections would terminate instantly after starting. The process now correctly outlives the RPC request that initiated it.
+- **VPN IP address not showing**: Fixed IP extraction for OpenVPN 2.6+ which uses `net_addr_v4_add:` log format instead of legacy `ifconfig` pattern.
+
 ## [2.0.0] - 2026-04-09
 
 ### ⚠️ BREAKING CHANGES
