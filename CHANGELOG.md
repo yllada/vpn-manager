@@ -12,6 +12,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [2.1.0] - 2026-04-12
+
+### Added
+- **Security Preferences Page** — New dedicated page in Preferences for all security settings
+  - **Kill Switch**: 3 modes (Off, Auto, Always-On) with Allow LAN Access toggle
+  - **DNS Protection**: 4 modes (Off, VPN Only, Custom, System) with DoH/DoT blocking
+  - **IPv6 Protection**: 4 modes (Off, Block All, VPN Only, Allow All) with WebRTC blocking
+  - Daemon availability detection with banner notification
+- **Tailscale Advanced Options** — New toggles in Preferences → Tailscale
+  - Advertise as Exit Node (offer your machine as exit node for others)
+  - Shields Up (block incoming connections)
+  - SSH Server (enable Tailscale SSH)
+- **Mullvad Exit Node Filter** — Checkbox in Exit Node popover to show only Mullvad nodes
+- **Taildrop Send** — "Send File" button on peer device rows with native file dialog
+- **Taildrop Auto-Receive** — Background loop receives files automatically to ~/Downloads/Taildrop
+  - Desktop notifications when files arrive
+  - Configurable via Preferences (TaildropAutoReceive, TaildropDir)
+  - Crash recovery with exponential backoff
+
+### Fixed
+- **Taildrop receive loop crash** — Added panic recovery to prevent daemon crash if notification callback fails
+- **Taildrop directory incorrect** — Fixed fallback home directory detection when daemon runs as root (was using /root instead of actual user home)
+- **Taildrop retry on startup failure** — StdoutPipe and Start failures now retry with exponential backoff instead of giving up immediately
+
 ## [2.0.1] - 2026-04-11
 
 ### Fixed
