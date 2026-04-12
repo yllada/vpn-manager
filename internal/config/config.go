@@ -89,6 +89,26 @@ type TailscaleConfig struct {
 	ExitNodeAliases map[string]string `yaml:"exit_node_aliases,omitempty"`
 }
 
+// SecurityConfig contains all security feature settings (Kill Switch, DNS, IPv6).
+type SecurityConfig struct {
+	// KillSwitchMode: "off", "on-disconnect", or "always-on".
+	KillSwitchMode string `yaml:"kill_switch_mode"`
+	// KillSwitchLAN allows LAN access when kill switch is active.
+	KillSwitchLAN bool `yaml:"kill_switch_lan"`
+	// DNSMode: "system", "cloudflare", "google", or "custom".
+	DNSMode string `yaml:"dns_mode"`
+	// CustomDNS is a list of custom DNS servers (used when DNSMode is "custom").
+	CustomDNS []string `yaml:"custom_dns,omitempty"`
+	// BlockDoH blocks DNS-over-HTTPS.
+	BlockDoH bool `yaml:"block_doh"`
+	// BlockDoT blocks DNS-over-TLS.
+	BlockDoT bool `yaml:"block_dot"`
+	// IPv6Mode: "allow", "block", "disable", or "auto".
+	IPv6Mode string `yaml:"ipv6_mode"`
+	// BlockWebRTC blocks WebRTC to prevent IP leaks.
+	BlockWebRTC bool `yaml:"block_webrtc"`
+}
+
 // Config represents the application configuration.
 // All settings are persisted to a YAML file in the user's config directory.
 type Config struct {
@@ -105,6 +125,9 @@ type Config struct {
 
 	// Tailscale contains all Tailscale-specific configuration.
 	Tailscale TailscaleConfig `yaml:"tailscale"`
+
+	// Security contains all security feature configuration.
+	Security SecurityConfig `yaml:"security"`
 }
 
 // DefaultConfig returns the default configuration.
@@ -137,6 +160,16 @@ func DefaultConfig() *Config {
 			Hostname:               "",
 			AdvertiseTags:          []string{},
 			OperatorUser:           "",
+		},
+		Security: SecurityConfig{
+			KillSwitchMode: "off",
+			KillSwitchLAN:  false,
+			DNSMode:        "system",
+			CustomDNS:      []string{},
+			BlockDoH:       false,
+			BlockDoT:       false,
+			IPv6Mode:       "auto",
+			BlockWebRTC:    false,
 		},
 	}
 }
