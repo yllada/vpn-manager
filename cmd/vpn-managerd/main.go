@@ -144,6 +144,64 @@ func registerPrivilegedHandlers(server *daemon.Server) {
 	handlers.Register("taildrop.send", tailscale.TaildropSendHandler(state))
 }
 
+// getRealUserHomeDir returns the home directory of the actual user, not root.
+// When the daemon runs as root (via systemd or sudo), os.UserHomeDir() returns /root.
+// This function tries multiple strategies to find the real user's home:
+// 1. SUDO_USER environment variable (set by sudo)
+// 2. PKEXEC_UID (set by pkexec)
+// 3. First non-root user in /home with a valid directory
+func getRealUserHomeDir() string {
+	// Strategy 1: Check SUDO_USER (most common case)
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && sudoUser != "root" {
+		homeDir := filepath.Join("/home", sudoUser)
+		if info, err := os.Stat(homeDir); err == nil && info.IsDir() {
+			return homeDir
+		}
+	}
+
+	// Strategy 2: Check PKEXEC_UID (polkit)
+	if pkexecUID := os.Getenv("PKEXEC_UID"); pkexecUID != "" && pkexecUID != "0" {
+		// Try to find the username for this UID by scanning /home
+		entries, err := os.ReadDir("/home")
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					homeDir := filepath.Join("/home", entry.Name())
+					if info, err := os.Stat(homeDir); err == nil && info.IsDir() {
+						// Check if this directory's owner matches PKEXEC_UID
+						if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+							if fmt.Sprintf("%d", stat.Uid) == pkexecUID {
+								return homeDir
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Strategy 3: Find first valid user home in /home (fallback for systemd services)
+	// This works when the daemon is started by systemd and there's typically one main user
+	entries, err := os.ReadDir("/home")
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				homeDir := filepath.Join("/home", entry.Name())
+				// Verify it looks like a real home directory (has Downloads folder or .config)
+				if _, err := os.Stat(filepath.Join(homeDir, "Downloads")); err == nil {
+					return homeDir
+				}
+				if _, err := os.Stat(filepath.Join(homeDir, ".config")); err == nil {
+					return homeDir
+				}
+			}
+		}
+	}
+
+	// No valid home found
+	return ""
+}
+
 // startTaildropIfEnabled loads config and starts Taildrop receive loop if enabled.
 // Returns true if the loop was started, false otherwise.
 // This function is extracted for testability.
@@ -164,9 +222,9 @@ func startTaildropIfEnabled(ctx context.Context) bool {
 	// Determine Taildrop directory
 	taildropDir := cfg.Tailscale.TaildropDir
 	if taildropDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			log.Printf("[taildrop] Failed to get home directory: %v", err)
+		homeDir := getRealUserHomeDir()
+		if homeDir == "" {
+			log.Printf("[taildrop] Failed to determine user home directory")
 			return false
 		}
 		taildropDir = filepath.Join(homeDir, "Downloads", "Taildrop")

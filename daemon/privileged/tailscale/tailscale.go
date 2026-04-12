@@ -421,6 +421,13 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 	loopCtx, cancel := context.WithCancel(ctx)
 
 	go func() {
+		// Recover from panics in onReceived callback to prevent daemon crash
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Taildrop receive loop recovered from panic: %v", r)
+			}
+		}()
+
 		retries := 0
 		maxRetries := 3
 		backoff := time.Second
@@ -437,13 +444,35 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
 				log.Printf("Failed to create stdout pipe: %v", err)
-				return
+				// Apply retry logic instead of returning immediately
+				retries++
+				if retries >= maxRetries {
+					log.Printf("Taildrop receive loop failed %d times on pipe creation, giving up", maxRetries)
+					return
+				}
+				log.Printf("Retrying stdout pipe in %v (attempt %d/%d)", backoff, retries, maxRetries)
+				time.Sleep(backoff)
+				backoff *= 2
+				continue
 			}
 
 			if err := cmd.Start(); err != nil {
 				log.Printf("Failed to start tailscale file get: %v", err)
-				return
+				// Apply retry logic instead of returning immediately
+				retries++
+				if retries >= maxRetries {
+					log.Printf("Taildrop receive loop failed %d times on start, giving up", maxRetries)
+					return
+				}
+				log.Printf("Retrying start in %v (attempt %d/%d)", backoff, retries, maxRetries)
+				time.Sleep(backoff)
+				backoff *= 2
+				continue
 			}
+
+			// Reset retries on successful start
+			retries = 0
+			backoff = time.Second
 
 			// Read and parse output
 			scanner := bufio.NewScanner(stdout)
@@ -456,7 +485,15 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 						Sender:   matches[2],
 						Time:     time.Now(),
 					}
-					onReceived(rf)
+					// Wrap callback in recover to prevent single file panic from killing loop
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("Panic in onReceived callback for %s: %v", rf.Filename, r)
+							}
+						}()
+						onReceived(rf)
+					}()
 				}
 			}
 
