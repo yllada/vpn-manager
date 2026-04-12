@@ -81,6 +81,33 @@ func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 	sep.SetMarginBottom(6)
 	popoverBox.Append(sep)
 
+	// Mullvad filter checkbox
+	mullvadFilterBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	mullvadFilterBox.SetMarginTop(6)
+	mullvadFilterBox.SetMarginBottom(6)
+	mullvadFilterBox.SetMarginStart(6)
+	mullvadFilterBox.SetMarginEnd(6)
+
+	tp.mullvadFilterBtn = gtk.NewCheckButton()
+	tp.mullvadFilterBtn.SetActive(tp.mullvadFilterEnabled)
+	tp.mullvadFilterBtn.ConnectToggled(func() {
+		tp.mullvadFilterEnabled = tp.mullvadFilterBtn.Active()
+		tp.rebuildExitNodePopover()
+	})
+	mullvadFilterBox.Append(tp.mullvadFilterBtn)
+
+	mullvadLabel := gtk.NewLabel("Show Mullvad only")
+	mullvadLabel.SetHAlign(gtk.AlignStart)
+	mullvadFilterBox.Append(mullvadLabel)
+
+	popoverBox.Append(mullvadFilterBox)
+
+	// Separator after filter
+	sep2 := gtk.NewSeparator(gtk.OrientationHorizontal)
+	sep2.SetMarginTop(6)
+	sep2.SetMarginBottom(6)
+	popoverBox.Append(sep2)
+
 	// Scrolled list of exit nodes
 	listScrolled := gtk.NewScrolledWindow()
 	listScrolled.SetMinContentHeight(50)

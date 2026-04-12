@@ -43,6 +43,10 @@ type TailscalePanel struct {
 	cachedExitNodes  []*tailscalevpn.PeerStatus // Cached for popover rebuilds
 	lastExitNodesSig string
 
+	// Mullvad filter for exit nodes
+	mullvadFilterEnabled bool
+	mullvadFilterBtn     *gtk.CheckButton
+
 	// LAN Gateway status indicator
 	lanGatewayRow  *adw.ActionRow
 	lanGatewayIcon *gtk.Image

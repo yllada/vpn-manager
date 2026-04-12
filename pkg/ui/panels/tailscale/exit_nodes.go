@@ -17,6 +17,36 @@ import (
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 )
 
+// isMullvadNode checks if a peer is a Mullvad exit node.
+// Mullvad nodes have DNSName ending with .mullvad.ts.net
+func isMullvadNode(peer *tailscalevpn.PeerStatus) bool {
+	if peer == nil {
+		return false
+	}
+	return strings.HasSuffix(peer.DNSName, ".mullvad.ts.net")
+}
+
+// getFilteredExitNodes returns exit nodes filtered by Mullvad status if filter is enabled.
+func (tp *TailscalePanel) getFilteredExitNodes() []*tailscalevpn.PeerStatus {
+	if tp.cachedExitNodes == nil {
+		return []*tailscalevpn.PeerStatus{}
+	}
+
+	// If filter is disabled, return all nodes
+	if !tp.mullvadFilterEnabled {
+		return tp.cachedExitNodes
+	}
+
+	// Filter for Mullvad nodes only
+	var filtered []*tailscalevpn.PeerStatus
+	for _, peer := range tp.cachedExitNodes {
+		if isMullvadNode(peer) {
+			filtered = append(filtered, peer)
+		}
+	}
+	return filtered
+}
+
 // rebuildExitNodePopover rebuilds the exit node list in the popover.
 func (tp *TailscalePanel) rebuildExitNodePopover() {
 	// Clear existing items
@@ -32,12 +62,25 @@ func (tp *TailscalePanel) rebuildExitNodePopover() {
 	noneRow := tp.createCompactPopoverRow("None", "Direct connection", "network-offline-symbolic", false, true, nil)
 	tp.exitNodeListBox.Append(noneRow)
 
-	// Add cached exit nodes
-	if tp.cachedExitNodes == nil {
+	// Get filtered exit nodes based on Mullvad filter state
+	filteredNodes := tp.getFilteredExitNodes()
+
+	// Show info message if Mullvad filter is active but no nodes found
+	if tp.mullvadFilterEnabled && len(filteredNodes) == 0 {
+		infoRow := tp.createCompactPopoverRow(
+			"No Mullvad nodes available",
+			"Mullvad subscription required",
+			"dialog-information-symbolic",
+			false,
+			false,
+			nil,
+		)
+		tp.exitNodeListBox.Append(infoRow)
 		return
 	}
 
-	for _, peer := range tp.cachedExitNodes {
+	// Add filtered exit nodes
+	for _, peer := range filteredNodes {
 		row := tp.createExitNodePopoverRow(peer)
 		tp.exitNodeListBox.Append(row)
 	}

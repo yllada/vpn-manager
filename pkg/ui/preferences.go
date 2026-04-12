@@ -39,6 +39,9 @@ type PreferencesDialog struct {
 	tailscaleRoutesRow     *adw.SwitchRow
 	tailscaleDNSRow        *adw.SwitchRow
 	tailscaleLANGatewayRow *adw.SwitchRow
+	advertiseExitNodeRow   *adw.SwitchRow
+	shieldsUpRow           *adw.SwitchRow
+	sshRow                 *adw.SwitchRow
 
 	// Network Trust settings
 	trustEnabledRow       *adw.SwitchRow
@@ -323,6 +326,27 @@ func (pd *PreferencesDialog) buildProvidersPage() *adw.PreferencesPage {
 	pd.tailscaleLANGatewayRow.SetActive(pd.config.Tailscale.ExitNodeAllowLANAccess)
 	tailscaleGroup.Add(pd.tailscaleLANGatewayRow)
 
+	// Advertise Exit Node row
+	pd.advertiseExitNodeRow = adw.NewSwitchRow()
+	pd.advertiseExitNodeRow.SetTitle("Advertise Exit Node")
+	pd.advertiseExitNodeRow.SetSubtitle("Offer this machine as exit node for others")
+	pd.advertiseExitNodeRow.SetActive(pd.config.Tailscale.AdvertiseExitNode)
+	tailscaleGroup.Add(pd.advertiseExitNodeRow)
+
+	// Shields Up row
+	pd.shieldsUpRow = adw.NewSwitchRow()
+	pd.shieldsUpRow.SetTitle("Shields Up")
+	pd.shieldsUpRow.SetSubtitle("Block all incoming connections")
+	pd.shieldsUpRow.SetActive(pd.config.Tailscale.ShieldsUp)
+	tailscaleGroup.Add(pd.shieldsUpRow)
+
+	// SSH row
+	pd.sshRow = adw.NewSwitchRow()
+	pd.sshRow.SetTitle("Tailscale SSH")
+	pd.sshRow.SetSubtitle("Applies on next connect")
+	pd.sshRow.SetActive(pd.config.Tailscale.SSH)
+	tailscaleGroup.Add(pd.sshRow)
+
 	page.Add(tailscaleGroup)
 
 	return page
@@ -558,6 +582,9 @@ func (pd *PreferencesDialog) savePreferences() {
 	pd.config.Tailscale.AcceptDNS = acceptDNS
 	pd.config.Tailscale.ExitNodeAllowLANAccess = pd.tailscaleLANGatewayRow.Active()
 
+	// Save Tailscale Advanced settings (AdvertiseExitNode, ShieldsUp, SSH)
+	pd.saveTailscaleAdvanced()
+
 	// Apply Tailscale settings immediately if provider is available
 	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
 		if tsProvider, ok := provider.(*tailscale.Provider); ok {
@@ -743,6 +770,39 @@ func (pd *PreferencesDialog) setSecurityControlsEnabled(enabled bool) {
 	}
 	if pd.blockWebRTCRow != nil {
 		pd.blockWebRTCRow.SetSensitive(enabled)
+	}
+}
+
+// saveTailscaleAdvanced saves Tailscale advanced settings (AdvertiseExitNode, ShieldsUp, SSH)
+// and applies them immediately via daemon for AdvertiseExitNode and ShieldsUp.
+// SSH is config-only per REQ-TSA-007 (applies on next connect).
+func (pd *PreferencesDialog) saveTailscaleAdvanced() {
+	// Read toggle states
+	advertiseExitNode := pd.advertiseExitNodeRow.Active()
+	shieldsUp := pd.shieldsUpRow.Active()
+	ssh := pd.sshRow.Active()
+
+	// Save to config
+	pd.config.Tailscale.AdvertiseExitNode = advertiseExitNode
+	pd.config.Tailscale.ShieldsUp = shieldsUp
+	pd.config.Tailscale.SSH = ssh // Config-only per REQ-TSA-007 — applies on next `tailscale up`
+
+	// Apply AdvertiseExitNode and ShieldsUp immediately via daemon (REQ-TSA-005, REQ-TSA-006)
+	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
+		if tsProvider, ok := provider.(*tailscale.Provider); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			// Apply AdvertiseExitNode setting
+			if err := tsProvider.SetAdvertiseExitNode(ctx, advertiseExitNode); err != nil {
+				logger.LogWarn("[Preferences] Could not apply AdvertiseExitNode: %v", err)
+			}
+
+			// Apply ShieldsUp setting
+			if err := tsProvider.SetShieldsUp(ctx, shieldsUp); err != nil {
+				logger.LogWarn("[Preferences] Could not apply ShieldsUp: %v", err)
+			}
+		}
 	}
 }
 
