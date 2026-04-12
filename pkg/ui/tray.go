@@ -187,6 +187,9 @@ func (t *TrayIndicator) onReady() {
 	systray.AddSeparator()
 
 	// Subscribe to network change events to update menu items
+	// NOTE: eventbus callbacks run on eventbus worker threads, NOT on GTK main thread.
+	// However, updateNetworkTrustMenu() only calls fyne.io/systray methods (SetTitle, Show, Hide),
+	// which are thread-safe (they use channels internally). No GTK widget operations happen here.
 	t.networkChangeSub = eventbus.On(eventbus.EventNetworkChanged, func(event *eventbus.Event) {
 		if data, ok := event.Data.(*eventbus.NetworkChangedData); ok {
 			t.updateNetworkTrustMenu(data.SSID, data.BSSID, data.Connected)
@@ -217,7 +220,11 @@ func (t *TrayIndicator) onReady() {
 		for {
 			select {
 			case <-t.quitItem.ClickedCh:
-				t.app.Quit()
+				// IMPORTANT: systray.Quit() MUST be called first!
+				// It triggers onExit() which disconnects VPNs and cleans up.
+				// Only after cleanup completes should we quit the GTK app.
+				// Previous order (app.Quit then systray.Quit) caused the app
+				// to terminate before VPN cleanup could complete.
 				systray.Quit()
 			case <-t.done:
 				return
@@ -251,6 +258,12 @@ func (t *TrayIndicator) onExit() {
 	}
 
 	logger.LogInfo("Tray indicator shutdown complete")
+
+	// Now that cleanup is done, quit the GTK application.
+	// This MUST be the last action - after VPN disconnects and cleanup.
+	if t.app != nil {
+		t.app.Quit()
+	}
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -266,10 +279,13 @@ func (t *TrayIndicator) SetConnected(profileName string) {
 		return
 	}
 
+	// Update internal state while holding lock to prevent races
 	t.connectedProfile = profileName
 	t.connectTime = time.Now()
 	t.stateMu.Unlock()
 
+	// Systray calls are thread-safe (fyne.io/systray uses channels internally),
+	// so we can call them outside the mutex without race conditions
 	systray.SetIcon(getConnectedIcon())
 	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected: %s", profileName))
 
@@ -290,13 +306,16 @@ func (t *TrayIndicator) SetConnected(profileName string) {
 
 // SetDisconnected updates the tray to show disconnected state.
 func (t *TrayIndicator) SetDisconnected() {
-	systray.SetIcon(getDisconnectedIcon())
-	systray.SetTooltip("VPN Manager - Not Connected")
-
+	// Update internal state FIRST while holding lock to prevent races
 	t.stateMu.Lock()
 	t.connectedProfile = ""
 	t.connectedID = ""
 	t.stateMu.Unlock()
+
+	// Systray calls are thread-safe (fyne.io/systray uses channels internally),
+	// so we can call them outside the mutex without race conditions
+	systray.SetIcon(getDisconnectedIcon())
+	systray.SetTooltip("VPN Manager - Not Connected")
 
 	if t.statusItem != nil {
 		t.statusItem.SetTitle("○ Not Connected")
@@ -584,12 +603,24 @@ func (t *TrayIndicator) setCurrentNetworkTrustLevel(level trust.TrustLevel) {
 		}
 		if err := trustMgr.UpdateRule(existingRule.ID, rule); err != nil {
 			logger.LogError("Failed to update trust rule: %v", err)
+			// Show user feedback on error (3 seconds timeout)
+			glib.IdleAdd(func() {
+				if t.app.window != nil {
+					t.app.window.ShowToast(fmt.Sprintf("Failed to update trust rule: %v", err), 3)
+				}
+			})
 			return
 		}
 	} else {
 		// Add new rule
 		if err := trustMgr.AddRule(rule); err != nil {
 			logger.LogError("Failed to add trust rule: %v", err)
+			// Show user feedback on error (3 seconds timeout)
+			glib.IdleAdd(func() {
+				if t.app.window != nil {
+					t.app.window.ShowToast(fmt.Sprintf("Failed to add trust rule: %v", err), 3)
+				}
+			})
 			return
 		}
 	}
@@ -679,51 +710,57 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		conn, exists := t.app.vpnManager.GetConnection(profileID)
-		if !exists {
-			break
-		}
-
-		status := conn.GetStatus()
-
-		glib.IdleAdd(func() {
-			if t.app.window != nil && t.app.window.openvpnPanel != nil {
-				t.app.window.openvpnPanel.GetProfileList().UpdateRowStatus(profileID, status)
-			}
-		})
-
-		switch status {
-		case vpn.StatusConnected:
-			profile := conn.Profile
-			profileName := profile.Name
-			t.SetConnected(profileName)
-			glib.IdleAdd(func() {
-				if t.app.window != nil {
-					t.app.window.SetStatus(fmt.Sprintf("Connected to %s", profileName))
-					if t.app.window.openvpnPanel != nil {
-						t.app.window.openvpnPanel.UpdateStatus(true, profileName)
-					}
-				}
-			})
-			if t.app.config.ShowNotifications {
-				notify.Connected(profileName)
-			}
-			return
-		case vpn.StatusError, vpn.StatusDisconnected:
-			t.SetDisconnected()
-			glib.IdleAdd(func() {
-				if t.app.window != nil && t.app.window.openvpnPanel != nil {
-					t.app.window.openvpnPanel.UpdateStatus(false, "")
-				}
-			})
-			return
-		case vpn.StatusConnecting:
-			// Check for timeout while in connecting state
-			if time.Since(startTime) > connectionTimeout {
-				logger.LogWarn("tray", "Connection monitor timeout for %s after %v", profileID, connectionTimeout)
+	for {
+		select {
+		case <-ticker.C:
+			conn, exists := t.app.vpnManager.GetConnection(profileID)
+			if !exists {
 				return
 			}
+
+			status := conn.GetStatus()
+
+			glib.IdleAdd(func() {
+				if t.app.window != nil && t.app.window.openvpnPanel != nil {
+					t.app.window.openvpnPanel.GetProfileList().UpdateRowStatus(profileID, status)
+				}
+			})
+
+			switch status {
+			case vpn.StatusConnected:
+				profile := conn.Profile
+				profileName := profile.Name
+				t.SetConnected(profileName)
+				glib.IdleAdd(func() {
+					if t.app.window != nil {
+						t.app.window.SetStatus(fmt.Sprintf("Connected to %s", profileName))
+						if t.app.window.openvpnPanel != nil {
+							t.app.window.openvpnPanel.UpdateStatus(true, profileName)
+						}
+					}
+				})
+				if t.app.config.ShowNotifications {
+					notify.Connected(profileName)
+				}
+				return
+			case vpn.StatusError, vpn.StatusDisconnected:
+				t.SetDisconnected()
+				glib.IdleAdd(func() {
+					if t.app.window != nil && t.app.window.openvpnPanel != nil {
+						t.app.window.openvpnPanel.UpdateStatus(false, "")
+					}
+				})
+				return
+			case vpn.StatusConnecting:
+				// Check for timeout while in connecting state
+				if time.Since(startTime) > connectionTimeout {
+					logger.LogWarn("tray", "Connection monitor timeout for %s after %v", profileID, connectionTimeout)
+					return
+				}
+			}
+		case <-t.done:
+			// Early cancellation during app shutdown
+			return
 		}
 	}
 }
@@ -733,178 +770,186 @@ func (t *TrayIndicator) monitorConnection(profileID string) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // showFloatingOTPDialog shows an OTP entry dialog using AdwWindow.
+// This can be called from any thread (e.g., auth failure callbacks, systray click handlers),
+// so we dispatch GTK widget creation to the GTK main thread via glib.IdleAdd.
 func (t *TrayIndicator) showFloatingOTPDialog(profile *profilepkg.Profile, username, password string) {
-	window := adw.NewWindow()
-	window.SetTitle("VPN Authentication")
-	window.SetModal(false)
-	window.SetDefaultSize(380, 320)
-	window.SetResizable(false)
+	glib.IdleAdd(func() {
+		window := adw.NewWindow()
+		window.SetTitle("VPN Authentication")
+		window.SetModal(false)
+		window.SetDefaultSize(380, 320)
+		window.SetResizable(false)
 
-	// Create toolbar view with header
-	toolbarView := adw.NewToolbarView()
+		// Create toolbar view with header
+		toolbarView := adw.NewToolbarView()
 
-	headerBar := adw.NewHeaderBar()
-	headerBar.SetShowEndTitleButtons(false)
-	headerBar.SetShowStartTitleButtons(false)
+		headerBar := adw.NewHeaderBar()
+		headerBar.SetShowEndTitleButtons(false)
+		headerBar.SetShowStartTitleButtons(false)
 
-	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		window.Close()
+		// Cancel button in header
+		cancelBtn := gtk.NewButton()
+		cancelBtn.SetLabel("Cancel")
+		cancelBtn.ConnectClicked(func() {
+			window.Close()
+		})
+		headerBar.PackStart(cancelBtn)
+
+		// Connect button in header
+		connectBtn := gtk.NewButton()
+		connectBtn.SetLabel("Connect")
+		connectBtn.AddCSSClass("suggested-action")
+		headerBar.PackEnd(connectBtn)
+
+		toolbarView.AddTopBar(headerBar)
+
+		// Content using AdwPreferencesPage
+		prefsPage := adw.NewPreferencesPage()
+
+		// Header with profile info
+		statusPage := adw.NewStatusPage()
+		statusPage.SetIconName("dialog-password-symbolic")
+		statusPage.SetTitle(profile.Name)
+		statusPage.SetDescription("Enter your authenticator code")
+
+		headerGroup := adw.NewPreferencesGroup()
+		headerGroup.Add(statusPage)
+		prefsPage.Add(headerGroup)
+
+		// OTP entry group
+		otpGroup := adw.NewPreferencesGroup()
+		otpRow := adw.NewEntryRow()
+		otpRow.SetTitle("Authentication Code")
+		otpRow.SetInputPurpose(gtk.InputPurposeDigits)
+		otpGroup.Add(otpRow)
+		prefsPage.Add(otpGroup)
+
+		// Connect action
+		connectBtn.ConnectClicked(func() {
+			otp := otpRow.Text()
+			if otp == "" {
+				return
+			}
+			window.Close()
+			t.ConnectFromTray(profile, username, password+otp)
+		})
+
+		otpRow.ConnectEntryActivated(func() {
+			connectBtn.Activate()
+		})
+
+		toolbarView.SetContent(prefsPage)
+		window.SetContent(toolbarView)
+		window.SetVisible(true)
 	})
-	headerBar.PackStart(cancelBtn)
-
-	// Connect button in header
-	connectBtn := gtk.NewButton()
-	connectBtn.SetLabel("Connect")
-	connectBtn.AddCSSClass("suggested-action")
-	headerBar.PackEnd(connectBtn)
-
-	toolbarView.AddTopBar(headerBar)
-
-	// Content using AdwPreferencesPage
-	prefsPage := adw.NewPreferencesPage()
-
-	// Header with profile info
-	statusPage := adw.NewStatusPage()
-	statusPage.SetIconName("dialog-password-symbolic")
-	statusPage.SetTitle(profile.Name)
-	statusPage.SetDescription("Enter your authenticator code")
-
-	headerGroup := adw.NewPreferencesGroup()
-	headerGroup.Add(statusPage)
-	prefsPage.Add(headerGroup)
-
-	// OTP entry group
-	otpGroup := adw.NewPreferencesGroup()
-	otpRow := adw.NewEntryRow()
-	otpRow.SetTitle("Authentication Code")
-	otpRow.SetInputPurpose(gtk.InputPurposeDigits)
-	otpGroup.Add(otpRow)
-	prefsPage.Add(otpGroup)
-
-	// Connect action
-	connectBtn.ConnectClicked(func() {
-		otp := otpRow.Text()
-		if otp == "" {
-			return
-		}
-		window.Close()
-		t.ConnectFromTray(profile, username, password+otp)
-	})
-
-	otpRow.ConnectEntryActivated(func() {
-		connectBtn.Activate()
-	})
-
-	toolbarView.SetContent(prefsPage)
-	window.SetContent(toolbarView)
-	window.SetVisible(true)
 }
 
 // ShowFloatingPasswordDialog shows a credentials entry dialog using AdwWindow.
+// This can be called from any thread (e.g., systray click handlers, external triggers),
+// so we dispatch GTK widget creation to the GTK main thread via glib.IdleAdd.
 func (t *TrayIndicator) ShowFloatingPasswordDialog(profile *profilepkg.Profile) {
-	window := adw.NewWindow()
-	window.SetTitle("VPN Credentials")
-	window.SetModal(false)
-	window.SetDefaultSize(400, 450)
-	window.SetResizable(false)
+	glib.IdleAdd(func() {
+		window := adw.NewWindow()
+		window.SetTitle("VPN Credentials")
+		window.SetModal(false)
+		window.SetDefaultSize(400, 450)
+		window.SetResizable(false)
 
-	// Create toolbar view with header
-	toolbarView := adw.NewToolbarView()
+		// Create toolbar view with header
+		toolbarView := adw.NewToolbarView()
 
-	headerBar := adw.NewHeaderBar()
-	headerBar.SetShowEndTitleButtons(false)
-	headerBar.SetShowStartTitleButtons(false)
+		headerBar := adw.NewHeaderBar()
+		headerBar.SetShowEndTitleButtons(false)
+		headerBar.SetShowStartTitleButtons(false)
 
-	// Cancel button in header
-	cancelBtn := gtk.NewButton()
-	cancelBtn.SetLabel("Cancel")
-	cancelBtn.ConnectClicked(func() {
-		window.Close()
-	})
-	headerBar.PackStart(cancelBtn)
+		// Cancel button in header
+		cancelBtn := gtk.NewButton()
+		cancelBtn.SetLabel("Cancel")
+		cancelBtn.ConnectClicked(func() {
+			window.Close()
+		})
+		headerBar.PackStart(cancelBtn)
 
-	// Connect button in header
-	connectBtn := gtk.NewButton()
-	connectBtn.SetLabel("Connect")
-	connectBtn.AddCSSClass("suggested-action")
-	headerBar.PackEnd(connectBtn)
+		// Connect button in header
+		connectBtn := gtk.NewButton()
+		connectBtn.SetLabel("Connect")
+		connectBtn.AddCSSClass("suggested-action")
+		headerBar.PackEnd(connectBtn)
 
-	toolbarView.AddTopBar(headerBar)
+		toolbarView.AddTopBar(headerBar)
 
-	// Content using AdwPreferencesPage
-	prefsPage := adw.NewPreferencesPage()
+		// Content using AdwPreferencesPage
+		prefsPage := adw.NewPreferencesPage()
 
-	// Header with profile info
-	statusPage := adw.NewStatusPage()
-	statusPage.SetIconName("network-vpn-symbolic")
-	statusPage.SetTitle(profile.Name)
-	statusPage.SetDescription("Enter your VPN credentials")
+		// Header with profile info
+		statusPage := adw.NewStatusPage()
+		statusPage.SetIconName("network-vpn-symbolic")
+		statusPage.SetTitle(profile.Name)
+		statusPage.SetDescription("Enter your VPN credentials")
 
-	headerGroup := adw.NewPreferencesGroup()
-	headerGroup.Add(statusPage)
-	prefsPage.Add(headerGroup)
+		headerGroup := adw.NewPreferencesGroup()
+		headerGroup.Add(statusPage)
+		prefsPage.Add(headerGroup)
 
-	// Credentials group
-	credGroup := adw.NewPreferencesGroup()
-	credGroup.SetTitle("Credentials")
+		// Credentials group
+		credGroup := adw.NewPreferencesGroup()
+		credGroup.SetTitle("Credentials")
 
-	usernameRow := adw.NewEntryRow()
-	usernameRow.SetTitle("Username")
-	if profile.Username != "" {
-		usernameRow.SetText(profile.Username)
-	}
-	credGroup.Add(usernameRow)
-
-	passwordRow := adw.NewPasswordEntryRow()
-	passwordRow.SetTitle("Password")
-	credGroup.Add(passwordRow)
-
-	prefsPage.Add(credGroup)
-
-	// Options group
-	optGroup := adw.NewPreferencesGroup()
-	saveRow := adw.NewSwitchRow()
-	saveRow.SetTitle("Remember Credentials")
-	saveRow.SetSubtitle("Save username and password")
-	optGroup.Add(saveRow)
-	prefsPage.Add(optGroup)
-
-	// Connect action
-	connectBtn.ConnectClicked(func() {
-		username := usernameRow.Text()
-		password := passwordRow.Text()
-		if username == "" || password == "" {
-			return
+		usernameRow := adw.NewEntryRow()
+		usernameRow.SetTitle("Username")
+		if profile.Username != "" {
+			usernameRow.SetText(profile.Username)
 		}
+		credGroup.Add(usernameRow)
 
-		if saveRow.Active() {
-			profile.Username = username
-			profile.SavePassword = true
-			if err := keyring.Store(profile.ID, password); err != nil {
-				logger.LogWarn("tray", "Failed to store password in keyring: %v", err)
+		passwordRow := adw.NewPasswordEntryRow()
+		passwordRow.SetTitle("Password")
+		credGroup.Add(passwordRow)
+
+		prefsPage.Add(credGroup)
+
+		// Options group
+		optGroup := adw.NewPreferencesGroup()
+		saveRow := adw.NewSwitchRow()
+		saveRow.SetTitle("Remember Credentials")
+		saveRow.SetSubtitle("Save username and password")
+		optGroup.Add(saveRow)
+		prefsPage.Add(optGroup)
+
+		// Connect action
+		connectBtn.ConnectClicked(func() {
+			username := usernameRow.Text()
+			password := passwordRow.Text()
+			if username == "" || password == "" {
+				return
 			}
-			if err := t.app.vpnManager.ProfileManager().Update(profile); err != nil {
-				logger.LogWarn("tray", "Failed to save profile after credential update: %v", err)
+
+			if saveRow.Active() {
+				profile.Username = username
+				profile.SavePassword = true
+				if err := keyring.Store(profile.ID, password); err != nil {
+					logger.LogWarn("tray", "Failed to store password in keyring: %v", err)
+				}
+				if err := t.app.vpnManager.ProfileManager().Update(profile); err != nil {
+					logger.LogWarn("tray", "Failed to save profile after credential update: %v", err)
+				}
 			}
-		}
 
-		window.Close()
+			window.Close()
 
-		if profile.RequiresOTP {
-			t.showFloatingOTPDialog(profile, username, password)
-		} else {
-			t.ConnectFromTray(profile, username, password)
-		}
+			if profile.RequiresOTP {
+				t.showFloatingOTPDialog(profile, username, password)
+			} else {
+				t.ConnectFromTray(profile, username, password)
+			}
+		})
+
+		passwordRow.ConnectEntryActivated(func() {
+			connectBtn.Activate()
+		})
+
+		toolbarView.SetContent(prefsPage)
+		window.SetContent(toolbarView)
+		window.SetVisible(true)
 	})
-
-	passwordRow.ConnectEntryActivated(func() {
-		connectBtn.Activate()
-	})
-
-	toolbarView.SetContent(prefsPage)
-	window.SetContent(toolbarView)
-	window.SetVisible(true)
 }
