@@ -8,27 +8,27 @@ Codename: stable
 Architectures: amd64
 Components: main
 Description: VPN Manager APT Repository
-Date: Sun, 12 Apr 2026 16:12:54 +0000
+Date: Sun, 12 Apr 2026 23:11:39 +0000
 MD5Sum:
- cb0f1d354dd712c67c9c50128235084f 927 main/binary-amd64/Packages
- d8d5e1c6c7efd0cde7cbf32290600208 622 main/binary-amd64/Packages.gz
+ e47a6753dd674c5eaadaf2ac8d1140aa 927 main/binary-amd64/Packages
+ ea48eb1a7fd2b1af014f8c593205e54b 618 main/binary-amd64/Packages.gz
 SHA256:
- 3465600bc81b0015a105a00eea9b734919b5e57ef2aa4c057a5404ab3664caef 927 main/binary-amd64/Packages
- d7cf2893b6c655198a436709a810646fd6bac4e4a9ab62e0024973a7f6b6cb0e 622 main/binary-amd64/Packages.gz
+ 6fad5cdc2beb2ab5f73664ec4441c2811e9ab139e1d4fb6aa500e5499bfea633 927 main/binary-amd64/Packages
+ ed2c9fbb75fcb34b09838bfbeb37768c6dc9722fb94f87d5db26655bbab1ea94 618 main/binary-amd64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iQJIBAEBCgAyFiEE51vJNQ7JGuzER8O8uF25DN4jUW0FAmnbxIYUHGFwdEB2cG4t
-bWFuYWdlci5kZXYACgkQuF25DN4jUW1CWBAAs7kw+JHvR0YeE0xUrWrNSyMaPj6i
-SbiVijUNP2g/ljTEnp6p2yJk663eO+ILUFhLt4C2vzmHaZAMBKMJz9U45VLp3PVp
-WbS9mXfFRjP6q9fdjl804s8mqbLC609aXj6ZBxjkkGeDBDaaZKPxcB2OFCWfhttd
-pEKoqRk8jnTYd3ciqdcNtyMVFDA/DIWtwIsCYXmOJJKmpYnHkZe1fGK33PxgRake
-iFL6JAZPfsRgC2AGI15Gn8qU23ONf1pnrB7ZtNRjJe2S8Amt7nhThPMRa0uY9fMw
-t7wVQ4IWp/rA0BS+0fRaJdzcQKFWbyyt+hk6yKoAZPeRkIXn9vqJi3siwXn+/8LH
-+hv2yHPj7FWP/AchvmQNSogzTv/A0tU9uBy5H4ecefBqWUyo6HGtaXOgZeSoofSv
-ON3akC0JqU69NEZCk6yzKoP+7AND6kFqLaCBt3VZO3COU6v7ezDJqCPzpA5eTfhr
-SQIbbDbegRMP26j+wSc3VWYcRGzICFmwtgznb0mHyPE0aI/djh1CoQMWjvpaQy6Q
-M71NY8obFCQs4ZqglJxEPTeyCIwNNc3v6c1Km2WipNTno7/ruqhqlVwSkGPkctw+
-FHim8U16xO7pzQmCj0wkCNJEqLutywxNDX4UAO2ZdiTykP7XGsYGdoKXpXbiWh4k
-mjg04wp+uo51svo=
-=JjDw
+iQJIBAEBCgAyFiEE51vJNQ7JGuzER8O8uF25DN4jUW0FAmncJqsUHGFwdEB2cG4t
+bWFuYWdlci5kZXYACgkQuF25DN4jUW2b5BAAp7cG+W3FmvsN+DG0geZeZ6P7FCV8
+kJogOAFaTwhKFPZl4sHp/saFK0GS96P0SiVc3RGDvukSdJhmDM7GgIRYGXT0lw1Z
+4Hymz9qNz9QXNQhtbAN/ifojyatYKOtGZ47PxrFG8uMTb2DQdui0K1Rx2LWtiiCr
+Ye0/uzn3c+YnuHpBPGR14ent4eB+tgodWuxUBZnwYw7eiJBd+NbW881JAz6v1KMU
+xHoZT6GbKs01+txkKBt2g/nxZULBAOUOEim+SBc4JJdNs4cdykjy8UZXeNu3JAgj
+kZ3iRcKEFZywhN353rtWK/dI7JVrOE3KeXkQgp8fgD8bdkblOZ8glQvrVoeuArVr
+n/7POF+mhf3c6WdvGN9rMVEg3mY9zWONKkjR0to/g2LaDWvOstOnDdWewW26o/Dq
+C6+Dd2+5ODa0ZFub5sKYlxMXkM7W9hr0DTpFd7eV7MXKtHebJe1qP12v1swByh2i
+/0h0hMyIUtd3LepfSbKMF0/9DL07PhFNppQye1UwQAgHcfQWxxMUtggtnQB9h055
+8KWGUe0snswqCaU/mBuTEwtKQDwprCgHYNmpZN5MsD31R7FP2Rh5KbmOFc/9P2LB
+jtHZoef6d732UqcZ4gc9WWA4xLOiIo47YVYbC2Gf9GIHvbcpyOA2KsKQjMCoKpCL
+s/m1jJoii1vsEq4=
+=GiCu
 -----END PGP SIGNATURE-----
