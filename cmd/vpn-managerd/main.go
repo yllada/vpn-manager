@@ -135,4 +135,5 @@ func registerPrivilegedHandlers(server *daemon.Server) {
 	handlers.Register("tailscale.login", tailscale.LoginHandler(state))
 	handlers.Register("tailscale.logout", tailscale.LogoutHandler(state))
 	handlers.Register("tailscale.set_operator", tailscale.SetOperatorHandler(state))
+	handlers.Register("taildrop.send", tailscale.TaildropSendHandler(state))
 }

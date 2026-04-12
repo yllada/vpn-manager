@@ -5,11 +5,17 @@ package tailscale
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/daemon"
+	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 )
@@ -377,6 +383,27 @@ func (tp *TailscalePanel) addPeerDetailsToRow(row *adw.ExpanderRow, peer *tailsc
 		dnsRow.AddPrefix(dnsIcon)
 		row.AddRow(dnsRow)
 	}
+
+	// Send File button (Taildrop) - only for online peers
+	if peer.Online {
+		sendFileRow := adw.NewActionRow()
+		sendFileRow.SetTitle("Send File")
+		sendFileRow.SetSubtitle("Transfer a file to this device via Taildrop")
+
+		sendIcon := gtk.NewImage()
+		sendIcon.SetFromIconName("document-send-symbolic")
+		sendIcon.SetPixelSize(16)
+		sendFileRow.AddPrefix(sendIcon)
+
+		sendBtn := components.NewLabelButtonWithStyle("Choose File", components.ButtonFlat)
+		sendBtn.SetVAlign(gtk.AlignCenter)
+		sendBtn.ConnectClicked(func() {
+			tp.onSendFileClicked(peer)
+		})
+		sendFileRow.AddSuffix(sendBtn)
+
+		row.AddRow(sendFileRow)
+	}
 }
 
 // getPeerStatusText returns a status string for a peer.
@@ -388,4 +415,61 @@ func (tp *TailscalePanel) getPeerStatusText(peer *tailscalevpn.PeerStatus) strin
 		return "Online"
 	}
 	return "Offline"
+}
+
+// onSendFileClicked handles the "Send File" action for a peer.
+// Opens a file picker, and sends the selected file via Taildrop.
+func (tp *TailscalePanel) onSendFileClicked(peer *tailscalevpn.PeerStatus) {
+	// Guard: ensure peer is online
+	if !peer.Online {
+		tp.host.ShowToast("Device is offline", 3)
+		return
+	}
+
+	// Create FileDialog (GTK4 4.10+ async API)
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle(fmt.Sprintf("Send File to %s", peer.HostName))
+	dialog.SetModal(true)
+
+	// Open async
+	dialog.Open(context.Background(), tp.host.GetGtkWindow(), func(res gio.AsyncResulter) {
+		file, err := dialog.OpenFinish(res)
+		if err != nil {
+			// User cancelled or error - silently return
+			return
+		}
+
+		filePath := file.Path()
+		fileName := filepath.Base(filePath)
+
+		// Determine target: prefer DNSName, fallback to first Tailscale IP
+		target := peer.DNSName
+		if target == "" && len(peer.TailscaleIPs) > 0 {
+			target = peer.TailscaleIPs[0]
+		}
+
+		if target == "" {
+			tp.host.ShowToast("Cannot determine target address for device", 5)
+			return
+		}
+
+		// Show "Sending..." toast immediately
+		tp.host.ShowToast(fmt.Sprintf("Sending %s to %s...", fileName, peer.HostName), 3)
+
+		// Send file in goroutine to avoid blocking UI
+		resilience.SafeGoWithName("taildrop-send", func() {
+			client := &daemon.TaildropClient{}
+			err := client.Send(filePath, target)
+
+			// Use IdleAdd to show result toast on main thread
+			glib.IdleAdd(func() {
+				if err != nil {
+					logger.LogError("Taildrop: Send failed: %v", err)
+					tp.host.ShowToast(fmt.Sprintf("Failed to send: %s", err.Error()), 5)
+				} else {
+					tp.host.ShowToast(fmt.Sprintf("File sent to %s", peer.HostName), 3)
+				}
+			})
+		})
+	})
 }

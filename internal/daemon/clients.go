@@ -697,3 +697,34 @@ func (c *TailscaleClient) SetOperatorWithContext(ctx context.Context, username s
 	params := map[string]string{"username": username}
 	return CallDaemonWithContext(ctx, "tailscale.set_operator", params, &result, nil)
 }
+
+// =============================================================================
+// TAILDROP CLIENT
+// =============================================================================
+
+// TaildropClient provides a client interface for Taildrop operations via daemon.
+type TaildropClient struct{}
+
+// Send sends a file to the target device via Taildrop.
+func (c *TaildropClient) Send(filePath, target string) error {
+	var result map[string]any
+
+	params := map[string]string{
+		"file_path": filePath,
+		"target":    target,
+	}
+
+	return CallDaemon("taildrop.send", params, &result, nil)
+}
+
+// SendWithContext sends a file to the target device with context support.
+func (c *TaildropClient) SendWithContext(ctx context.Context, filePath, target string) error {
+	var result map[string]any
+
+	params := map[string]string{
+		"file_path": filePath,
+		"target":    target,
+	}
+
+	return CallDaemonWithContext(ctx, "taildrop.send", params, &result, nil)
+}

@@ -351,3 +351,48 @@ func (m *Manager) SetOperator(ctx context.Context, username string) error {
 	}
 	return nil
 }
+
+// =============================================================================
+// TAILDROP
+// =============================================================================
+
+// TaildropSendParams contains parameters for taildrop send command.
+type TaildropSendParams struct {
+	FilePath string `json:"file_path"`
+	Target   string `json:"target"`
+}
+
+// Validate validates the TaildropSendParams.
+func (p TaildropSendParams) Validate() error {
+	if p.FilePath == "" {
+		return fmt.Errorf("file_path is required")
+	}
+	if p.Target == "" {
+		return fmt.Errorf("target is required")
+	}
+	return nil
+}
+
+// TaildropSendResult contains the result of taildrop send.
+type TaildropSendResult struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+// SendFile sends a file via Taildrop to the specified target.
+func (m *Manager) SendFile(ctx context.Context, params TaildropSendParams) (*TaildropSendResult, error) {
+	if err := params.Validate(); err != nil {
+		return nil, err
+	}
+
+	// tailscale file cp <file> <target>:
+	cmd := exec.CommandContext(ctx, m.binaryPath, "file", "cp", params.FilePath, params.Target+":")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("tailscale file cp failed: %w: %s", err, string(output))
+	}
+
+	return &TaildropSendResult{
+		Success: true,
+	}, nil
+}

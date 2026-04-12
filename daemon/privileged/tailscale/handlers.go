@@ -177,3 +177,27 @@ func SetOperatorHandler(state *daemon.State) daemon.HandlerFunc {
 		}, nil
 	}
 }
+
+// TaildropSendHandler returns a handler that sends a file via Taildrop.
+func TaildropSendHandler(state *daemon.State) daemon.HandlerFunc {
+	return func(ctx *daemon.HandlerContext) (any, error) {
+		var params TaildropSendParams
+		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+
+		ctx.Logger.Printf("Sending file %s to %s via Taildrop", params.FilePath, params.Target)
+
+		manager, err := NewManager()
+		if err != nil {
+			return nil, err
+		}
+
+		result, err := manager.SendFile(ctx.Context, params)
+		if err != nil {
+			return nil, err
+		}
+
+		return result, nil
+	}
+}
