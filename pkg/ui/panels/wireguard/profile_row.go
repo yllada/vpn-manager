@@ -16,6 +16,7 @@ type WireGuardRow struct {
 	expanderRow *adw.ExpanderRow
 	connBtn     *gtk.Button
 	configBtn   *gtk.Button
+	diagBtn     *gtk.Button
 	delBtn      *gtk.Button
 	spinner     *gtk.Spinner
 	// Detail rows inside expander (visible when expanded)
@@ -66,6 +67,15 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 	}
 	expanderRow.AddSuffix(configBtn)
 
+	// Diagnostics button as suffix (Task 3.6)
+	diagBtn := gtk.NewButton()
+	diagBtn.SetIconName("dialog-information-symbolic")
+	diagBtn.SetTooltipText("Network Diagnostics")
+	diagBtn.AddCSSClass("circular")
+	diagBtn.AddCSSClass("flat")
+	diagBtn.SetVAlign(gtk.AlignCenter)
+	expanderRow.AddSuffix(diagBtn)
+
 	// Delete button as suffix
 	delBtn := gtk.NewButton()
 	delBtn.SetIconName("user-trash-symbolic")
@@ -100,6 +110,7 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 		expanderRow: expanderRow,
 		connBtn:     connBtn,
 		configBtn:   configBtn,
+		diagBtn:     diagBtn,
 		delBtn:      delBtn,
 		spinner:     spinner,
 		trafficRow:  trafficRow,
@@ -114,6 +125,10 @@ func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
 
 	configBtn.ConnectClicked(func() {
 		wp.onConfigProfile(wgRow)
+	})
+
+	diagBtn.ConnectClicked(func() {
+		wp.onDiagnosticsProfile(wgRow)
 	})
 
 	delBtn.ConnectClicked(func() {

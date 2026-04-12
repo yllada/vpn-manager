@@ -12,6 +12,7 @@ import (
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 )
 
 // onImportProfile handles importing a WireGuard config file.
@@ -125,4 +126,12 @@ func (wp *WireGuardPanel) onConfigProfile(row *WireGuardRow) {
 		wp.loadProfiles()
 	})
 	dialog.Show()
+}
+
+// onDiagnosticsProfile opens the network diagnostics dialog for a profile.
+// Task 3.7: Wire button to open WireGuardDiagnosticsDialog.
+// Satisfies REQ-DIAG-001 (diagnostics button when provider available).
+func (wp *WireGuardPanel) onDiagnosticsProfile(row *WireGuardRow) {
+	dialog := dialogs.NewWireGuardDiagnosticsDialog(row.profile.Name(), wp.host.GetWindow())
+	dialog.Present()
 }

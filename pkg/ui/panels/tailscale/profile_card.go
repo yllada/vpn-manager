@@ -15,7 +15,9 @@ import (
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/vpn"
+	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 )
 
 // createProfileCard creates the main profile card using AdwExpanderRow.
@@ -69,6 +71,16 @@ func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
 	tp.logoutBtn.AddCSSClass("flat")
 	tp.logoutBtn.ConnectClicked(tp.onLogoutClicked)
 	buttonBox.Append(tp.logoutBtn)
+
+	// Diagnostics button - network troubleshooting tools
+	// Task 2.6: Add diagnostics button to panel
+	diagnosticsBtn := gtk.NewButton()
+	diagnosticsBtn.SetIconName("dialog-information-symbolic")
+	diagnosticsBtn.SetTooltipText("Network Diagnostics")
+	diagnosticsBtn.AddCSSClass("circular")
+	diagnosticsBtn.AddCSSClass("flat")
+	diagnosticsBtn.ConnectClicked(tp.onDiagnosticsClicked)
+	buttonBox.Append(diagnosticsBtn)
 
 	tp.profileExpanderRow.AddSuffix(buttonBox)
 
@@ -289,6 +301,22 @@ func (tp *TailscalePanel) showOperatorSetupDialog() {
 // showAuthURLDialog wraps the public ShowAuthURLDialog function.
 func (tp *TailscalePanel) showAuthURLDialog(url string) {
 	ShowAuthURLDialog(tp.host, url)
+}
+
+// onDiagnosticsClicked opens the network diagnostics dialog.
+// Task 2.7: Wire button click to open TailscaleDiagnosticsDialog.
+// Satisfies REQ-DIAG-001 (diagnostics button when provider available).
+func (tp *TailscalePanel) onDiagnosticsClicked() {
+	// Check if provider is available (REQ-DIAG-002)
+	if tp.provider == nil || tp.provider.AvailabilityState() != tailscalevpn.StateReady {
+		tp.host.ShowError("Diagnostics Unavailable", "Tailscale is not available. Please ensure it is installed and the daemon is running.")
+		return
+	}
+
+	// Import diagnostics package
+	// Note: Will be added at top of file
+	dialog := dialogs.NewTailscaleDiagnosticsDialog(tp.provider, tp.host.GetWindow())
+	dialog.Present()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

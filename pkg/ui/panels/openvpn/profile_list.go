@@ -18,6 +18,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/vpn/health"
 	profilepkg "github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/common"
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
 )
@@ -43,6 +44,7 @@ type ProfileRow struct {
 	expanderRow *adw.ExpanderRow
 	connectBtn  *gtk.Button
 	configBtn   *gtk.Button
+	diagBtn     *gtk.Button
 	deleteBtn   *gtk.Button
 	spinner     *gtk.Spinner
 	// Detail rows inside expander (visible when expanded)
@@ -198,6 +200,18 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	})
 	expanderRow.AddSuffix(configBtn)
 
+	// Diagnostics button as suffix (Task 4.3)
+	diagBtn := gtk.NewButton()
+	diagBtn.SetIconName("dialog-information-symbolic")
+	diagBtn.SetTooltipText("Network Diagnostics")
+	diagBtn.AddCSSClass("circular")
+	diagBtn.AddCSSClass("flat")
+	diagBtn.SetVAlign(gtk.AlignCenter)
+	diagBtn.ConnectClicked(func() {
+		pl.onDiagnosticsClicked(profile)
+	})
+	expanderRow.AddSuffix(diagBtn)
+
 	// Delete button as suffix
 	deleteBtn := gtk.NewButton()
 	deleteBtn.SetIconName("user-trash-symbolic")
@@ -256,6 +270,7 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 		expanderRow: expanderRow,
 		connectBtn:  connectBtn,
 		configBtn:   configBtn,
+		diagBtn:     diagBtn,
 		deleteBtn:   deleteBtn,
 		spinner:     spinner,
 		uptimeRow:   uptimeRow,
@@ -277,6 +292,14 @@ func (pl *ProfileList) onConfigClicked(profile *profilepkg.Profile) {
 	}
 	dialog := pl.panel.splitTunnelDialogFactory(pl.host, profile)
 	dialog.Show()
+}
+
+// onDiagnosticsClicked opens the network diagnostics dialog.
+// Task 4.4: Wire button to open OpenVPNDiagnosticsDialog.
+// Satisfies REQ-DIAG-001 (diagnostics button when provider available).
+func (pl *ProfileList) onDiagnosticsClicked(profile *profilepkg.Profile) {
+	dialog := dialogs.NewOpenVPNDiagnosticsDialog(profile.Name, pl.host.GetWindow())
+	dialog.Present()
 }
 
 // onConnectClicked handles click on the connect button.
