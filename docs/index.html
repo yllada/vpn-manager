@@ -412,7 +412,7 @@
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
                   Kill Switch
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Boot-persistent protection with state persistence and crash recovery. Blocks all traffic if VPN fails.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Configure from UI with 3 modes (Off, Auto, Always). LAN access control and captive portal pause mode. No config file editing needed.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
@@ -420,7 +420,7 @@
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
                   DNS Leak Protection
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">systemd-resolved strict mode with firewall fallback ensures your DNS queries stay private.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Choose DNS provider from UI (Cloudflare, Google, Custom). Blocks DoH/DoT on non-VPN interfaces.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
@@ -428,7 +428,7 @@
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
                   IPv6 Leak Protection
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Extended sysctl parameters and nftables inet rules prevent IPv6 traffic leaks.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">4 protection modes (Allow, Block, Disable, Auto) with optional WebRTC blocking. Configure from Preferences → Security.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
@@ -490,6 +490,14 @@
                 </h4>
                 <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Share your Tailscale exit node with other devices on your local network. One-click setup.</p>
               </article>
+              
+              <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
+                <h4 class="font-medium mb-2 flex items-center gap-2">
+                  <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
+                  Taildrop File Transfer
+                </h4>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Send files to any Tailscale device with one click. Auto-receive to Downloads with desktop notifications.</p>
+              </article>
             </div>
           </div>
           
@@ -499,32 +507,32 @@
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
               </svg>
-              Interfaces
+              Tailscale Power Features
             </h3>
             
             <div class="cards-container">
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
                 <h4 class="font-medium mb-2 flex items-center gap-2">
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  Beautiful Interface
+                  Advertise Exit Node
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Modern design with dark/light themes. Fits perfectly with your GNOME desktop.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Share your machine as VPN exit for other Tailscale devices. Configure in Preferences → VPN Providers.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
                 <h4 class="font-medium mb-2 flex items-center gap-2">
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  Drag & Drop Setup
+                  Shields Up & SSH
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Import VPN profiles by dragging .ovpn files. Passwords saved securely in your keyring.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Block incoming connections or enable Tailscale SSH. Advanced options accessible without CLI.</p>
               </article>
               
               <article class="glass-card rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col">
                 <h4 class="font-medium mb-2 flex items-center gap-2">
                   <span class="w-2 h-2 bg-gnome rounded-full shrink-0"></span>
-                  System Tray
+                  Security Preferences
                 </h4>
-                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Control your VPN from the system tray. Quick connect/disconnect without opening the app.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400 flex-1">Configure Kill Switch, DNS protection, and IPv6 settings from the UI. No config file editing needed.</p>
               </article>
             </div>
           </div>
@@ -979,7 +987,7 @@
                 </li>
                 <li class="flex items-start gap-2">
                   <span class="w-1.5 h-1.5 bg-gnome rounded-full mt-2 shrink-0"></span>
-                  <span><strong>Tailscale</strong> — Zero-config mesh VPN with MagicDNS, exit nodes, and LAN Gateway to share your connection with local devices</span>
+                  <span><strong>Tailscale</strong> — Zero-config mesh VPN with MagicDNS, exit nodes (with Mullvad filter), Taildrop file transfer, advanced options (Advertise Exit Node, Shields Up, SSH), and LAN Gateway to share your connection with local devices</span>
                 </li>
               </ul>
             </div>

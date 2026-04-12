@@ -41,18 +41,23 @@ Most Linux VPN solutions require terminal commands or lack modern security featu
 |----------|----------|
 | **OpenVPN** | `.ovpn` import, credentials in system keyring, OTP support |
 | **WireGuard** | `.conf` import, wg-quick integration, interface stats from `/sys/class/net` |
-| **Tailscale** | Exit nodes, peers, Taildrop, LAN Gateway mode, SSH commands |
+| **Tailscale** | Exit nodes with Mullvad filter, Taildrop file transfer, advanced options (Exit Node advertising, Shields Up, SSH), LAN Gateway mode |
 
 ### Security
 
 - **Kill Switch** — Three modes (Off/Auto/Always) with iptables + nftables backends
+  - Configure via Preferences → Security tab (no config file editing required)
   - LAN access control (RFC1918 bypass)
   - State persistence with crash recovery
   - Block-all mode for untrusted network failures
 - **DNS Leak Protection** — systemd-resolved strict mode with firewall fallback
-  - Blocks DNS (port 53) and DoT (port 853) on non-VPN interfaces
+  - Choose DNS provider: System, Cloudflare, Google, or Custom
+  - DoH/DoT blocking on non-VPN interfaces
+  - Configure via UI Preferences → Security tab
   - Pause mode for captive portal authentication
-- **IPv6 Leak Protection** — sysctl management + optional WebRTC STUN/TURN blocking
+- **IPv6 Leak Protection** — Four protection modes (Allow, Block, Disable, Auto)
+  - Optional WebRTC STUN/TURN blocking
+  - Configure via UI Preferences → Security tab
 - **Evil Twin Detection** — Warns when a known SSID appears with different BSSID
 
 ### Network Trust Management
@@ -97,6 +102,17 @@ Features:
 - Multi-probe chain: TCP → ICMP → HTTP fallback
 - Auto-reconnect with configurable attempts
 - OTP callback support (no auto-reconnect when OTP required)
+
+### Tailscale Features
+
+- **Taildrop** — Send files to any online Tailscale device with one click
+  - Auto-receive to `~/Downloads/Taildrop` with desktop notifications
+  - Configure via `TaildropDir` and `TaildropAutoReceive` in `config.yaml`
+- **Advanced Options** — Accessible via Preferences → VPN Providers → Tailscale
+  - **Advertise Exit Node**: Share your machine as VPN exit for other devices
+  - **Shields Up**: Block all incoming Tailscale connections
+  - **SSH**: Enable Tailscale SSH (applies on next connect)
+- **Exit Nodes** — Mullvad exit node filter for privacy-focused routing
 
 ## Architecture
 
