@@ -420,6 +420,15 @@ func (tp *TailscalePanel) getPeerStatusText(peer *tailscalevpn.PeerStatus) strin
 // onSendFileClicked handles the "Send File" action for a peer.
 // Opens a file picker, and sends the selected file via Taildrop.
 func (tp *TailscalePanel) onSendFileClicked(peer *tailscalevpn.PeerStatus) {
+	// Guard: ensure local Tailscale is connected to the tailnet
+	if tp.provider != nil {
+		status, err := tp.provider.Status(context.Background())
+		if err != nil || !status.Connected {
+			tp.host.ShowToast("Tailscale is not connected to the network", 3)
+			return
+		}
+	}
+
 	// Guard: ensure peer is online
 	if !peer.Online {
 		tp.host.ShowToast("Device is offline", 3)
@@ -465,11 +474,51 @@ func (tp *TailscalePanel) onSendFileClicked(peer *tailscalevpn.PeerStatus) {
 			glib.IdleAdd(func() {
 				if err != nil {
 					logger.LogError("Taildrop: Send failed: %v", err)
-					tp.host.ShowToast(fmt.Sprintf("Failed to send: %s", err.Error()), 5)
+					tp.host.ShowToast(formatTaildropError(err), 5)
 				} else {
 					tp.host.ShowToast(fmt.Sprintf("File sent to %s", peer.HostName), 3)
 				}
 			})
 		})
 	})
+}
+
+// formatTaildropError converts Taildrop errors into user-friendly messages.
+func formatTaildropError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	errStr := err.Error()
+
+	// Map known Tailscale CLI errors to friendly messages
+	switch {
+	case strings.Contains(errStr, "peer is owned by a different user"):
+		return "Cannot send: device belongs to a different user. Check your Tailscale ACLs."
+	case strings.Contains(errStr, "not connected to the tailnet"):
+		return "Cannot send: Tailscale is not connected"
+	case strings.Contains(errStr, "peer not found"):
+		return "Cannot send: device not found in network"
+	case strings.Contains(errStr, "file sharing not enabled"):
+		return "Cannot send: Taildrop is not enabled for this device"
+	case strings.Contains(errStr, "permission denied"):
+		return "Cannot send: permission denied"
+	case strings.Contains(errStr, "no route to host"):
+		return "Cannot send: device is unreachable"
+	case strings.Contains(errStr, "connection refused"):
+		return "Cannot send: device refused the connection"
+	case strings.Contains(errStr, "timeout"):
+		return "Cannot send: connection timed out"
+	default:
+		// For unknown errors, try to extract a clean message
+		// Strip common prefixes like "tailscale file cp failed: exit status 1: "
+		if idx := strings.LastIndex(errStr, ": "); idx != -1 {
+			// Return the last part which is usually the actual error
+			lastPart := errStr[idx+2:]
+			if len(lastPart) > 0 && len(lastPart) < 100 {
+				return fmt.Sprintf("Send failed: %s", lastPart)
+			}
+		}
+		return "Send failed: unexpected error"
+	}
 }
