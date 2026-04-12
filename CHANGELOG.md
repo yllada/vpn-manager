@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [2.2.0] - 2026-04-12
+
+### Added
+- **Network Diagnostics Dialogs** — Per-provider diagnostic tools accessible from each panel
+  - **Tailscale**: NetCheck probe showing DERP regions, latencies, UDP status, NAT type
+  - **WireGuard**: TCP, HTTP, and ICMP probes with automatic ICMP→TCP fallback when unprivileged
+  - **OpenVPN**: TCP and HTTP connectivity probes
+  - All dialogs feature async execution with spinner, re-run capability, and proper close button
+
 ## [2.1.0] - 2026-04-12
 
 ### Added
