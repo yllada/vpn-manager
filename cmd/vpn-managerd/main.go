@@ -13,11 +13,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/yllada/vpn-manager/daemon"
 	"github.com/yllada/vpn-manager/daemon/privileged"
 	"github.com/yllada/vpn-manager/daemon/privileged/tailscale"
+	"github.com/yllada/vpn-manager/internal/config"
+	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/pkg/protocol"
 )
 
@@ -65,6 +68,9 @@ func main() {
 	if err := server.Start(ctx); err != nil {
 		logger.Fatalf("Failed to start server: %v", err)
 	}
+
+	// Start Taildrop receive loop if enabled in config
+	startTaildropIfEnabled(ctx)
 
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -136,4 +142,56 @@ func registerPrivilegedHandlers(server *daemon.Server) {
 	handlers.Register("tailscale.logout", tailscale.LogoutHandler(state))
 	handlers.Register("tailscale.set_operator", tailscale.SetOperatorHandler(state))
 	handlers.Register("taildrop.send", tailscale.TaildropSendHandler(state))
+}
+
+// startTaildropIfEnabled loads config and starts Taildrop receive loop if enabled.
+// Returns true if the loop was started, false otherwise.
+// This function is extracted for testability.
+func startTaildropIfEnabled(ctx context.Context) bool {
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("[taildrop] Failed to load config: %v", err)
+		return false
+	}
+
+	// Check if auto-receive is enabled
+	if !cfg.Tailscale.TaildropAutoReceive {
+		log.Println("[taildrop] Auto-receive is disabled in config")
+		return false
+	}
+
+	// Determine Taildrop directory
+	taildropDir := cfg.Tailscale.TaildropDir
+	if taildropDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("[taildrop] Failed to get home directory: %v", err)
+			return false
+		}
+		taildropDir = filepath.Join(homeDir, "Downloads", "Taildrop")
+	}
+
+	// Create Tailscale manager
+	manager, err := tailscale.NewManager()
+	if err != nil {
+		log.Printf("[taildrop] Failed to create Tailscale manager: %v", err)
+		return false
+	}
+
+	// Start the receive loop
+	log.Printf("[taildrop] Starting receive loop (directory: %s)", taildropDir)
+	cancelReceive := manager.StartReceiveLoop(ctx, taildropDir, func(rf tailscale.ReceivedFile) {
+		log.Printf("[taildrop] File received: %s from %s", rf.Filename, rf.Sender)
+		notify.FileReceived(rf.Filename, rf.Sender)
+	})
+
+	// Clean up on context cancellation
+	go func() {
+		<-ctx.Done()
+		log.Println("[taildrop] Stopping receive loop...")
+		cancelReceive()
+	}()
+
+	return true
 }

@@ -67,6 +67,8 @@ type TailscaleConfig struct {
 	Taildrop bool `yaml:"taildrop"`
 	// TaildropDir is where received files are saved.
 	TaildropDir string `yaml:"taildrop_dir,omitempty"`
+	// TaildropAutoReceive enables background file receive loop.
+	TaildropAutoReceive bool `yaml:"taildrop_auto_receive"`
 	// SSH enables Tailscale SSH (ssh via Tailscale without keys).
 	// See: https://tailscale.com/kb/1193/tailscale-ssh
 	SSH bool `yaml:"ssh"`
@@ -155,6 +157,7 @@ func DefaultConfig() *Config {
 			ShieldsUp:              false,
 			Taildrop:               true,
 			TaildropDir:            taildropDir,
+			TaildropAutoReceive:    true,
 			SSH:                    false,
 			Mullvad:                false,
 			Hostname:               "",

@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -395,4 +397,91 @@ func (m *Manager) SendFile(ctx context.Context, params TaildropSendParams) (*Tai
 	return &TaildropSendResult{
 		Success: true,
 	}, nil
+}
+
+// =============================================================================
+// TAILDROP RECEIVE
+// =============================================================================
+
+// ReceivedFile represents a file received via Taildrop.
+type ReceivedFile struct {
+	Filename string    `json:"filename"`
+	Sender   string    `json:"sender"`
+	Time     time.Time `json:"time"`
+}
+
+// receivedFilePattern matches output from "tailscale file get --loop --verbose":
+// Example: "Wrote photo.jpg (from laptop)"
+var receivedFilePattern = regexp.MustCompile(`^Wrote (.+?) \(from (.+?)\)`)
+
+// StartReceiveLoop starts the background receive loop for Taildrop.
+// It runs "tailscale file get --loop --verbose <outputDir>" and calls onReceived
+// for each file received. Returns a cancel function to stop the loop.
+func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onReceived func(ReceivedFile)) func() {
+	loopCtx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		retries := 0
+		maxRetries := 3
+		backoff := time.Second
+
+		for {
+			select {
+			case <-loopCtx.Done():
+				return
+			default:
+			}
+
+			// Run the receive loop
+			cmd := exec.CommandContext(loopCtx, m.binaryPath, "file", "get", "--loop", "--verbose", outputDir)
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				log.Printf("Failed to create stdout pipe: %v", err)
+				return
+			}
+
+			if err := cmd.Start(); err != nil {
+				log.Printf("Failed to start tailscale file get: %v", err)
+				return
+			}
+
+			// Read and parse output
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				line := scanner.Text()
+				matches := receivedFilePattern.FindStringSubmatch(line)
+				if matches != nil && len(matches) == 3 {
+					rf := ReceivedFile{
+						Filename: matches[1],
+						Sender:   matches[2],
+						Time:     time.Now(),
+					}
+					onReceived(rf)
+				}
+			}
+
+			// Wait for command to finish
+			_ = cmd.Wait()
+
+			// Check if context was cancelled (clean shutdown)
+			select {
+			case <-loopCtx.Done():
+				return
+			default:
+			}
+
+			// Process crashed - apply backoff and retry
+			retries++
+			if retries >= maxRetries {
+				log.Printf("Taildrop receive loop failed %d times, giving up", maxRetries)
+				return
+			}
+
+			log.Printf("Taildrop receive loop exited, retrying in %v (attempt %d/%d)", backoff, retries, maxRetries)
+			time.Sleep(backoff)
+			backoff *= 2 // Exponential backoff
+		}
+	}()
+
+	return cancel
 }
