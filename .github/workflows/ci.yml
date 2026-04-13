@@ -65,6 +65,20 @@ jobs:
         uses: ./.github/actions/setup-go-gtk
 
       # -------------------------------------------------------------------------
+      # Pre-compilation warm-up (critical for CGO projects)
+      # -------------------------------------------------------------------------
+      # golangci-lint calls go/packages.Load() which must compile all deps.
+      # For gotk4, this takes 5-8 minutes on cold cache and causes timeouts.
+      # Running go build first warms the cache so lint starts with hot cache.
+      # -------------------------------------------------------------------------
+      - name: Warm up Go build cache
+        run: |
+          echo "🔥 Pre-compiling dependencies (gotk4 CGO bindings)..."
+          go build ./...
+        env:
+          CGO_ENABLED: 1
+
+      # -------------------------------------------------------------------------
       # Lint
       # -------------------------------------------------------------------------
       - name: Run golangci-lint
@@ -72,8 +86,9 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: binary
-          # 10m timeout: gotk4 CGO bindings take ~5min to load on cold cache
-          args: --timeout=10m
+          # 15m timeout: gotk4 CGO bindings may still need time on cold cache
+          # This matches the timeout in .golangci.yaml
+          args: --timeout=15m
           # On PRs: only report new issues (faster feedback)
           only-new-issues: ${{ github.event_name == 'pull_request' }}
           # On PRs: don't pollute cache

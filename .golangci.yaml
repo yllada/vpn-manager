@@ -10,7 +10,10 @@
 version: "2"
 
 run:
-  timeout: 5m
+  # 15m timeout: gotk4 CGO bindings require compilation before analysis.
+  # On cold cache, go/packages.Load() can take 5-8 minutes for gotk4.
+  # This matches the timeout in .github/workflows/ci.yml
+  timeout: 15m
   tests: true
 
 output:
