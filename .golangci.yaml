@@ -15,6 +15,9 @@ run:
   # This matches the timeout in .github/workflows/ci.yml
   timeout: 15m
   tests: true
+  # Limit parallel linters to prevent OOM on GitHub Actions runners (7GB RAM).
+  # Default uses all CPUs which can exhaust memory with CGO-heavy analysis.
+  concurrency: 4
 
 output:
   formats:

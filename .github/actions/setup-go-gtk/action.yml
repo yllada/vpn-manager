@@ -52,13 +52,30 @@ runs:
           libayatana-appindicator3-dev
           libgirepository1.0-dev
           pkg-config
-        version: v2
+          clang
+          lld
+        version: v3
+
+    # -------------------------------------------------------------------------
+    # CGO Compiler Optimization
+    # -------------------------------------------------------------------------
+    # Use Clang + LLD instead of GCC + GNU ld for faster CGO compilation.
+    # LLD is 2-5x faster than GNU ld due to multi-threaded linking.
+    # This significantly reduces gotk4 compilation time.
+    # -------------------------------------------------------------------------
+    - name: Configure fast CGO toolchain
+      if: inputs.install-gtk == 'true'
+      shell: bash
+      run: |
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CXX=clang++" >> $GITHUB_ENV
+        echo "CGO_LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
 
     # -------------------------------------------------------------------------
     # Go Build Cache (CGO compilation artifacts)
     # -------------------------------------------------------------------------
     # actions/setup-go caches modules but NOT build artifacts.
-    # For CGO projects like gotk4, the gcc invocations are the bottleneck.
+    # For CGO projects like gotk4, compilation is the bottleneck.
     # This cache stores compiled .a files, reducing rebuild time by 30-50%.
     #
     # Key strategy:
