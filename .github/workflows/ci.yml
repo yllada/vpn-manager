@@ -72,7 +72,8 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: binary
-          args: --timeout=5m
+          # 10m timeout: gotk4 CGO bindings take ~5min to load on cold cache
+          args: --timeout=10m
           # On PRs: only report new issues (faster feedback)
           only-new-issues: ${{ github.event_name == 'pull_request' }}
           # On PRs: don't pollute cache
