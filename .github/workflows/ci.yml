@@ -86,7 +86,14 @@ jobs:
         run: go mod verify
 
       - name: Run tests with coverage
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "🔍 Running tests WITH race detector (PR)"
+            go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          else
+            echo "⚡ Running tests WITHOUT race detector (push)"
+            go test -v -coverprofile=coverage.out -covermode=atomic ./...
+          fi
         env:
           CGO_ENABLED: 1
 
