@@ -36,6 +36,7 @@ runs:
   using: composite
   steps:
     - name: Set up Go
+      id: setup-go
       uses: actions/setup-go@v6
       with:
         go-version-file: ${{ inputs.go-version-file }}
@@ -61,15 +62,15 @@ runs:
     # This cache stores compiled .a files, reducing rebuild time by 30-50%.
     #
     # Key strategy:
-    #   - Primary: OS + go.sum hash + commit SHA (exact match)
-    #   - Fallback: OS + go.sum hash (same deps, different code)
-    #   - Fallback: OS only (partial cache, still helps)
+    #   - Primary: OS + Go version + go.sum hash + commit SHA (exact match)
+    #   - Fallback: OS + Go version + go.sum hash (same deps, different code)
+    #   - Fallback: OS + Go version (partial cache, still helps)
     # -------------------------------------------------------------------------
     - name: Cache Go build artifacts
       uses: actions/cache@v4
       with:
         path: ~/.cache/go-build
-        key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+        key: go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
         restore-keys: |
-          go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}-
-          go-build-${{ runner.os }}-
+          go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
+          go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-

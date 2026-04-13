@@ -132,7 +132,14 @@ jobs:
         run: |
           echo "📦 GUI Application:"
           file vpn-manager
-          ./vpn-manager --version || echo "Version flag may not be implemented"
+          
+          # Check if binary runs (will exit 0 if --version works, non-zero if crash)
+          if ./vpn-manager --version 2>&1; then
+            echo "✅ Binary executes successfully"
+          else
+            EXIT_CODE=$?
+            echo "::warning::Binary exited with code $EXIT_CODE (version flag may not be implemented)"
+          fi
           
           echo ""
           echo "📦 Daemon:"

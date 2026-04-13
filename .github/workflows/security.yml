@@ -122,12 +122,20 @@ jobs:
       - name: Check licenses
         run: |
           echo "Checking dependency licenses..."
-          go-licenses report ./... 2>/dev/null || true
+          
+          # Run go-licenses and capture output
+          if ! go-licenses report ./... > licenses.txt 2>&1; then
+            echo "::warning::go-licenses encountered errors (this may be expected for some packages)"
+            echo "Partial output:"
+            cat licenses.txt || true
+          else
+            cat licenses.txt
+          fi
           
           # Check for problematic licenses
           echo ""
           echo "Scanning for potentially incompatible licenses..."
-          PROBLEMATIC=$(go-licenses report ./... 2>/dev/null | grep -iE "(GPL|AGPL|SSPL)" || true)
+          PROBLEMATIC=$(grep -iE "(GPL|AGPL|SSPL)" licenses.txt 2>/dev/null || true)
           
           if [ -n "$PROBLEMATIC" ]; then
             echo "::warning::Found dependencies with GPL-family licenses:"

@@ -43,7 +43,7 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          echo "📋 PR Title: $PR_TITLE"
+          printf '📋 PR Title: %s\n' "$PR_TITLE"
           
           # Conventional Commits regex
           PATTERN="^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\(.+\))?: .+"
@@ -67,7 +67,8 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          if [[ "$PR_TITLE" == *"!"* ]] || [[ "$PR_BODY" == *"BREAKING CHANGE"* ]]; then
+          # Use grep with -F (fixed strings) to avoid shell expansion
+          if [[ "$PR_TITLE" == *"!"* ]] || grep -qF "BREAKING CHANGE" <<< "$PR_BODY" 2>/dev/null || [[ "$PR_BODY" == *"BREAKING CHANGE"* ]]; then
             echo "⚠️ This PR contains breaking changes"
             echo "::notice::Breaking change detected - ensure CHANGELOG.md is updated"
           fi
@@ -98,6 +99,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
 
       - name: Check for large files
         run: |

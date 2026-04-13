@@ -107,11 +107,11 @@ jobs:
         run: |
           VERSION=${{ steps.version.outputs.version }}
           
-          if [[ -f "changelog" ]]; then
-            if grep -q "$VERSION" changelog; then
-              echo "✅ Version $VERSION found in changelog"
+          if [[ -f "CHANGELOG.md" ]]; then
+            if grep -q "$VERSION" CHANGELOG.md; then
+              echo "✅ Version $VERSION found in CHANGELOG.md"
             else
-              echo "::warning::Version $VERSION not found in changelog"
+              echo "::warning::Version $VERSION not found in CHANGELOG.md"
               echo "Consider documenting changes before release"
             fi
           else
@@ -123,10 +123,10 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           
           # Check if main.go has version variable
-          if grep -qE "appVersion\s*=\s*\"$VERSION\"" main.go 2>/dev/null; then
-            echo "✅ Version matches main.go"
+          if grep -qE "appVersion\s*=\s*\"$VERSION\"" cmd/vpn-manager/main.go 2>/dev/null; then
+            echo "✅ Version matches cmd/vpn-manager/main.go"
           else
-            echo "::notice::Version in main.go may differ (will be set via ldflags)"
+            echo "::notice::Version in cmd/vpn-manager/main.go may differ (will be set via ldflags)"
           fi
 
   # =============================================================================
@@ -317,8 +317,14 @@ jobs:
           ./scripts/build-deb.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}" "./vpn-managerd"
           
           # Move DEB to dist directory for consistency
-          mv "${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" dist/ 2>/dev/null || \
-            mv *.deb dist/ 2>/dev/null || true
+          if [[ -f "${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" ]]; then
+            mv "${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb" dist/
+          elif ls *.deb 1> /dev/null 2>&1; then
+            mv *.deb dist/
+          else
+            echo "::error::No DEB package created"
+            exit 1
+          fi
           
           echo "📦 DEB package:"
           ls -la dist/*.deb
@@ -330,8 +336,14 @@ jobs:
           ./scripts/build-rpm.sh "${{ env.VERSION }}" "./${{ env.APP_NAME }}" "./vpn-managerd"
           
           # Move RPM to dist directory for consistency
-          mv "${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm" dist/ 2>/dev/null || \
-            mv *.rpm dist/ 2>/dev/null || true
+          if [[ -f "${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm" ]]; then
+            mv "${{ env.APP_NAME }}-${{ env.VERSION }}-1.x86_64.rpm" dist/
+          elif ls *.rpm 1> /dev/null 2>&1; then
+            mv *.rpm dist/
+          else
+            echo "::error::No RPM package created"
+            exit 1
+          fi
           
           echo "📦 RPM package:"
           ls -la dist/*.rpm
@@ -412,8 +424,11 @@ jobs:
       - name: Generate categorized changelog
         id: changelog
         run: |
-          # Find previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # Find previous tag (excluding the current tag if it exists)
+          CURRENT_TAG="v${{ env.VERSION }}"
+          
+          # Get all tags, exclude current if it exists, get the most recent
+          PREV_TAG=$(git tag -l --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
           
           # Generate changelog header
           {
