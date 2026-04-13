@@ -1,18 +1,19 @@
 # =============================================================================
 # VPN Manager - Continuous Integration
 # =============================================================================
-# Fast, parallelized CI pipeline for Go + GTK4 projects.
+# Fast, single-job CI pipeline for Go + GTK4 projects.
 #
-# Jobs (all run in PARALLEL for speed):
-#   - lint:  Code quality via golangci-lint
-#   - test:  Unit tests with race detection and coverage
-#   - build: Compilation verification
+# Architecture Decision (based on GitHub Actions best practices):
+#   - Single job with sequential steps: lint → test → build
+#   - Why? One setup of Go+GTK instead of 3 parallel setups
+#   - Result: Faster total time, less resource usage
 #
 # Optimizations:
 #   - APT package caching (~60s → ~5s)
 #   - Go module caching (via setup-go)
-#   - Parallel job execution (12min → 5min wall-clock)
-#   - Go version from go.mod (single source of truth)
+#   - golangci-lint binary install (not goinstall)
+#   - Race detector only on PRs (10-20x slower)
+#   - only-new-issues on PRs (faster feedback)
 #
 # Documentation: https://docs.github.com/en/actions
 # =============================================================================
@@ -48,12 +49,12 @@ permissions:
 
 jobs:
   # =============================================================================
-  # Lint - Code quality checks
+  # CI - Single job: lint → test → build
   # =============================================================================
-  lint:
-    name: Lint
+  ci:
+    name: Lint → Test → Build
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -61,31 +62,27 @@ jobs:
       - name: Setup Go and GTK
         uses: ./.github/actions/setup-go-gtk
 
+      # -------------------------------------------------------------------------
+      # Lint
+      # -------------------------------------------------------------------------
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: binary
-          args: --timeout=10m
+          args: --timeout=5m
+          # On PRs: only report new issues (faster feedback)
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
+          # On PRs: don't pollute cache
+          skip-save-cache: ${{ github.event_name == 'pull_request' }}
 
-  # =============================================================================
-  # Test - Unit tests with coverage and race detection
-  # =============================================================================
-  test:
-    name: Test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup Go and GTK
-        uses: ./.github/actions/setup-go-gtk
-
+      # -------------------------------------------------------------------------
+      # Test
+      # -------------------------------------------------------------------------
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run tests with coverage
+      - name: Run tests
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "🔍 Running tests WITH race detector (PR)"
@@ -97,7 +94,13 @@ jobs:
         env:
           CGO_ENABLED: 1
 
+      - name: Display coverage summary
+        run: |
+          echo "📊 Coverage Summary:"
+          go tool cover -func=coverage.out | tail -1
+
       - name: Upload coverage to Codecov
+        if: github.event_name == 'push'
         uses: codecov/codecov-action@v6
         with:
           files: ./coverage.out
@@ -105,26 +108,9 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-      - name: Display coverage summary
-        run: |
-          echo "📊 Coverage Summary:"
-          go tool cover -func=coverage.out | tail -1
-
-  # =============================================================================
-  # Build - Compilation verification (runs in parallel, not sequential)
-  # =============================================================================
-  build:
-    name: Build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    # NOTE: No 'needs' - runs in parallel with lint/test for faster feedback
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup Go and GTK
-        uses: ./.github/actions/setup-go-gtk
-
+      # -------------------------------------------------------------------------
+      # Build
+      # -------------------------------------------------------------------------
       - name: Build GUI application
         run: |
           CGO_ENABLED=1 go build -v -trimpath \

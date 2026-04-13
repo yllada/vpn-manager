@@ -6,7 +6,12 @@
 #   - govulncheck: Go vulnerability database scanning
 #   - Licenses:    Dependency license compliance
 #
-# Schedule: Weekly (Monday 6:00 UTC) + on push/PR to main
+# Trigger Strategy (optimized):
+#   - PRs to main: Full security scan before merge
+#   - Schedule: Weekly (Monday 6:00 UTC) for ongoing monitoring
+#   - Manual: workflow_dispatch for on-demand scans
+#   - NOT on push: Security scans are heavy (30+ min total). CI already
+#     validates code quality. Security gates belong at PR time.
 #
 # Optimizations:
 #   - APT caching via setup-go-gtk composite action (~60s → ~5s)
@@ -19,11 +24,6 @@
 name: Security
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
   pull_request:
     branches: [main]
     paths-ignore:
