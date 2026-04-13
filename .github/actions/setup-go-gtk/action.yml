@@ -45,4 +45,4 @@ runs:
           libayatana-appindicator3-dev
           libgirepository1.0-dev
           pkg-config
-        version: v1
+        version: v2

@@ -129,10 +129,7 @@ jobs:
 
       - name: Check go.mod tidiness
         run: |
-          # Download dependencies
-          go mod download 2>/dev/null || true
-          
-          # Check if go.mod needs tidying
+          # Check if go.mod needs tidying (without downloading deps)
           cp go.mod go.mod.backup
           cp go.sum go.sum.backup 2>/dev/null || true
           
