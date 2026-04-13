@@ -147,13 +147,5 @@ func (d *TailscaleDiagnosticsDialog) updateResult(result DiagnosticResult) {
 	d.view.SetRunning(false)
 }
 
-// runPing pings a specific Tailscale peer.
-// Satisfies REQ-DIAG-004 (Ping probe).
-// Task 2.4 implementation (stub - needs peer selector from 2.5).
-func (d *TailscaleDiagnosticsDialog) runPing(peer string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	_, err := d.provider.Ping(ctx, peer, 3)
-	return err
-}
+// TODO: Task 2.4/2.5 - Add runPing(peer string) when peer selector is implemented
+// See REQ-DIAG-004 (Ping probe) in the spec.

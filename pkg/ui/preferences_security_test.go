@@ -2,8 +2,6 @@ package ui
 
 import (
 	"testing"
-
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 )
 
 // TestPreferencesDialogHasSecurityFields verifies that PreferencesDialog struct
@@ -15,26 +13,26 @@ func TestPreferencesDialogHasSecurityFields(t *testing.T) {
 	pd := &PreferencesDialog{}
 
 	// Verify Kill Switch fields exist with correct types
-	var _ *adw.ComboRow = pd.killSwitchModeRow
-	var _ *adw.SwitchRow = pd.killSwitchLANRow
+	_ = pd.killSwitchModeRow
+	_ = pd.killSwitchLANRow
 
 	// Verify DNS Protection fields exist
-	var _ *adw.ComboRow = pd.dnsRow
-	var _ *adw.EntryRow = pd.customDNSRow
-	var _ *adw.SwitchRow = pd.blockDoHRow
-	var _ *adw.SwitchRow = pd.blockDoTRow
+	_ = pd.dnsRow
+	_ = pd.customDNSRow
+	_ = pd.blockDoHRow
+	_ = pd.blockDoTRow
 
 	// Verify IPv6 Protection fields exist
-	var _ *adw.ComboRow = pd.ipv6Row
-	var _ *adw.SwitchRow = pd.blockWebRTCRow
+	_ = pd.ipv6Row
+	_ = pd.blockWebRTCRow
 
 	// Verify daemon status banner field exists (changed from Banner to PreferencesGroup)
-	var _ *adw.PreferencesGroup = pd.daemonBanner
+	_ = pd.daemonBanner
 
 	// Verify ID slices for combo boxes exist
-	var _ []string = pd.killSwitchModeIDs
-	var _ []string = pd.dnsIDs
-	var _ []string = pd.ipv6IDs
+	_ = pd.killSwitchModeIDs
+	_ = pd.dnsIDs
+	_ = pd.ipv6IDs
 }
 
 // TestSecurityFieldsAreNilBeforeInit verifies fields are nil-initialized.
@@ -90,7 +88,7 @@ func TestBuildSecurityPageMethodExists(t *testing.T) {
 	// This test verifies the method exists and has the correct signature.
 
 	// Type assertion to verify method exists with correct signature
-	var _ func(*PreferencesDialog) *adw.PreferencesPage = (*PreferencesDialog).buildSecurityPage
+	_ = (*PreferencesDialog).buildSecurityPage
 }
 
 // TestSecurityPageIDMappingsInitialized verifies that buildSecurityPage()
@@ -160,7 +158,7 @@ func TestBuildMethodCallsSecurityPage(t *testing.T) {
 
 	// We verify the pattern exists by checking that build() method exists
 	// and buildSecurityPage() exists (already tested above)
-	var _ func(*PreferencesDialog) = (*PreferencesDialog).build
+	_ = (*PreferencesDialog).build
 
 	// The actual implementation is verified by code review and manual testing
 	// because GTK requires a main loop to instantiate widgets

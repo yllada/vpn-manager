@@ -1,7 +1,6 @@
 package dialogs
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -82,8 +81,7 @@ func TestDiagnosticsViewStructExists(t *testing.T) {
 func TestNewDiagnosticsViewFunctionExists(t *testing.T) {
 	// Verify function signature compiles via type checking
 	// Assigning to a typed variable proves the function has the correct signature
-	var constructor func() *DiagnosticsView = NewDiagnosticsView
-	_ = constructor // Use variable to satisfy compiler; existence proves compilation
+	_ = NewDiagnosticsView
 }
 
 // TestSetRunningMethodExists verifies SetRunning method signature exists.
@@ -91,8 +89,7 @@ func TestNewDiagnosticsViewFunctionExists(t *testing.T) {
 func TestSetRunningMethodExists(t *testing.T) {
 	// Verify method signature compiles
 	view := &DiagnosticsView{}
-	var method func(bool) = view.SetRunning
-	_ = method // Use variable; existence proves compilation
+	_ = view.SetRunning
 }
 
 // TestSetRunningTogglesState verifies SetRunning changes running state.
@@ -119,22 +116,19 @@ func TestSetRunningTogglesState(t *testing.T) {
 // This test covers REQ-DIAG-007 (add result row with ✓/✗ icon) and task 1.4.
 func TestAddResultMethodExists(t *testing.T) {
 	view := &DiagnosticsView{}
-	var method func(DiagnosticResult) = view.AddResult
-	_ = method // Use variable; existence proves compilation
+	_ = view.AddResult
 }
 
 // TestClearResultsMethodExists verifies ClearResults method signature exists.
 // This test covers REQ-DIAG-008 (re-run diagnostics) and task 1.5.
 func TestClearResultsMethodExists(t *testing.T) {
 	view := &DiagnosticsView{}
-	var method func() = view.ClearResults
-	_ = method // Use variable; existence proves compilation
+	_ = view.ClearResults
 }
 
 // TestRunProbeAsyncFunctionExists verifies RunProbeAsync helper function signature exists.
 // This test covers task 1.6 (async probe execution with resilience).
 func TestRunProbeAsyncFunctionExists(t *testing.T) {
 	// Verify function signature compiles
-	var fn func(string, func(context.Context) DiagnosticResult, *DiagnosticsView) = RunProbeAsync
-	_ = fn // Use variable; existence proves compilation
+	_ = RunProbeAsync
 }

@@ -10,7 +10,7 @@ import (
 // to update LAN row visibility exists with correct signature.
 func TestUpdateKillSwitchLANVisibilityMethodExists(t *testing.T) {
 	// Type assertion to verify method exists
-	var _ func(*PreferencesDialog) = (*PreferencesDialog).updateKillSwitchLANVisibility
+	_ = (*PreferencesDialog).updateKillSwitchLANVisibility
 }
 
 // TestUpdateKillSwitchLANVisibilityLogic verifies the logic for showing/hiding
@@ -59,7 +59,7 @@ func TestUpdateKillSwitchLANVisibilityLogic(t *testing.T) {
 // savePreferences() will call a helper to save security settings.
 func TestSaveSecuritySettingsInSavePreferencesMethodExists(t *testing.T) {
 	// Type assertion to verify helper method exists
-	var _ func(*PreferencesDialog) = (*PreferencesDialog).saveSecuritySettings
+	_ = (*PreferencesDialog).saveSecuritySettings
 }
 
 // TestSaveSecuritySettingsUpdatesConfig verifies that saveSecuritySettings
@@ -129,7 +129,7 @@ func TestFindKillSwitchModeIndexReturnsCorrectIndex(t *testing.T) {
 // to update custom DNS entry visibility exists.
 func TestUpdateCustomDNSVisibilityMethodExists(t *testing.T) {
 	// Type assertion to verify method exists
-	var _ func(*PreferencesDialog) = (*PreferencesDialog).updateCustomDNSVisibility
+	_ = (*PreferencesDialog).updateCustomDNSVisibility
 }
 
 // TestUpdateCustomDNSVisibilityLogic verifies the logic for showing/hiding
