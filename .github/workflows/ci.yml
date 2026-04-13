@@ -42,7 +42,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GOLANGCI_LINT_VERSION: 'v2.1'
+  # Must be compatible with Go version in go.mod (currently 1.26.2)
+  # Check releases: https://github.com/golangci/golangci-lint/releases
+  GOLANGCI_LINT_VERSION: 'v2.11'
 
 permissions:
   contents: read
