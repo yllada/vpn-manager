@@ -3,14 +3,24 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
+// skipIfNoTailscale skips the test if tailscale binary is not available.
+func skipIfNoTailscale(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("tailscale"); err != nil {
+		t.Skip("tailscale binary not found, skipping integration test")
+	}
+}
+
 // TestTaildropIntegrationAutoReceiveEnabled verifies that the daemon starts
 // the Taildrop receive loop when TaildropAutoReceive is enabled in config.
 func TestTaildropIntegrationAutoReceiveEnabled(t *testing.T) {
+	skipIfNoTailscale(t)
 	// This test verifies REQ-TDR-003: Config toggle controls loop startup
 	// When TaildropAutoReceive is true, the daemon should start the receive loop.
 
@@ -83,6 +93,7 @@ security:
 // TestTaildropIntegrationAutoReceiveDisabled verifies that the daemon does NOT
 // start the Taildrop receive loop when TaildropAutoReceive is disabled.
 func TestTaildropIntegrationAutoReceiveDisabled(t *testing.T) {
+	skipIfNoTailscale(t)
 	// This test verifies REQ-TDR-003: Toggle disabled scenario
 	// When TaildropAutoReceive is false, the daemon should NOT start the receive loop.
 
@@ -145,6 +156,7 @@ security:
 // TestTaildropIntegrationDefaultDirectory verifies that when TaildropDir is
 // empty in config, it defaults to ~/Downloads/Taildrop.
 func TestTaildropIntegrationDefaultDirectory(t *testing.T) {
+	skipIfNoTailscale(t)
 	// This test verifies that the default directory logic works correctly.
 
 	// Setup: Create a temporary config file with empty TaildropDir
