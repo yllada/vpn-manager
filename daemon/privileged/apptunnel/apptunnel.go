@@ -158,37 +158,37 @@ func (m *Manager) buildEnableScript() string {
 		cgroupPath := "/sys/fs/cgroup/net_cls/vpn_tunnel"
 		fmt.Fprintf(&script, "mkdir -p %s\n", cgroupPath)
 		classIDPath := cgroupPath + "/net_cls.classid"
-		script.WriteString(fmt.Sprintf("echo %d > %s\n", m.classID, classIDPath))
+		fmt.Fprintf(&script, "echo %d > %s\n", m.classID, classIDPath)
 		m.cgroupPath = cgroupPath
 	}
 
 	// Iptables setup
 	if IsCgroupV2() {
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"iptables -t mangle -A OUTPUT -m cgroup --path %s -j MARK --set-mark 0x%x\n",
-			m.cgroupPath, m.fwmark))
+			m.cgroupPath, m.fwmark)
 	} else {
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"iptables -t mangle -A OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x\n",
-			m.classID, m.fwmark))
+			m.classID, m.fwmark)
 	}
 
 	// Routing setup - mode-aware logic
-	script.WriteString(fmt.Sprintf(
+	fmt.Fprintf(&script,
 		"ip route add default via %s dev %s table %d 2>/dev/null || ip route replace default via %s dev %s table %d\n",
 		m.vpnGateway, m.vpnInterface, m.routingTable,
-		m.vpnGateway, m.vpnInterface, m.routingTable))
+		m.vpnGateway, m.vpnInterface, m.routingTable)
 
 	if m.mode == "exclude" {
 		// Exclude mode: marked packets BYPASS VPN (use main table for normal routing)
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"ip rule add fwmark 0x%x lookup main priority 100 2>/dev/null || true\n",
-			m.fwmark))
+			m.fwmark)
 	} else {
 		// Include mode: marked packets USE VPN (route through custom table)
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"ip rule add fwmark 0x%x table %d 2>/dev/null || true\n",
-			m.fwmark, m.routingTable))
+			m.fwmark, m.routingTable)
 	}
 
 	// DNS Split Tunneling rules
@@ -196,23 +196,23 @@ func (m *Manager) buildEnableScript() string {
 		if m.mode == "exclude" {
 			// Exclude mode + SplitDNS: marked apps should use system DNS
 			if m.systemDNS != "" {
-				script.WriteString(fmt.Sprintf(
+				fmt.Fprintf(&script,
 					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53\n",
-					m.fwmark, m.systemDNS))
-				script.WriteString(fmt.Sprintf(
+					m.fwmark, m.systemDNS)
+				fmt.Fprintf(&script,
 					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53\n",
-					m.fwmark, m.systemDNS))
+					m.fwmark, m.systemDNS)
 			}
 		} else {
 			// Include mode + SplitDNS: marked apps should use VPN DNS
 			if len(m.vpnDNS) > 0 {
 				vpnDNSServer := m.vpnDNS[0]
-				script.WriteString(fmt.Sprintf(
+				fmt.Fprintf(&script,
 					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53\n",
-					m.fwmark, vpnDNSServer))
-				script.WriteString(fmt.Sprintf(
+					m.fwmark, vpnDNSServer)
+				fmt.Fprintf(&script,
 					"iptables -t nat -A OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53\n",
-					m.fwmark, vpnDNSServer))
+					m.fwmark, vpnDNSServer)
 			}
 		}
 	}
@@ -226,51 +226,51 @@ func (m *Manager) buildDisableScript() string {
 	script.WriteString("#!/bin/bash\n")
 
 	// Cleanup routing - remove both possible rules
-	script.WriteString(fmt.Sprintf(
+	fmt.Fprintf(&script,
 		"ip rule del fwmark 0x%x table %d 2>/dev/null || true\n",
-		m.fwmark, m.routingTable))
-	script.WriteString(fmt.Sprintf(
+		m.fwmark, m.routingTable)
+	fmt.Fprintf(&script,
 		"ip rule del fwmark 0x%x lookup main priority 100 2>/dev/null || true\n",
-		m.fwmark))
-	script.WriteString(fmt.Sprintf(
+		m.fwmark)
+	fmt.Fprintf(&script,
 		"ip route flush table %d 2>/dev/null || true\n",
-		m.routingTable))
+		m.routingTable)
 
 	// Cleanup iptables
 	if IsCgroupV2() {
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"iptables -t mangle -D OUTPUT -m cgroup --path %s -j MARK --set-mark 0x%x 2>/dev/null || true\n",
-			m.cgroupPath, m.fwmark))
+			m.cgroupPath, m.fwmark)
 	} else {
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"iptables -t mangle -D OUTPUT -m cgroup --cgroup 0x%x -j MARK --set-mark 0x%x 2>/dev/null || true\n",
-			m.classID, m.fwmark))
+			m.classID, m.fwmark)
 	}
 
 	// Cleanup DNS NAT rules
 	if m.systemDNS != "" {
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			m.fwmark, m.systemDNS))
-		script.WriteString(fmt.Sprintf(
+			m.fwmark, m.systemDNS)
+		fmt.Fprintf(&script,
 			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			m.fwmark, m.systemDNS))
+			m.fwmark, m.systemDNS)
 	}
 	for _, vpnDNS := range m.vpnDNS {
-		script.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&script,
 			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p udp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			m.fwmark, vpnDNS))
-		script.WriteString(fmt.Sprintf(
+			m.fwmark, vpnDNS)
+		fmt.Fprintf(&script,
 			"iptables -t nat -D OUTPUT -m mark --mark 0x%x -p tcp --dport 53 -j DNAT --to-destination %s:53 2>/dev/null || true\n",
-			m.fwmark, vpnDNS))
+			m.fwmark, vpnDNS)
 	}
 
 	// Cleanup cgroup
 	procsPath := m.cgroupPath + "/cgroup.procs"
-	script.WriteString(fmt.Sprintf(
+	fmt.Fprintf(&script,
 		"for pid in $(cat %s 2>/dev/null); do echo $pid > /sys/fs/cgroup/cgroup.procs 2>/dev/null || true; done\n",
-		procsPath))
-	script.WriteString(fmt.Sprintf("rmdir %s 2>/dev/null || true\n", m.cgroupPath))
+		procsPath)
+	fmt.Fprintf(&script, "rmdir %s 2>/dev/null || true\n", m.cgroupPath)
 
 	return script.String()
 }
