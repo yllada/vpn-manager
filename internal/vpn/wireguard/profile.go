@@ -368,30 +368,30 @@ func (p *Profile) ExportConfig() string {
 	var sb strings.Builder
 
 	sb.WriteString("[Interface]\n")
-	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", p.PrivateKey))
-	sb.WriteString(fmt.Sprintf("Address = %s\n", p.Address))
+	fmt.Fprintf(&sb, "PrivateKey = %s\n", p.PrivateKey)
+	fmt.Fprintf(&sb, "Address = %s\n", p.Address)
 
 	if len(p.DNS) > 0 {
-		sb.WriteString(fmt.Sprintf("DNS = %s\n", strings.Join(p.DNS, ", ")))
+		fmt.Fprintf(&sb, "DNS = %s\n", strings.Join(p.DNS, ", "))
 	}
 
 	if p.MTU > 0 {
-		sb.WriteString(fmt.Sprintf("MTU = %d\n", p.MTU))
+		fmt.Fprintf(&sb, "MTU = %d\n", p.MTU)
 	}
 
 	sb.WriteString("\n[Peer]\n")
-	sb.WriteString(fmt.Sprintf("PublicKey = %s\n", p.PublicKey))
+	fmt.Fprintf(&sb, "PublicKey = %s\n", p.PublicKey)
 
 	if p.PresharedKey != "" {
-		sb.WriteString(fmt.Sprintf("PresharedKey = %s\n", p.PresharedKey))
+		fmt.Fprintf(&sb, "PresharedKey = %s\n", p.PresharedKey)
 	}
 
 	if p.Endpoint != "" {
-		sb.WriteString(fmt.Sprintf("Endpoint = %s\n", p.Endpoint))
+		fmt.Fprintf(&sb, "Endpoint = %s\n", p.Endpoint)
 	}
 
 	if len(p.AllowedIPs) > 0 {
-		sb.WriteString(fmt.Sprintf("AllowedIPs = %s\n", strings.Join(p.AllowedIPs, ", ")))
+		fmt.Fprintf(&sb, "AllowedIPs = %s\n", strings.Join(p.AllowedIPs, ", "))
 	}
 
 	return sb.String()
