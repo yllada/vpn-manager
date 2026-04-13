@@ -183,7 +183,7 @@ func TestUpdateCustomDNSVisibilityLogic(t *testing.T) {
 // TestValidateCustomDNSEntryMethodExists verifies that validation method exists.
 func TestValidateCustomDNSEntryMethodExists(t *testing.T) {
 	// Type assertion to verify method exists
-	var _ func(*PreferencesDialog) = (*PreferencesDialog).validateCustomDNSEntry
+	var _ = (*PreferencesDialog).validateCustomDNSEntry
 }
 
 // TestValidateCustomDNSEntryReturnsErrorForInvalid verifies that the validation

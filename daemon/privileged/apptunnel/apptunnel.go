@@ -151,12 +151,12 @@ func (m *Manager) buildEnableScript() string {
 
 	// Cgroup setup
 	if IsCgroupV2() {
-		script.WriteString(fmt.Sprintf("mkdir -p %s\n", m.cgroupPath))
+		fmt.Fprintf(&script, "mkdir -p %s\n", m.cgroupPath)
 		controllersPath := filepath.Dir(m.cgroupPath) + "/cgroup.subtree_control"
-		script.WriteString(fmt.Sprintf("echo '+cpu +memory' > %s 2>/dev/null || true\n", controllersPath))
+		fmt.Fprintf(&script, "echo '+cpu +memory' > %s 2>/dev/null || true\n", controllersPath)
 	} else {
 		cgroupPath := "/sys/fs/cgroup/net_cls/vpn_tunnel"
-		script.WriteString(fmt.Sprintf("mkdir -p %s\n", cgroupPath))
+		fmt.Fprintf(&script, "mkdir -p %s\n", cgroupPath)
 		classIDPath := cgroupPath + "/net_cls.classid"
 		script.WriteString(fmt.Sprintf("echo %d > %s\n", m.classID, classIDPath))
 		m.cgroupPath = cgroupPath

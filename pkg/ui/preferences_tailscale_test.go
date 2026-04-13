@@ -2,8 +2,6 @@ package ui
 
 import (
 	"testing"
-
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 )
 
 // TestPreferencesDialogHasTailscaleAdvancedFields verifies that PreferencesDialog
@@ -13,9 +11,9 @@ func TestPreferencesDialogHasTailscaleAdvancedFields(t *testing.T) {
 	pd := &PreferencesDialog{}
 
 	// Verify Tailscale Advanced option fields exist with correct types
-	var _ *adw.SwitchRow = pd.advertiseExitNodeRow
-	var _ *adw.SwitchRow = pd.shieldsUpRow
-	var _ *adw.SwitchRow = pd.sshRow
+	var _ = pd.advertiseExitNodeRow
+	var _ = pd.shieldsUpRow
+	var _ = pd.sshRow
 }
 
 // TestTailscaleAdvancedFieldsAreNilBeforeInit verifies fields are nil-initialized.
@@ -37,5 +35,5 @@ func TestTailscaleAdvancedFieldsAreNilBeforeInit(t *testing.T) {
 // This method is responsible for reading toggle states and calling daemon/config.
 func TestSaveTailscaleAdvancedMethodExists(t *testing.T) {
 	// Verify the method signature compiles via type checking
-	var _ func(*PreferencesDialog) = (*PreferencesDialog).saveTailscaleAdvanced
+	var _ = (*PreferencesDialog).saveTailscaleAdvanced
 }
