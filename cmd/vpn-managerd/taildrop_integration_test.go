@@ -48,8 +48,14 @@ security:
 
 	// Set HOME to temp directory so config.Load() finds our test config
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", oldHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
 	// This test will verify that:
 	// 1. Config is loaded
@@ -114,8 +120,14 @@ security:
 
 	// Set HOME to temp directory
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", oldHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -169,8 +181,14 @@ security:
 
 	// Set HOME to temp directory
 	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", oldHome); err != nil {
+			t.Errorf("Failed to restore HOME: %v", err)
+		}
+	}()
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

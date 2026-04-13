@@ -479,7 +479,7 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 			for scanner.Scan() {
 				line := scanner.Text()
 				matches := receivedFilePattern.FindStringSubmatch(line)
-				if matches != nil && len(matches) == 3 {
+				if len(matches) == 3 {
 					rf := ReceivedFile{
 						Filename: matches[1],
 						Sender:   matches[2],
