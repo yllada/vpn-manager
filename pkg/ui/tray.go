@@ -231,6 +231,11 @@ func (t *TrayIndicator) onReady() {
 			}
 		}
 	})
+
+	// Check initial VPN state - sync tray icon with actual connection status
+	// This handles the case where a VPN (e.g., Tailscale) was connected before
+	// the app started, or when reopening the app after closing with VPN active.
+	t.syncInitialVPNState()
 }
 
 // onExit is called when the systray is about to exit.
@@ -508,6 +513,51 @@ func (t *TrayIndicator) initNetworkTrustMenu() {
 	}
 
 	t.updateNetworkTrustMenu(netInfo.SSID, netInfo.BSSID, netInfo.Connected)
+}
+
+// syncInitialVPNState checks all VPN providers and updates tray icon if any is connected.
+// This handles cases where:
+// - Tailscale was connected before the app started (it's a system service)
+// - App was closed while VPN was connected and reopened
+// - WireGuard interface was active from previous session
+func (t *TrayIndicator) syncInitialVPNState() {
+	ctx := context.Background()
+
+	// Check Tailscale first (most common case - it's a persistent service)
+	if provider, ok := t.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
+		status, err := provider.Status(ctx)
+		if err == nil && status.Connected {
+			logger.LogInfo("Tray: Detected active Tailscale connection on startup")
+			t.SetConnected("Tailscale")
+			return
+		}
+	}
+
+	// Check WireGuard
+	if provider, ok := t.app.vpnManager.GetProvider(vpntypes.ProviderWireGuard); ok {
+		status, err := provider.Status(ctx)
+		if err == nil && status.Connected {
+			profileName := "WireGuard"
+			if status.CurrentProfile != "" {
+				profileName = status.CurrentProfile
+			}
+			logger.LogInfo("Tray: Detected active WireGuard connection on startup")
+			t.SetConnected(profileName)
+			return
+		}
+	}
+
+	// Check OpenVPN connections (managed profiles)
+	connections := t.app.vpnManager.ListConnections()
+	for _, conn := range connections {
+		if conn.GetStatus() == vpn.StatusConnected {
+			logger.LogInfo("Tray: Detected active OpenVPN connection on startup: %s", conn.Profile.Name)
+			t.SetConnected(conn.Profile.Name)
+			return
+		}
+	}
+
+	// No active VPN found - icon stays disconnected (already set in onReady)
 }
 
 // updateNetworkTrustMenu updates the trust menu items based on network state.
