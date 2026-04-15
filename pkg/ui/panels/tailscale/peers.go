@@ -18,6 +18,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
+	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 )
 
 // createPeersSection creates the peers list section with Exit Node selector and Devices list.
@@ -243,7 +244,7 @@ func (tp *TailscalePanel) updateDevicesSection(devices []*tailscalevpn.PeerStatu
 	for _, row := range tp.deviceRows {
 		tp.devicesGroup.Remove(row)
 	}
-	tp.deviceRows = make(map[string]*adw.ExpanderRow)
+	tp.deviceRows = make(map[string]*adw.ActionRow)
 
 	// Handle empty state
 	if len(devices) == 0 {
@@ -288,17 +289,15 @@ func (tp *TailscalePanel) clearAllPeers() {
 	for _, row := range tp.deviceRows {
 		tp.devicesGroup.Remove(row)
 	}
-	tp.deviceRows = make(map[string]*adw.ExpanderRow)
+	tp.deviceRows = make(map[string]*adw.ActionRow)
 	tp.devicesEmptyRow.SetVisible(true)
 }
 
-// createDeviceRow creates an AdwExpanderRow for a regular device (non-exit-node).
-// Simpler than exit node row - no action buttons needed.
-func (tp *TailscalePanel) createDeviceRow(peer *tailscalevpn.PeerStatus) *adw.ExpanderRow {
-	row := adw.NewExpanderRow()
+// createDeviceRow creates an ActionRow for a regular device (non-exit-node) with info button.
+// Task 5.2-5.5: Compact ActionRow with info button suffix that opens device details dialog.
+func (tp *TailscalePanel) createDeviceRow(peer *tailscalevpn.PeerStatus) *adw.ActionRow {
+	row := adw.NewActionRow()
 	row.SetTitle(peer.HostName)
-	row.SetExpanded(false)
-	row.SetShowEnableSwitch(false)
 
 	// Subtitle: OS + online/offline status
 	var subtitleParts []string
@@ -340,70 +339,18 @@ func (tp *TailscalePanel) createDeviceRow(peer *tailscalevpn.PeerStatus) *adw.Ex
 
 	row.AddPrefix(deviceIcon)
 
-	// Expanded content
-	tp.addPeerDetailsToRow(row, peer)
-
-	return row
-}
-
-// addPeerDetailsToRow adds expanded detail rows (IP, OS, DNS) to a peer row.
-func (tp *TailscalePanel) addPeerDetailsToRow(row *adw.ExpanderRow, peer *tailscalevpn.PeerStatus) {
-	// IP Address row
-	if len(peer.TailscaleIPs) > 0 {
-		ipRow := adw.NewActionRow()
-		ipRow.SetTitle("IP Address")
-		ipRow.SetSubtitle(strings.Join(peer.TailscaleIPs, ", "))
-		ipIcon := gtk.NewImage()
-		ipIcon.SetFromIconName("network-server-symbolic")
-		ipIcon.SetPixelSize(16)
-		ipRow.AddPrefix(ipIcon)
-		row.AddRow(ipRow)
-	}
-
-	// OS row
-	if peer.OS != "" {
-		osRow := adw.NewActionRow()
-		osRow.SetTitle("Operating System")
-		osRow.SetSubtitle(peer.OS)
-		osIcon := gtk.NewImage()
-		osIcon.SetFromIconName("computer-symbolic")
-		osIcon.SetPixelSize(16)
-		osRow.AddPrefix(osIcon)
-		row.AddRow(osRow)
-	}
-
-	// DNS Name row
-	if peer.DNSName != "" {
-		dnsRow := adw.NewActionRow()
-		dnsRow.SetTitle("DNS Name")
-		dnsRow.SetSubtitle(peer.DNSName)
-		dnsIcon := gtk.NewImage()
-		dnsIcon.SetFromIconName("network-workgroup-symbolic")
-		dnsIcon.SetPixelSize(16)
-		dnsRow.AddPrefix(dnsIcon)
-		row.AddRow(dnsRow)
-	}
-
-	// Send File button (Taildrop) - only for online peers
-	if peer.Online {
-		sendFileRow := adw.NewActionRow()
-		sendFileRow.SetTitle("Send File")
-		sendFileRow.SetSubtitle("Transfer a file to this device via Taildrop")
-
-		sendIcon := gtk.NewImage()
-		sendIcon.SetFromIconName("document-send-symbolic")
-		sendIcon.SetPixelSize(16)
-		sendFileRow.AddPrefix(sendIcon)
-
-		sendBtn := components.NewLabelButtonWithStyle("Choose File", components.ButtonFlat)
-		sendBtn.SetVAlign(gtk.AlignCenter)
-		sendBtn.ConnectClicked(func() {
+	// Task 5.4-5.5: Add info button suffix that opens device details dialog
+	infoBtn := components.NewIconButton("info-symbolic", "Device Details")
+	infoBtn.SetVAlign(gtk.AlignCenter)
+	infoBtn.ConnectClicked(func() {
+		// Task 5.5: Wire info button to ShowDeviceDetailsDialog
+		dialogs.ShowDeviceDetailsDialog(tp.host, peer, func() {
 			tp.onSendFileClicked(peer)
 		})
-		sendFileRow.AddSuffix(sendBtn)
+	})
+	row.AddSuffix(infoBtn)
 
-		row.AddRow(sendFileRow)
-	}
+	return row
 }
 
 // getPeerStatusText returns a status string for a peer.

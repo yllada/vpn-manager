@@ -54,7 +54,7 @@ type TailscalePanel struct {
 	// Devices section (non-exit-node peers)
 	devicesGroup    *adw.PreferencesGroup
 	devicesEmptyRow *adw.ActionRow
-	deviceRows      map[string]*adw.ExpanderRow
+	deviceRows      map[string]*adw.ActionRow
 	lastDevicesSig  string
 
 	// Track connection state for tray updates (avoid spamming)
@@ -79,7 +79,7 @@ func NewTailscalePanel(host ports.PanelHost, provider *tailscalevpn.Provider) *T
 		host:        host,
 		provider:    provider,
 		stopUpdates: make(chan struct{}),
-		deviceRows:  make(map[string]*adw.ExpanderRow),
+		deviceRows:  make(map[string]*adw.ActionRow),
 	}
 
 	tp.createLayout()
