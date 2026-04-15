@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [2.2.1] - 2026-04-15
+
+### Changed
+- **Device Details Dialog** — Replaced expandable device rows in Tailscale panel with a cleaner ActionRow + modal dialog pattern
+  - Device list is now compact and scannable (no more inline expansion)
+  - Click info button to open dedicated dialog with all device details
+  - Copy IP and DNS to clipboard with one click
+  - Taildrop "Send File" action moved to dialog with better context
+
+### Fixed
+- **Tray icon not syncing on startup** — Fixed bug where system tray showed "disconnected" icon even when a VPN (especially Tailscale) was already connected. The app now checks actual VPN state on startup and updates the tray icon accordingly.
+
 ## [2.2.0] - 2026-04-12
 
 ### Added
