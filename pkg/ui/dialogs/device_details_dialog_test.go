@@ -3,7 +3,6 @@
 package dialogs
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -191,7 +190,7 @@ func TestFormatRelativeTime_Days(t *testing.T) {
 func TestFormatRelativeTime_OldDate(t *testing.T) {
 	fixed := time.Date(2025, time.January, 15, 0, 0, 0, 0, time.UTC)
 	ts := fixed.Format(time.RFC3339Nano)
-	expected := fmt.Sprintf("%s", fixed.Format("Jan 2, 2006"))
+	expected := fixed.Format("Jan 2, 2006")
 	if got := formatRelativeTime(ts); got != expected {
 		t.Errorf("expected %q, got %q", expected, got)
 	}
