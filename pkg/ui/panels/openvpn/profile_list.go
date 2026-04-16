@@ -30,8 +30,9 @@ type ProfileList struct {
 	panel          *OpenVPNPanel
 	onStatusChange func(connected bool, profileName string)
 	listBox        *gtk.ListBox
-	rows           map[string]*ProfileRow
-	statsUpdating  bool
+	rows              map[string]*ProfileRow
+	lastAnyConnected  bool // tracks whether any OpenVPN profile was connected
+	statsUpdating     bool
 	stopStats      chan struct{}
 	stopStatsOnce  sync.Once
 }
@@ -101,11 +102,21 @@ func (pl *ProfileList) RefreshAllStatuses() {
 		}
 	}
 
-	// Update panel header status
-	if connectedProfile != "" {
-		pl.onStatusChange(true, connectedProfile)
+	// Update panel header status always; update tray only on actual state change
+	// to avoid overriding tray status set by other panels (e.g., Tailscale).
+	anyConnected := connectedProfile != ""
+	if anyConnected {
+		pl.panel.UpdateStatus(true, connectedProfile)
 	} else {
-		pl.onStatusChange(false, "")
+		pl.panel.UpdateStatus(false, "")
+	}
+	if anyConnected != pl.lastAnyConnected {
+		pl.lastAnyConnected = anyConnected
+		if anyConnected {
+			pl.host.UpdateTrayStatus(true, connectedProfile)
+		} else {
+			pl.host.UpdateTrayStatus(false, "")
+		}
 	}
 }
 
