@@ -3,7 +3,9 @@
 package dialogs
 
 import (
+	"fmt"
 	"testing"
+	"time"
 )
 
 // TestShowDeviceDetailsDialogFunctionExists verifies the function exists.
@@ -91,5 +93,106 @@ func TestGetDeviceIcon_CaseInsensitive(t *testing.T) {
 	expected := "phone-symbolic"
 	if result != expected {
 		t.Errorf("getDeviceIcon(\"Android\") = %q, want %q", result, expected)
+	}
+}
+
+// TestFormatRelativeTime_Empty returns empty for blank input.
+func TestFormatRelativeTime_Empty(t *testing.T) {
+	if got := formatRelativeTime(""); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+// TestFormatRelativeTime_Invalid returns empty for garbage input.
+func TestFormatRelativeTime_Invalid(t *testing.T) {
+	if got := formatRelativeTime("not-a-time"); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+// TestFormatRelativeTime_ZeroTime returns empty for Go zero time.
+func TestFormatRelativeTime_ZeroTime(t *testing.T) {
+	zero := time.Time{}.Format(time.RFC3339)
+	if got := formatRelativeTime(zero); got != "" {
+		t.Errorf("expected empty for zero time, got %q", got)
+	}
+}
+
+// TestFormatRelativeTime_FutureTime returns empty for future timestamps.
+func TestFormatRelativeTime_FutureTime(t *testing.T) {
+	future := time.Now().Add(10 * time.Minute).Format(time.RFC3339Nano)
+	if got := formatRelativeTime(future); got != "" {
+		t.Errorf("expected empty for future time, got %q", got)
+	}
+}
+
+// TestFormatRelativeTime_JustNow returns "Just now" for < 1 minute ago.
+func TestFormatRelativeTime_JustNow(t *testing.T) {
+	ts := time.Now().Add(-30 * time.Second).Format(time.RFC3339Nano)
+	if got := formatRelativeTime(ts); got != "Just now" {
+		t.Errorf("expected %q, got %q", "Just now", got)
+	}
+}
+
+// TestFormatRelativeTime_Minutes returns "X minutes ago" for < 1 hour.
+func TestFormatRelativeTime_Minutes(t *testing.T) {
+	ts := time.Now().Add(-15 * time.Minute).Format(time.RFC3339Nano)
+	expected := "15 minutes ago"
+	if got := formatRelativeTime(ts); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestFormatRelativeTime_OneMinute returns singular form.
+func TestFormatRelativeTime_OneMinute(t *testing.T) {
+	ts := time.Now().Add(-90 * time.Second).Format(time.RFC3339Nano)
+	expected := "1 minute ago"
+	if got := formatRelativeTime(ts); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestFormatRelativeTime_Hours returns "X hours ago" for < 24 hours.
+func TestFormatRelativeTime_Hours(t *testing.T) {
+	ts := time.Now().Add(-5 * time.Hour).Format(time.RFC3339Nano)
+	expected := "5 hours ago"
+	if got := formatRelativeTime(ts); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestFormatRelativeTime_OneHour returns singular form.
+func TestFormatRelativeTime_OneHour(t *testing.T) {
+	ts := time.Now().Add(-90 * time.Minute).Format(time.RFC3339Nano)
+	expected := "1 hour ago"
+	if got := formatRelativeTime(ts); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestFormatRelativeTime_Yesterday returns "Yesterday" for ~1 day ago.
+func TestFormatRelativeTime_Yesterday(t *testing.T) {
+	ts := time.Now().Add(-26 * time.Hour).Format(time.RFC3339Nano)
+	if got := formatRelativeTime(ts); got != "Yesterday" {
+		t.Errorf("expected %q, got %q", "Yesterday", got)
+	}
+}
+
+// TestFormatRelativeTime_Days returns "X days ago" for < 30 days.
+func TestFormatRelativeTime_Days(t *testing.T) {
+	ts := time.Now().Add(-7 * 24 * time.Hour).Format(time.RFC3339Nano)
+	expected := "7 days ago"
+	if got := formatRelativeTime(ts); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestFormatRelativeTime_OldDate returns formatted date for >= 30 days.
+func TestFormatRelativeTime_OldDate(t *testing.T) {
+	fixed := time.Date(2025, time.January, 15, 0, 0, 0, 0, time.UTC)
+	ts := fixed.Format(time.RFC3339Nano)
+	expected := fmt.Sprintf("%s", fixed.Format("Jan 2, 2006"))
+	if got := formatRelativeTime(ts); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
 	}
 }

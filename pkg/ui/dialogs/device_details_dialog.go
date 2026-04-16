@@ -3,7 +3,9 @@
 package dialogs
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -61,12 +63,18 @@ func ShowDeviceDetailsDialog(host ports.PanelHost, peer *tailscalevpn.PeerStatus
 	}
 	connGroup.Add(statusRow)
 
-	// Last Seen row (optional)
-	if peer.LastSeen != "" {
-		lastSeenRow := adw.NewActionRow()
-		lastSeenRow.SetTitle("Last Seen")
-		lastSeenRow.SetSubtitle(peer.LastSeen)
-		connGroup.Add(lastSeenRow)
+	// Last Activity row — uses LastHandshake (WireGuard, most accurate) then
+	// falls back to LastSeen (only populated for offline peers by Tailscale).
+	// Hidden entirely when neither field carries a valid timestamp.
+	lastActivity := formatRelativeTime(peer.LastHandshake)
+	if lastActivity == "" {
+		lastActivity = formatRelativeTime(peer.LastSeen)
+	}
+	if lastActivity != "" {
+		lastActivityRow := adw.NewActionRow()
+		lastActivityRow.SetTitle("Last Activity")
+		lastActivityRow.SetSubtitle(lastActivity)
+		connGroup.Add(lastActivityRow)
 	}
 
 	prefsPage.Add(connGroup)
@@ -192,4 +200,52 @@ func copyToClipboard(host ports.PanelHost, text, message string) {
 	clipboard := host.GetClipboard()
 	clipboard.SetText(text)
 	host.ShowToast(message, 3)
+}
+
+// formatRelativeTime parses a RFC3339 timestamp and returns a human-readable
+// relative string (e.g. "3 minutes ago", "2 days ago"). Returns empty string
+// for zero, invalid, or future timestamps so callers can hide the row.
+func formatRelativeTime(timeStr string) string {
+	if timeStr == "" {
+		return ""
+	}
+
+	t, err := time.Parse(time.RFC3339Nano, timeStr)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, timeStr)
+		if err != nil {
+			return ""
+		}
+	}
+
+	if t.IsZero() || t.After(time.Now()) {
+		return ""
+	}
+
+	diff := time.Since(t)
+
+	switch {
+	case diff < time.Minute:
+		return "Just now"
+	case diff < time.Hour:
+		mins := int(diff.Minutes())
+		if mins == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	case diff < 30*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		if days == 1 {
+			return "Yesterday"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		return t.Format("Jan 2, 2006")
+	}
 }
