@@ -696,30 +696,30 @@ func findVPNManagerBinary() string {
 }
 
 // writeSystemdServiceFile writes a systemd service file.
-// This operation requires the vpn-managerd daemon to be running.
+// Called from daemon context (runs as root).
 func writeSystemdServiceFile(path, content string) error {
-	// Writing systemd service files requires root privileges
-	// This should be done via the daemon in future versions
-	return fmt.Errorf("systemd service management requires daemon support (not yet implemented)")
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create systemd directory %s: %w", dir, err)
+	}
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // removeSystemdServiceFile removes a systemd service file.
-// This operation requires the vpn-managerd daemon to be running.
+// Called from daemon context (runs as root).
 func removeSystemdServiceFile(path string) error {
-	// Check if file exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil // Already removed
 	}
-
-	// Removing systemd service files requires root privileges
-	// This should be done via the daemon in future versions
-	return fmt.Errorf("systemd service management requires daemon support (not yet implemented)")
+	return os.Remove(path)
 }
 
 // runSystemctl executes a systemctl command.
-// This operation requires the vpn-managerd daemon to be running.
+// Called from daemon context (runs as root).
 func runSystemctl(args ...string) error {
-	// systemctl commands that modify state require root privileges
-	// This should be done via the daemon in future versions
-	return fmt.Errorf("systemd service management requires daemon support (not yet implemented)")
+	cmd := exec.Command("systemctl", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }

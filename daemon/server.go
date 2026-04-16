@@ -331,11 +331,17 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 }
 
 // isAuthorized checks if the client is authorized for the given method.
-// Currently allows any local user. Can be extended to check groups, etc.
+// Uses SO_PEERCRED UID already captured at connection time.
+//
+// Policy:
+//   - UID 0 (root): always authorized — system scripts and daemon self-calls
+//   - UID ≥ 1000 (regular users): authorized — the GUI app runs as the logged-in user
+//   - UID 1–999 (system service accounts): denied — no legitimate reason to control VPNs
 func (s *Server) isAuthorized(client *clientConn, method string) bool {
-	// For now, any local connection is authorized
-	// Future: check if client.uid is in a specific group (e.g., "vpn-manager")
-	return true
+	if client.uid == 0 {
+		return true
+	}
+	return client.uid >= 1000
 }
 
 // registerBuiltinHandlers registers the built-in system handlers.

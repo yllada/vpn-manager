@@ -222,15 +222,13 @@ func (m *OpenVPNManager) Disconnect(profileID string) error {
 		close(proc.stopChan)
 	}
 
-	// Kill the process
+	// Kill the process by PID. killall is intentionally avoided — it would
+	// kill any openvpn process on the system, not just ours.
 	if proc.Cmd != nil && proc.Cmd.Process != nil {
 		if err := proc.Cmd.Process.Kill(); err != nil {
 			m.logger.Printf("[openvpn] Error killing process: %v", err)
 		}
 	}
-
-	// Also try killall as backup (in case process escaped)
-	_ = exec.Command("killall", "-q", "openvpn").Run()
 
 	// Remove from tracking
 	m.mu.Lock()
