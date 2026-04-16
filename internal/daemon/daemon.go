@@ -25,18 +25,29 @@ var (
 // Creates a new client if needed — retries after CloseDaemonConnection or
 // after a failed first attempt (daemon was not running at that time).
 func DaemonClient() *protocol.Client {
+	// First check: fast path under lock.
 	daemonMu.Lock()
-	defer daemonMu.Unlock()
-
 	if daemonClient != nil {
+		daemonMu.Unlock()
 		return daemonClient
 	}
+	daemonMu.Unlock()
 
+	// I/O outside the lock: do not block other goroutines during socket probe.
 	if !protocol.IsDaemonAvailable() {
 		return nil
 	}
+	client := protocol.NewClient()
 
-	daemonClient = protocol.NewClient()
+	// Second check: store only if nobody else raced us.
+	// Close the losing client to avoid leaking socket resources.
+	daemonMu.Lock()
+	defer daemonMu.Unlock()
+	if daemonClient == nil {
+		daemonClient = client
+	} else {
+		_ = client.Close()
+	}
 	return daemonClient
 }
 

@@ -212,13 +212,11 @@ func formatRelativeTime(timeStr string) string {
 
 	t, err := time.Parse(time.RFC3339Nano, timeStr)
 	if err != nil {
-		t, err = time.Parse(time.RFC3339, timeStr)
-		if err != nil {
-			return ""
-		}
+		return ""
 	}
 
-	if t.IsZero() || t.After(time.Now()) {
+	// Allow a 5-second grace window to tolerate minor NTP skew.
+	if t.IsZero() || t.After(time.Now().Add(5*time.Second)) {
 		return ""
 	}
 

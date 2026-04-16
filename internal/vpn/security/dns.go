@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -266,9 +267,42 @@ func (dp *DNSProtection) enableNetworkManager(_ string, dnsServers []string) err
 		return nil
 	}
 
+	// Validate each DNS server IP before writing to the config file.
+	for _, srv := range dnsServers {
+		if net.ParseIP(srv) == nil {
+			return fmt.Errorf("invalid DNS server address: %q", srv)
+		}
+	}
+
 	content := "[global-dns-domain-*]\nservers=" + strings.Join(dnsServers, ",") + "\n"
-	if err := os.WriteFile(nmDNSConfPath, []byte(content), 0644); err != nil {
+
+	// Atomic write: randomized temp file + fsync + rename.
+	// os.CreateTemp gives a collision-safe name so concurrent callers cannot
+	// race on the same temp path.
+	tmpFile, err := os.CreateTemp(filepath.Dir(nmDNSConfPath), "vpn-manager-dns-*.conf")
+	if err != nil {
+		return fmt.Errorf("create temp NM DNS config: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if err := tmpFile.Chmod(0640); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("set NM DNS config permissions: %w", err)
+	}
+	if _, err := tmpFile.WriteString(content); err != nil {
+		_ = tmpFile.Close()
 		return fmt.Errorf("write NM DNS config: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("sync NM DNS config: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close NM DNS config: %w", err)
+	}
+	if err := os.Rename(tmpPath, nmDNSConfPath); err != nil {
+		return fmt.Errorf("install NM DNS config: %w", err)
 	}
 
 	if out, err := exec.Command("nmcli", "general", "reload").CombinedOutput(); err != nil {

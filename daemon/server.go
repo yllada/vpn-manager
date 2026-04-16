@@ -337,9 +337,14 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 //   - UID 0 (root): always authorized — system scripts and daemon self-calls
 //   - UID ≥ 1000 (regular users): authorized — the GUI app runs as the logged-in user
 //   - UID 1–999 (system service accounts): denied — no legitimate reason to control VPNs
+//   - UID 65534 (nobody) and 65535: explicitly denied — overflow/sentinel UIDs
 func (s *Server) isAuthorized(client *clientConn, method string) bool {
 	if client.uid == 0 {
 		return true
+	}
+	// Deny overflow/sentinel UIDs: nobody (65534) and the unsigned overflow sentinel (65535).
+	if client.uid == 65534 || client.uid == 65535 {
+		return false
 	}
 	return client.uid >= 1000
 }

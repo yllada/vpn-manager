@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration export/import
 - Bulk profile import
 
+## [2.2.2] - 2026-04-15
+
+### Fixed
+- **Device Details Dialog — Last Activity** — "Last Seen" row now shows a human-readable relative time ("3 minutes ago", "Yesterday", etc.) instead of a raw timestamp. Uses WireGuard handshake time as primary source and Tailscale's LastSeen as fallback. Row is hidden entirely when neither field carries a valid timestamp.
+- **Daemon auth bypass** — `isAuthorized()` now enforces UID-based access control via SO_PEERCRED. Allows root (UID 0) and regular users (UID ≥ 1000). Explicitly denies system service accounts (UID 1–999) and nobody/overflow UIDs (65534, 65535).
+- **OpenVPN kill-all on disconnect** — Removed `killall -q openvpn` backup kill from `Disconnect()`. It was terminating every OpenVPN process on the system, not just the managed one.
+- **Kill switch persistence broken** — `writeSystemdServiceFile`, `removeSystemdServiceFile`, and `runSystemctl` were stubs that returned errors, silently breaking kill switch persistence across reboots. All three are now implemented.
+- **NetworkManager DNS backend no-op** — `enableNetworkManager` was never implemented; DNS protection had zero effect on NM-managed systems. Now writes a drop-in config to `/etc/NetworkManager/conf.d/` and reloads via `nmcli general reload`. DNS servers are validated with `net.ParseIP` before write to prevent injection.
+- **DNS atomic write race** — Temp file for NetworkManager DNS config used a fixed `.tmp` suffix, allowing concurrent callers to race on the same temp path. Now uses `os.CreateTemp` with a randomized suffix, plus `Sync()` before rename to close the kernel-crash atomicity gap.
+- **Daemon client singleton not retryable** — `DaemonClient()` used `sync.Once`, so a failed first call (daemon not running) permanently cached a nil client for the process lifetime. Replaced with a mutex-guarded nil-check pattern (DCL) so the client is recreated on next call after `CloseDaemonConnection()` or a failed attempt.
+- **Daemon DCL resource leak** — When two goroutines raced through `DaemonClient()`, the losing client was silently discarded without being closed. The losing client is now closed immediately to free socket resources.
+- **OpenVPN concurrent disconnect panic** — Non-thread-safe `select/close` on `stopChan` could panic if two goroutines called `Disconnect()` simultaneously. Replaced with `sync.Once` on the close operation.
+- **Tailscale state missing from daemon snapshot** — `StateSnapshot` and `Snapshot()` did not include the Tailscale connection state, leaving daemon consumers blind to Tailscale status. Field added.
+
 ## [2.2.1] - 2026-04-15
 
 ### Changed
