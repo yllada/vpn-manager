@@ -204,11 +204,20 @@ func (tp *TailscalePanel) updatePeers() {
 		return
 	}
 
-	// Separate peers into exit nodes and regular devices
+	// Separate peers into exit nodes and regular devices,
+	// filtering out the self node which Tailscale may include in the Peer map
+	// with Online=false (since a node can't be its own peer).
+	selfHostName := ""
+	if tsStatus.Self != nil {
+		selfHostName = tsStatus.Self.HostName
+	}
 	var exitNodes, devices []*tailscalevpn.PeerStatus
 	for peerID, peer := range tsStatus.Peer {
 		if peer.ID == "" {
 			peer.ID = peerID
+		}
+		if selfHostName != "" && peer.HostName == selfHostName {
+			continue
 		}
 		if peer.ExitNodeOption {
 			exitNodes = append(exitNodes, peer)
