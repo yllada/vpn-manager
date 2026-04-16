@@ -16,22 +16,27 @@ import (
 // =============================================================================
 
 var (
-	daemonClient     *protocol.Client
-	daemonClientOnce sync.Once
-	daemonMu         sync.Mutex // Protects daemonClient for reset operations
+	daemonClient *protocol.Client
+	daemonMu     sync.Mutex // Protects daemonClient for all access
 )
 
 // DaemonClient returns the shared daemon client instance.
 // Returns nil if the daemon is not available.
-// The client is lazily initialized on first call using sync.Once.
+// Creates a new client if needed — retries after CloseDaemonConnection or
+// after a failed first attempt (daemon was not running at that time).
 func DaemonClient() *protocol.Client {
-	daemonClientOnce.Do(func() {
-		// Check if daemon is available before creating client
-		if !protocol.IsDaemonAvailable() {
-			return
-		}
-		daemonClient = protocol.NewClient()
-	})
+	daemonMu.Lock()
+	defer daemonMu.Unlock()
+
+	if daemonClient != nil {
+		return daemonClient
+	}
+
+	if !protocol.IsDaemonAvailable() {
+		return nil
+	}
+
+	daemonClient = protocol.NewClient()
 	return daemonClient
 }
 
@@ -58,16 +63,15 @@ func ConnectToDaemon(ctx context.Context) (*protocol.Client, error) {
 	return client, nil
 }
 
-// CloseDaemonConnection closes the daemon connection if open.
-// The client instance remains valid and can reconnect later.
+// CloseDaemonConnection closes the daemon connection and resets the singleton
+// so the next DaemonClient() call creates a fresh connection.
 func CloseDaemonConnection() {
 	daemonMu.Lock()
 	defer daemonMu.Unlock()
 
 	if daemonClient != nil {
 		_ = daemonClient.Close()
-		// Note: We don't nil out daemonClient because sync.Once
-		// already ran. The client can reconnect via ConnectToDaemon.
+		daemonClient = nil
 	}
 }
 

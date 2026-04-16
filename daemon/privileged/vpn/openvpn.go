@@ -41,6 +41,7 @@ type OpenVPNProcess struct {
 	StartTime   time.Time
 	LastError   string
 	stopChan    chan struct{}
+	stopOnce    sync.Once // Ensures stopChan is closed exactly once under concurrent Disconnect calls
 	outputLines []string
 	mu          sync.RWMutex
 }
@@ -214,13 +215,8 @@ func (m *OpenVPNManager) Disconnect(profileID string) error {
 
 	m.logger.Printf("[openvpn] Disconnecting profile %s", profileID)
 
-	// Signal stop
-	select {
-	case <-proc.stopChan:
-		// Already closed
-	default:
-		close(proc.stopChan)
-	}
+	// Signal stop — sync.Once guarantees exactly one close even under concurrent Disconnect calls.
+	proc.stopOnce.Do(func() { close(proc.stopChan) })
 
 	// Kill the process by PID. killall is intentionally avoided — it would
 	// kill any openvpn process on the system, not just ours.

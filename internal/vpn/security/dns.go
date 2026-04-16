@@ -258,13 +258,40 @@ func (dp *DNSProtection) disableSystemdResolved() error {
 // NETWORKMANAGER BACKEND
 // ═══════════════════════════════════════════════════════════════════════════
 
-func (dp *DNSProtection) enableNetworkManager(_ string, _ []string) error {
-	// NetworkManager typically handles DNS automatically when VPN connects
-	// We might need to adjust DNS priority for the connection
+// nmDNSConfPath is the drop-in config file used to enforce VPN DNS via NM.
+const nmDNSConfPath = "/etc/NetworkManager/conf.d/vpn-manager-dns.conf"
+
+func (dp *DNSProtection) enableNetworkManager(_ string, dnsServers []string) error {
+	if len(dnsServers) == 0 {
+		return nil
+	}
+
+	content := "[global-dns-domain-*]\nservers=" + strings.Join(dnsServers, ",") + "\n"
+	if err := os.WriteFile(nmDNSConfPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write NM DNS config: %w", err)
+	}
+
+	if out, err := exec.Command("nmcli", "general", "reload").CombinedOutput(); err != nil {
+		_ = os.Remove(nmDNSConfPath)
+		return fmt.Errorf("nmcli reload: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
 	return nil
 }
 
 func (dp *DNSProtection) disableNetworkManager() error {
+	if _, err := os.Stat(nmDNSConfPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	if err := os.Remove(nmDNSConfPath); err != nil {
+		return fmt.Errorf("remove NM DNS config: %w", err)
+	}
+
+	if out, err := exec.Command("nmcli", "general", "reload").CombinedOutput(); err != nil {
+		return fmt.Errorf("nmcli reload: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
 	return nil
 }
 

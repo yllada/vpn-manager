@@ -107,6 +107,7 @@ type StateSnapshot struct {
 	IPv6Protection IPv6ProtectionState `json:"ipv6_protection"`
 	SplitTunnel    SplitTunnelState    `json:"split_tunnel"`
 	LANGateway     LANGatewayState     `json:"lan_gateway"`
+	Tailscale      TailscaleState      `json:"tailscale"`
 	UptimeSeconds  int64               `json:"uptime_seconds"`
 }
 
@@ -143,6 +144,7 @@ func (s *State) Snapshot() StateSnapshot {
 		IPv6Protection: s.ipv6Protection,
 		SplitTunnel:    s.splitTunnel,
 		LANGateway:     s.lanGateway,
+		Tailscale:      s.tailscale,
 		UptimeSeconds:  int64(time.Since(s.startedAt).Seconds()),
 	}
 }
