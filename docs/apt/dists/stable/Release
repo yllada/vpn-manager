@@ -5,10 +5,10 @@ Codename: stable
 Architectures: amd64
 Components: main
 Description: VPN Manager APT Repository
-Date: Sun, 12 Apr 2026 23:11:39 +0000
+Date: Wed, 15 Apr 2026 15:59:39 +0000
 MD5Sum:
- e47a6753dd674c5eaadaf2ac8d1140aa 927 main/binary-amd64/Packages
- ea48eb1a7fd2b1af014f8c593205e54b 618 main/binary-amd64/Packages.gz
+ 1c551b54eedf599f17d69101a3ee8762 927 main/binary-amd64/Packages
+ 1bf8a4f5ebec1269001840de3ea37129 618 main/binary-amd64/Packages.gz
 SHA256:
- 6fad5cdc2beb2ab5f73664ec4441c2811e9ab139e1d4fb6aa500e5499bfea633 927 main/binary-amd64/Packages
- ed2c9fbb75fcb34b09838bfbeb37768c6dc9722fb94f87d5db26655bbab1ea94 618 main/binary-amd64/Packages.gz
+ c1d56f9b51da9689c937ab97e74b24cfcf092eda7a060ad570b04d6dd7424769 927 main/binary-amd64/Packages
+ d02421eed2961cd38e70615d2367fb44fe55d5a92544a87415f7f762ffe06508 618 main/binary-amd64/Packages.gz

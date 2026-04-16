@@ -1,15 +1,15 @@
 Package: vpn-manager
-Version: 2.2.0
+Version: 2.2.1
 Architecture: amd64
 Maintainer: VPN Manager Team <yadian.llada@gmail.com>
 Installed-Size: 50604
 Depends: libgtk-4-1, libadwaita-1-0
 Recommends: openvpn | openvpn3, wireguard-tools, tailscale
-Filename: pool/main/v/vpn-manager/vpn-manager_2.2.0_amd64.deb
-Size: 10671516
-MD5sum: e841974f4b10a4a2acf6df4567bde163
-SHA1: 87f66d394fb72813a368db726b99103efc9af4c0
-SHA256: 50cb4e1e4d546726826cdbac5eea4c2ba9a2a9af5ae8de135498ed089ba17336
+Filename: pool/main/v/vpn-manager/vpn-manager_2.2.1_amd64.deb
+Size: 10664322
+MD5sum: b2abe237a3a49d299def8b2d992cb661
+SHA1: 391029462fda7ce989ef7818479bed37de2c2a21
+SHA256: e4b89dbd84b375ea2d5ea2c779d0855afcbb9abd8833efaa950aab06d9c27dda
 Section: net
 Priority: optional
 Homepage: https://github.com/yllada/vpn-manager
