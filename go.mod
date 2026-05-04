@@ -3,7 +3,7 @@ module github.com/yllada/vpn-manager
 go 1.26.2
 
 require (
-	fyne.io/systray v1.12.0
+	fyne.io/systray v1.12.1
 	github.com/diamondburned/gotk4-adwaita/pkg v0.0.0-20250703085740-f81761ef0e0d
 	github.com/diamondburned/gotk4/pkg v0.3.2-0.20250703063411-16654385f59a
 	github.com/godbus/dbus/v5 v5.2.2
