@@ -1,6 +1,6 @@
 module github.com/yllada/vpn-manager
 
-go 1.26.2
+go 1.26.4
 
 require (
 	fyne.io/systray v1.12.2
