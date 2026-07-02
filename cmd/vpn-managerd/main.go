@@ -34,8 +34,14 @@ var (
 func main() {
 	// Parse flags
 	socketPath := flag.String("socket", protocol.DefaultSocketPath, "Unix socket path")
+	socketGroup := flag.String("socket-group", daemon.DefaultSocketGroup, "System group granted access to the socket (mode 0660)")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Parse()
+
+	// Allow overriding the socket group via environment (packaging / systemd unit).
+	if envGroup := os.Getenv("VPN_MANAGER_SOCKET_GROUP"); envGroup != "" {
+		*socketGroup = envGroup
+	}
 
 	if *showVersion {
 		fmt.Printf("vpn-managerd %s (commit: %s, built: %s)\n", Version, GitCommit, BuildTime)
@@ -54,6 +60,7 @@ func main() {
 	// Create server
 	server := daemon.NewServer(
 		daemon.WithSocketPath(*socketPath),
+		daemon.WithSocketGroup(*socketGroup),
 		daemon.WithLogger(logger),
 	)
 

@@ -190,6 +190,17 @@ install -Dm644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dm644 LICENSE %{buildroot}%{_docdir}/%{name}/LICENSE
 
 %post
+# Socket access group (root:vpn-manager 0660 is the daemon's authorization
+# boundary). Create the group and add the installing user to it.
+getent group vpn-manager >/dev/null 2>&1 || groupadd -f vpn-manager || :
+POST_USER="\${SUDO_USER:-\$(logname 2>/dev/null || true)}"
+if [ -n "\$POST_USER" ] && [ "\$POST_USER" != "root" ]; then
+    usermod -aG vpn-manager "\$POST_USER" 2>/dev/null || :
+    echo "User '\$POST_USER' added to the 'vpn-manager' group. Log out and back in for VPN Manager to reach the daemon."
+else
+    echo "Add your user to the group: sudo usermod -aG vpn-manager \\\$USER (then re-login)."
+fi
+
 # Update icon cache
 if [ -x /usr/bin/gtk-update-icon-cache ]; then
     /usr/bin/gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor &>/dev/null || :

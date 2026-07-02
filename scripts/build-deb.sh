@@ -170,6 +170,14 @@ if command -v update-desktop-database &> /dev/null; then
     update-desktop-database /usr/share/applications 2>/dev/null || true
 fi
 
+# Socket access group (root:vpn-manager 0660 is the daemon's authorization
+# boundary). Create the group and add the installing user to it.
+groupadd -f vpn-manager 2>/dev/null || true
+TARGET_USER="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
+    usermod -aG vpn-manager "$TARGET_USER" 2>/dev/null || true
+fi
+
 # Reload systemd
 systemctl daemon-reload 2>/dev/null || true
 
@@ -181,6 +189,12 @@ fi
 
 echo "✅ VPN Manager installed successfully"
 echo "   The vpn-managerd daemon has been enabled and started."
+if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
+    echo "   User '$TARGET_USER' was added to the 'vpn-manager' group."
+    echo "   ⚠  Log out and back in for VPN Manager to reach the daemon."
+else
+    echo "   ⚠  Add your user to the group: sudo usermod -aG vpn-manager \$USER (then re-login)."
+fi
 echo "   Run 'vpn-manager' or find it in the applications menu."
 EOF
 chmod 755 "${BUILD_DIR}/${PKG_DIR}/DEBIAN/postinst"

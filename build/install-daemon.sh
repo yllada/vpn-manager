@@ -20,6 +20,9 @@ DAEMON_NAME="vpn-managerd"
 INSTALL_DIR="/usr/bin"
 SERVICE_DIR="/etc/systemd/system"
 SOCKET_DIR="/var/run/vpn-manager"
+# System group granted access to the daemon socket (root:GROUP 0660).
+# Must match daemon.DefaultSocketGroup.
+SOCKET_GROUP="vpn-manager"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -130,12 +133,32 @@ install_service() {
 
 create_directories() {
     log_info "Creating required directories..."
-    
+
     # Socket directory (created by systemd via RuntimeDirectory, but ensure it exists)
     mkdir -p "$SOCKET_DIR"
     chmod 755 "$SOCKET_DIR"
-    
+
     log_success "Directories created"
+}
+
+create_socket_group() {
+    log_info "Setting up socket access group '$SOCKET_GROUP'..."
+
+    # The daemon socket is created root:$SOCKET_GROUP with mode 0660. Only root and
+    # members of this group can talk to the (root) daemon — this is the primary
+    # authorization boundary. Create the group and add the installing user.
+    groupadd -f "$SOCKET_GROUP"
+
+    # Determine the human user that invoked sudo (fall back to logname).
+    local target_user="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+    if [[ -n "$target_user" && "$target_user" != "root" ]]; then
+        usermod -aG "$SOCKET_GROUP" "$target_user"
+        log_success "Added user '$target_user' to group '$SOCKET_GROUP'"
+        log_warn "User '$target_user' must log out and back in for the new group to take effect."
+    else
+        log_warn "Could not detect a non-root user to add to '$SOCKET_GROUP'."
+        log_warn "Add your user manually: sudo usermod -aG $SOCKET_GROUP \$USER (then re-login)."
+    fi
 }
 
 enable_service() {
@@ -217,6 +240,7 @@ main() {
     install_binary
     install_service
     create_directories
+    create_socket_group
     enable_service
     verify_installation
     print_status

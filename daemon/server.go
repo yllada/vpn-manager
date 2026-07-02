@@ -9,7 +9,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +21,22 @@ import (
 
 // DefaultHandlerTimeout is the default timeout for RPC handler execution.
 const DefaultHandlerTimeout = 30 * time.Second
+
+// Connection limits bound resource use so a buggy or hostile client cannot
+// exhaust the root daemon's goroutines/file descriptors/memory.
+const (
+	// maxConcurrentClients caps total simultaneous connections.
+	maxConcurrentClients = 64
+	// maxClientsPerUID caps simultaneous connections from a single UID, so one
+	// user (or one runaway process) cannot consume the whole global budget.
+	maxClientsPerUID = 8
+)
+
+// DefaultSocketGroup is the system group granted access to the daemon socket.
+// The socket is created root:<this group> with mode 0660, so only root and
+// members of this group can talk to the daemon. Packaging creates the group and
+// adds the installing user to it.
+const DefaultSocketGroup = "vpn-manager"
 
 // methodTimeouts defines custom timeouts for specific methods that need more time.
 // Methods not in this map use DefaultHandlerTimeout.
@@ -40,8 +58,9 @@ func getMethodTimeout(method string) time.Duration {
 
 // Server is the daemon server that handles client connections.
 type Server struct {
-	socketPath string
-	listener   net.Listener
+	socketPath  string
+	socketGroup string
+	listener    net.Listener
 
 	// Handler registry
 	handlers *HandlerRegistry
@@ -86,15 +105,26 @@ func WithLogger(logger *log.Logger) ServerOption {
 	}
 }
 
+// WithSocketGroup sets the system group granted access to the daemon socket.
+// An empty value keeps DefaultSocketGroup.
+func WithSocketGroup(group string) ServerOption {
+	return func(s *Server) {
+		if group != "" {
+			s.socketGroup = group
+		}
+	}
+}
+
 // NewServer creates a new daemon server with the given options.
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
-		socketPath: protocol.DefaultSocketPath,
-		handlers:   NewHandlerRegistry(),
-		state:      NewState(),
-		clients:    make(map[*clientConn]struct{}),
-		done:       make(chan struct{}),
-		logger:     log.Default(),
+		socketPath:  protocol.DefaultSocketPath,
+		socketGroup: DefaultSocketGroup,
+		handlers:    NewHandlerRegistry(),
+		state:       NewState(),
+		clients:     make(map[*clientConn]struct{}),
+		done:        make(chan struct{}),
+		logger:      log.Default(),
 	}
 
 	for _, opt := range opts {
@@ -118,18 +148,27 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("remove stale socket: %w", err)
 	}
 
-	// Create Unix socket listener
+	// SECURITY (C3): create the socket with restrictive permissions from birth.
+	// Otherwise there is a race window between net.Listen (which creates the socket
+	// using the process umask, potentially world-accessible) and the chmod/chown in
+	// secureSocket, during which a hostile local process could connect. A temporary
+	// umask of 0177 forces the new socket to at most 0600; secureSocket then relaxes
+	// it to 0660 for the desktop group.
+	oldUmask := syscall.Umask(0177)
 	listener, err := net.Listen("unix", s.socketPath)
+	syscall.Umask(oldUmask)
 	if err != nil {
 		return fmt.Errorf("listen on socket: %w", err)
 	}
 	s.listener = listener
 
-	// Set socket permissions (world read/write so unprivileged clients can connect)
-	// Security note: The daemon validates operations via SO_PEERCRED (caller UID/GID)
-	if err := os.Chmod(s.socketPath, 0666); err != nil {
+	// SECURITY (C3): restrict the socket to root and the desktop group instead of
+	// world-accessible 0666. This is the primary access boundary — a world-writable
+	// socket lets any local process (a malicious npm/pip postinstall, a compromised
+	// browser tab) drive the root daemon.
+	if err := s.secureSocket(); err != nil {
 		_ = s.listener.Close()
-		return fmt.Errorf("set socket permissions: %w", err)
+		return fmt.Errorf("secure socket: %w", err)
 	}
 
 	s.logger.Printf("Daemon listening on %s", s.socketPath)
@@ -141,6 +180,42 @@ func (s *Server) Start(ctx context.Context) error {
 	s.wg.Add(1)
 	go s.acceptLoop(ctx)
 
+	return nil
+}
+
+// secureSocket sets ownership and permissions on the listening socket so that
+// only root and members of the configured desktop group may connect.
+//
+// It looks up the group by name; when the group exists the socket becomes
+// root:<group> mode 0660. When the group is missing (e.g. packaging did not
+// create it), it FAILS CLOSED to 0660 root:root and logs a prominent warning:
+// the daemon stays secure, but the GUI cannot connect until the group is created
+// and the user is added to it. It never falls back to a world-accessible mode.
+func (s *Server) secureSocket() error {
+	if err := os.Chmod(s.socketPath, 0660); err != nil {
+		return fmt.Errorf("chmod 0660: %w", err)
+	}
+
+	grp, err := user.LookupGroup(s.socketGroup)
+	if err != nil {
+		s.logger.Printf("WARN: socket group %q not found (%v). Socket locked to root only (0660 root:root); "+
+			"the GUI will not be able to connect. Create the group and add your user: "+
+			"`sudo groupadd -f %s && sudo usermod -aG %s $USER`, then re-login and restart the daemon.",
+			s.socketGroup, err, s.socketGroup, s.socketGroup)
+		return nil
+	}
+
+	gid, err := strconv.Atoi(grp.Gid)
+	if err != nil {
+		return fmt.Errorf("parse gid for group %q: %w", s.socketGroup, err)
+	}
+
+	// Owner root (uid 0, the daemon's own uid), group = desktop group.
+	if err := os.Chown(s.socketPath, 0, gid); err != nil {
+		return fmt.Errorf("chown socket to group %q: %w", s.socketGroup, err)
+	}
+
+	s.logger.Printf("Socket secured: %s (root:%s, mode 0660)", s.socketPath, s.socketGroup)
 	return nil
 }
 
@@ -225,10 +300,14 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			server: s,
 		}
 
-		// Register client
-		s.clientsMu.Lock()
-		s.clients[client] = struct{}{}
-		s.clientsMu.Unlock()
+		// Enforce connection limits atomically before registering. Rejecting here
+		// (rather than after spawning a goroutine) keeps a flood from exhausting
+		// the daemon's resources.
+		if !s.registerClient(client) {
+			s.logger.Printf("Rejecting connection from uid=%d pid=%d: connection limit reached", creds.Uid, creds.Pid)
+			_ = conn.Close()
+			continue
+		}
 
 		s.logger.Printf("Client connected: uid=%d pid=%d", creds.Uid, creds.Pid)
 
@@ -236,6 +315,33 @@ func (s *Server) acceptLoop(ctx context.Context) {
 		s.wg.Add(1)
 		go s.handleClient(client)
 	}
+}
+
+// registerClient enforces the connection caps and, if within limits, registers
+// the client. It returns false (without registering) when the total or per-UID
+// limit would be exceeded. Root (uid 0) is exempt from the per-UID cap so system
+// callers are never starved by a misbehaving user process.
+func (s *Server) registerClient(client *clientConn) bool {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	if len(s.clients) >= maxConcurrentClients {
+		return false
+	}
+	if client.uid != 0 {
+		perUID := 0
+		for c := range s.clients {
+			if c.uid == client.uid {
+				perUID++
+			}
+		}
+		if perUID >= maxClientsPerUID {
+			return false
+		}
+	}
+
+	s.clients[client] = struct{}{}
+	return true
 }
 
 // handleClient processes requests from a single client.
@@ -293,6 +399,13 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 		return protocol.UnauthorizedError(req.ID)
 	}
 
+	// Audit trail: record privileged (state-mutating) invocations with caller
+	// identity. This does not gate access — it provides forensics for the residual
+	// "same-user process" risk that the socket-group model cannot eliminate.
+	if isPrivilegedMethod(req.Method) {
+		s.logger.Printf("AUDIT: privileged call %s by uid=%d pid=%d", req.Method, client.uid, client.pid)
+	}
+
 	// Create context with timeout for this request
 	timeout := getMethodTimeout(req.Method)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -330,19 +443,24 @@ func (s *Server) processRequest(client *clientConn, req *protocol.Request) *prot
 	return resp
 }
 
-// isAuthorized checks if the client is authorized for the given method.
-// Uses SO_PEERCRED UID already captured at connection time.
+// isAuthorized applies a per-request UID floor. It is a secondary sanity check;
+// the real, kernel-enforced authorization boundary is the socket's group ownership
+// (root:<group>, mode 0660 — see secureSocket and authz.go), which already limits
+// connections to root and desktop-group members.
 //
-// Policy:
-//   - UID 0 (root): always authorized — system scripts and daemon self-calls
-//   - UID ≥ 1000 (regular users): authorized — the GUI app runs as the logged-in user
-//   - UID 1–999 (system service accounts): denied — no legitimate reason to control VPNs
-//   - UID 65534 (nobody) and 65535: explicitly denied — overflow/sentinel UIDs
-func (s *Server) isAuthorized(client *clientConn, method string) bool {
+//   - UID 0 (root): allowed — system scripts and daemon self-calls.
+//   - UID 1–999 (system service accounts): denied — no legitimate reason to drive VPNs.
+//   - UID 65534 (nobody) / 65535 (overflow sentinel): denied.
+//   - UID ≥ 1000: allowed. A connected regular user is already a socket-group
+//     member; the daemon does not withhold any method from such a user (the GUI
+//     legitimately drives all operations). See authz.go for the residual-risk note.
+//
+// The method argument is intentionally not used to grant/deny here; per-method
+// classification is used only for audit logging in processRequest.
+func (s *Server) isAuthorized(client *clientConn, _ string) bool {
 	if client.uid == 0 {
 		return true
 	}
-	// Deny overflow/sentinel UIDs: nobody (65534) and the unsigned overflow sentinel (65535).
 	if client.uid == 65534 || client.uid == 65535 {
 		return false
 	}
