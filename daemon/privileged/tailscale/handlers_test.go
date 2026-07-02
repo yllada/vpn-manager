@@ -87,7 +87,7 @@ func TestManager_SendFile(t *testing.T) {
 		Target:   "test-device",
 	}
 
-	result, err := manager.SendFile(ctx, params)
+	result, err := manager.SendFile(ctx, params, 1000)
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
 	}

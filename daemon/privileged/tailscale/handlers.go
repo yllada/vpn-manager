@@ -193,7 +193,7 @@ func TaildropSendHandler(state *daemon.State) daemon.HandlerFunc {
 			return nil, err
 		}
 
-		result, err := manager.SendFile(ctx.Context, params)
+		result, err := manager.SendFile(ctx.Context, params, ctx.UID)
 		if err != nil {
 			return nil, err
 		}

@@ -10,9 +10,13 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 )
 
 // Common paths for tailscale binary
@@ -25,6 +29,43 @@ var tailscalePaths = []string{
 // Manager handles Tailscale CLI operations with root privileges.
 type Manager struct {
 	binaryPath string
+}
+
+// writeAuthKeyFile writes a Tailscale auth key to a root-only temp file and returns
+// the CLI argument that reads it via Tailscale's "file:" scheme, plus a cleanup
+// function. Passing the key this way keeps the secret out of the process command
+// line (/proc/<pid>/cmdline is world-readable), which would otherwise leak it to
+// any local user. Returns ("", noop, nil) when key is empty.
+func writeAuthKeyFile(key string) (arg string, cleanup func(), err error) {
+	cleanup = func() {}
+	if key == "" {
+		return "", cleanup, nil
+	}
+	dir := "/run/vpn-manager"
+	if mkErr := os.MkdirAll(dir, 0700); mkErr != nil {
+		dir = os.TempDir()
+	}
+	f, err := os.CreateTemp(dir, "ts-authkey-*")
+	if err != nil {
+		return "", cleanup, fmt.Errorf("create auth key file: %w", err)
+	}
+	name := f.Name()
+	cleanup = func() { _ = os.Remove(name) }
+	if err := f.Chmod(0600); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("chmod auth key file: %w", err)
+	}
+	if _, err := f.WriteString(key); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("write auth key file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("close auth key file: %w", err)
+	}
+	return "--auth-key=file:" + name, cleanup, nil
 }
 
 // NewManager creates a new Tailscale manager.
@@ -109,7 +150,12 @@ func (m *Manager) Up(ctx context.Context, params UpParams) (*UpResult, error) {
 		args = append(args, "--shields-up")
 	}
 	if params.AuthKey != "" {
-		args = append(args, "--auth-key="+params.AuthKey)
+		keyArg, cleanup, err := writeAuthKeyFile(params.AuthKey)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		args = append(args, keyArg)
 	}
 	if params.LoginServer != "" {
 		args = append(args, "--login-server="+params.LoginServer)
@@ -258,7 +304,13 @@ func (m *Manager) Login(ctx context.Context, params LoginParams) (*LoginResult, 
 	args := []string{"login"}
 
 	if params.AuthKey != "" {
-		args = append(args, "--auth-key="+params.AuthKey)
+		keyArg, cleanup, err := writeAuthKeyFile(params.AuthKey)
+		if err != nil {
+			return nil, err
+		}
+		// tailscale reads the key file at startup; safe to remove when Login returns.
+		defer cleanup()
+		args = append(args, keyArg)
 	}
 	if params.LoginServer != "" {
 		args = append(args, "--login-server="+params.LoginServer)
@@ -381,14 +433,81 @@ type TaildropSendResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// SendFile sends a file via Taildrop to the specified target.
-func (m *Manager) SendFile(ctx context.Context, params TaildropSendParams) (*TaildropSendResult, error) {
+// taildropTargetPattern allows Tailscale device names, FQDNs and IPs but rejects
+// anything with shell metacharacters or a leading dash.
+var taildropTargetPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
+
+// SendFile sends a file via Taildrop to the specified target on behalf of the
+// caller identified by callerUID.
+//
+// SECURITY: the daemon runs as root, so without checks it could be asked to
+// exfiltrate any root-readable file (e.g. /etc/shadow) to an attacker's tailnet
+// node. We therefore (1) resolve and validate the path, and (2) require the file
+// to be owned by the requesting user (root is exempt). This confines Taildrop to
+// the user's own files.
+func (m *Manager) SendFile(ctx context.Context, params TaildropSendParams, callerUID uint32) (*TaildropSendResult, error) {
 	if err := params.Validate(); err != nil {
 		return nil, err
 	}
 
-	// tailscale file cp <file> <target>:
-	cmd := exec.CommandContext(ctx, m.binaryPath, "file", "cp", params.FilePath, params.Target+":")
+	// Validate the target so it cannot be reinterpreted as a CLI flag.
+	if !taildropTargetPattern.MatchString(params.Target) {
+		return nil, fmt.Errorf("invalid taildrop target: %q", params.Target)
+	}
+
+	// SECURITY (TOCTOU): open the file with O_NOFOLLOW and HOLD the fd. Both the
+	// ownership check and the copy operate on this exact inode — the path is never
+	// re-opened by name — so a same-uid attacker who owns the path cannot swap it
+	// for a symlink to a root-only file (e.g. /etc/shadow) between the check and
+	// the copy.
+	f, err := validate.OpenConfig(params.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("file_path: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// Confine to the caller's own files unless the caller is root — checked on the
+	// open fd (immune to path swaps), not on the path.
+	if callerUID != 0 {
+		info, statErr := f.Stat()
+		if statErr != nil {
+			return nil, fmt.Errorf("stat file: %w", statErr)
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil, fmt.Errorf("cannot determine file ownership")
+		}
+		if st.Uid != callerUID {
+			return nil, fmt.Errorf("refusing to send file not owned by the requesting user (owner uid %d, caller uid %d)", st.Uid, callerUID)
+		}
+	}
+
+	// Expose the validated fd to tailscale under the file's real name via a symlink
+	// in a root-only directory. tailscale opens the symlink, which points at
+	// /proc/self/fd/3 — tailscale's inherited copy of our held fd (cmd.ExtraFiles) —
+	// resolving to the exact inode we validated. The root-only staging dir prevents
+	// any swap of the symlink, and the peer still receives the file under its real
+	// name (which passing /proc/self/fd/3 directly would not preserve).
+	name := filepath.Base(f.Name())
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return nil, fmt.Errorf("invalid file name")
+	}
+	if err := os.MkdirAll(taildropStagingDir, 0700); err != nil {
+		return nil, fmt.Errorf("create staging dir: %w", err)
+	}
+	linkDir, err := os.MkdirTemp(taildropStagingDir, "send-*")
+	if err != nil {
+		return nil, fmt.Errorf("create staging dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(linkDir) }()
+	linkPath := filepath.Join(linkDir, name)
+	if err := os.Symlink("/proc/self/fd/3", linkPath); err != nil {
+		return nil, fmt.Errorf("stage file: %w", err)
+	}
+
+	// tailscale file cp <staged-name> <target>: — fd 3 in the child is our file.
+	cmd := exec.CommandContext(ctx, m.binaryPath, "file", "cp", linkPath, params.Target+":")
+	cmd.ExtraFiles = []*os.File{f}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("tailscale file cp failed: %w: %s", err, string(output))
@@ -398,6 +517,11 @@ func (m *Manager) SendFile(ctx context.Context, params TaildropSendParams) (*Tai
 		Success: true,
 	}, nil
 }
+
+// taildropStagingDir is a root-only (0700) directory holding the transient
+// symlinks that expose a validated fd to the tailscale CLI under the file's real
+// name. It lives on the same runtime tmpfs as the auth-key files.
+const taildropStagingDir = "/run/vpn-manager/taildrop"
 
 // =============================================================================
 // TAILDROP RECEIVE
