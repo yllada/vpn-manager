@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 )
 
 // =============================================================================
@@ -108,10 +110,24 @@ func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams)
 		}
 	}
 
-	// Validate config file exists
-	if _, err := os.Stat(params.ConfigPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file not found: %s", params.ConfigPath)
+	// SECURITY (C1): revalidate the config at the privilege boundary. Client-side
+	// validation cannot be trusted — an attacker may speak the socket protocol
+	// directly, bypassing the GUI. stageOpenVPNConfig scans the config and writes a
+	// root-only copy that openvpn then executes, so a same-uid attacker cannot swap
+	// or overwrite the file between the scan and exec (TOCTOU) to smuggle a
+	// plugin/up/etc. directive.
+	stagedConfig, err := stageOpenVPNConfig(params.ConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("openvpn: %w", err)
 	}
+	// Until the process is successfully started (and thus owns the staged copy for
+	// its lifetime, cleaned up in waitForProcess), remove the copy on any early exit.
+	startedOK := false
+	defer func() {
+		if !startedOK {
+			removeStagedOpenVPNConfig(stagedConfig)
+		}
+	}()
 
 	// Create credentials file if needed
 	credFile, err := createCredentialsFile(params.Username, params.Password)
@@ -119,10 +135,16 @@ func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams)
 		return nil, fmt.Errorf("failed to create credentials file: %w", err)
 	}
 
-	// Build OpenVPN arguments
+	// Build OpenVPN arguments. The config is the root-only staged copy, not the
+	// client-supplied path, so the bytes openvpn parses are exactly the bytes we
+	// scanned.
 	args := []string{
-		"--config", params.ConfigPath,
+		"--config", stagedConfig,
 		"--verb", "3",
+		// SECURITY (C1): force all script execution off regardless of config
+		// contents. Combined with the directive scan above, this is defense in
+		// depth against remote-code-execution via a malicious config file.
+		"--script-security", "0",
 	}
 
 	if credFile != "" {
@@ -154,7 +176,7 @@ func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams)
 
 	proc := &OpenVPNProcess{
 		ProfileID:  params.ProfileID,
-		ConfigPath: params.ConfigPath,
+		ConfigPath: stagedConfig,
 		Cmd:        cmd,
 		Status:     StatusConnecting,
 		StartTime:  time.Now(),
@@ -191,6 +213,10 @@ func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams)
 
 	// Start process waiter
 	go m.waitForProcess(proc, credFile)
+
+	// The process now owns the staged config for its lifetime; waitForProcess
+	// removes it on exit. Prevent the early-exit defer from deleting it.
+	startedOK = true
 
 	return &OpenVPNConnectResult{
 		Success:   true,
@@ -374,8 +400,9 @@ func (m *OpenVPNManager) waitForProcess(proc *OpenVPNProcess, credFile string) {
 	// Wait for process to exit
 	err := proc.Cmd.Wait()
 
-	// Cleanup credentials file
+	// Cleanup credentials file and the root-only staged config copy.
 	cleanupCredentialsFile(credFile)
+	removeStagedOpenVPNConfig(proc.ConfigPath)
 
 	proc.mu.Lock()
 	if proc.Status == StatusConnecting || proc.Status == StatusConnected {
@@ -395,6 +422,52 @@ func (m *OpenVPNManager) waitForProcess(proc *OpenVPNProcess, credFile string) {
 	m.mu.Lock()
 	delete(m.processes, proc.ProfileID)
 	m.mu.Unlock()
+}
+
+// =============================================================================
+// CONFIG STAGING (TOCTOU-safe C1 validation)
+// =============================================================================
+
+const (
+	ovpnStagingDir     = "/run/vpn-manager/ovpn"
+	maxOVPNConfigBytes = 1 << 20 // 1 MiB
+)
+
+// stageOpenVPNConfig validates the client config and writes a root-only copy for
+// openvpn to execute, returning the staged path. openvpn derives nothing from the
+// filename, so a random name (CreateTemp) sidesteps any path-traversal concern
+// from the client-controlled profile ID, and the 0700 dir prevents tampering.
+func stageOpenVPNConfig(clientPath string) (string, error) {
+	data, err := readValidatedConfig(clientPath, maxOVPNConfigBytes, validate.OpenVPNConfigSafe)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(ovpnStagingDir, 0700); err != nil {
+		return "", fmt.Errorf("create staging dir: %w", err)
+	}
+	f, err := os.CreateTemp(ovpnStagingDir, "ovpn-*.conf")
+	if err != nil {
+		return "", fmt.Errorf("create staged config: %w", err)
+	}
+	staged := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(staged)
+		return "", fmt.Errorf("write staged config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(staged)
+		return "", fmt.Errorf("close staged config: %w", err)
+	}
+	return staged, nil
+}
+
+// removeStagedOpenVPNConfig deletes a staged openvpn config (best-effort), only if
+// it lives in ovpnStagingDir so it can never remove a client-supplied file.
+func removeStagedOpenVPNConfig(configPath string) {
+	if strings.HasPrefix(configPath, ovpnStagingDir+"/") {
+		_ = os.Remove(configPath)
+	}
 }
 
 // =============================================================================

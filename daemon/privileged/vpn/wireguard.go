@@ -13,7 +13,20 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 )
+
+// wgStagingDir is a root-only (0700) directory where the daemon writes the
+// validated copy of each WireGuard config it brings up. Executing wg-quick against
+// this root-owned copy — not the client-supplied path — is what makes the C1 scan
+// TOCTOU-proof: a same-uid attacker cannot swap the file after it is validated,
+// because they cannot write into this directory.
+const wgStagingDir = "/run/vpn-manager/wg"
+
+// maxWgConfigBytes caps the size of a WireGuard config we will stage. Real configs
+// are a few hundred bytes; this bounds memory against a pathological input.
+const maxWgConfigBytes = 1 << 20 // 1 MiB
 
 // =============================================================================
 // WIREGUARD MANAGER
@@ -81,6 +94,12 @@ func (m *WireGuardManager) Connect(ctx context.Context, params WireGuardConnectP
 		ifaceName = deriveInterfaceName(params.ConfigPath)
 	}
 
+	// SECURITY: the interface name is passed to `ip`/`wg`; revalidate it at the
+	// boundary so a client-supplied name cannot inject command flags or characters.
+	if err := validate.InterfaceName(ifaceName); err != nil {
+		return nil, fmt.Errorf("wireguard: %w", err)
+	}
+
 	// Check if already connected
 	if iface, exists := m.interfaces[ifaceName]; exists {
 		if iface.Status == StatusConnecting || iface.Status == StatusConnected {
@@ -88,10 +107,18 @@ func (m *WireGuardManager) Connect(ctx context.Context, params WireGuardConnectP
 		}
 	}
 
-	// Validate config file exists
-	if _, err := os.Stat(params.ConfigPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file not found: %s", params.ConfigPath)
+	// SECURITY (C1): revalidate the config at the privilege boundary. wg-quick runs
+	// PreUp/PostUp/PreDown/PostDown hooks as root and has no --script-security
+	// equivalent, so rejecting those directives is the only defense against a
+	// malicious .conf handed to the root daemon. OpenConfig opens the file with
+	// O_NOFOLLOW; we scan and stage the SAME bytes into a root-only directory and
+	// run wg-quick against that copy, so a same-uid attacker cannot swap the file
+	// contents between the scan and exec (TOCTOU).
+	stagedConfig, err := m.stageConfig(params.ConfigPath, ifaceName)
+	if err != nil {
+		return nil, fmt.Errorf("wireguard: %w", err)
 	}
+	params.ConfigPath = stagedConfig
 
 	m.logger.Printf("[wireguard] Bringing up interface %s with config %s", ifaceName, params.ConfigPath)
 
@@ -105,7 +132,6 @@ func (m *WireGuardManager) Connect(ctx context.Context, params WireGuardConnectP
 	m.interfaces[ifaceName] = iface
 
 	// Try wg-quick first (most common)
-	var err error
 	var ipAddress string
 
 	if checkCommandExists("wg-quick") {
@@ -128,6 +154,9 @@ func (m *WireGuardManager) Connect(ctx context.Context, params WireGuardConnectP
 		iface.Status = StatusError
 		iface.LastError = err.Error()
 		iface.mu.Unlock()
+		// The bring-up failed; drop the staged key-bearing copy now rather than
+		// leaving it until an eventual Disconnect that may never come.
+		removeStagedConfig(params.ConfigPath)
 		return nil, err
 	}
 
@@ -169,6 +198,9 @@ func (m *WireGuardManager) Disconnect(interfaceName string) error {
 	} else {
 		err = m.disconnectInterface(interfaceName)
 	}
+
+	// Remove the staged config copy (best-effort; no-op for non-staged paths).
+	removeStagedConfig(configPath)
 
 	// Remove from tracking regardless of error
 	m.mu.Lock()
@@ -255,6 +287,43 @@ func (m *WireGuardManager) ListInterfaces() []WireGuardStatusResult {
 }
 
 // =============================================================================
+// CONFIG STAGING (TOCTOU-safe C1 validation)
+// =============================================================================
+
+// stageConfig validates the client-supplied WireGuard config without a TOCTOU
+// window and returns the path to a root-only copy that wg-quick/wg will execute.
+// It opens the path with O_NOFOLLOW, scans the bytes for forbidden hooks, and
+// writes those exact bytes to <wgStagingDir>/<ifaceName>.conf (0600, in a 0700
+// root-only directory). Because a same-uid attacker cannot write into that
+// directory, they cannot swap the file between validation and execution; naming
+// the copy after ifaceName also makes wg-quick create the correctly-named
+// interface. ifaceName is validated by the caller before this runs.
+func (m *WireGuardManager) stageConfig(clientPath, ifaceName string) (string, error) {
+	data, err := readValidatedConfig(clientPath, maxWgConfigBytes, validate.WireGuardConfigSafe)
+	if err != nil {
+		return "", fmt.Errorf("refusing to bring up interface: %w", err)
+	}
+	if err := os.MkdirAll(wgStagingDir, 0700); err != nil {
+		return "", fmt.Errorf("create staging dir: %w", err)
+	}
+	// ifaceName is validated as an interface name by the caller ([A-Za-z0-9_-],
+	// ≤15 chars), so it cannot traverse out of wgStagingDir.
+	staged := filepath.Join(wgStagingDir, ifaceName+".conf")
+	if err := os.WriteFile(staged, data, 0600); err != nil {
+		return "", fmt.Errorf("write staged config: %w", err)
+	}
+	return staged, nil
+}
+
+// removeStagedConfig deletes a staged config copy (best-effort). It only removes
+// paths inside wgStagingDir so it can never delete a client-supplied file.
+func removeStagedConfig(configPath string) {
+	if strings.HasPrefix(configPath, wgStagingDir+"/") {
+		_ = os.Remove(configPath)
+	}
+}
+
+// =============================================================================
 // CONNECTION METHODS
 // =============================================================================
 
@@ -269,7 +338,10 @@ func (m *WireGuardManager) connectWithWgQuick(ctx context.Context, ifaceName, co
 }
 
 func (m *WireGuardManager) connectWithWg(ctx context.Context, ifaceName, configPath string) error {
-	// Manual setup: ip link add, wg setconf, ip link set up
+	// Manual setup: ip link add, wg setconf, ip link set up.
+	// Note: `wg setconf` (unlike `wg-quick`) does NOT run PreUp/PostUp/PreDown/PostDown
+	// hooks — plain wg ignores those INI directives. The upstream WireGuardConfigSafe
+	// scan in Connect still protects this path; the scan is simply a no-op concern here.
 
 	// 1. Create interface
 	cmd := exec.CommandContext(ctx, "ip", "link", "add", "dev", ifaceName, "type", "wireguard")
