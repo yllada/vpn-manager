@@ -34,6 +34,11 @@ type IPv6ProtectionParams struct {
 
 // EnableIPv6Protection blocks IPv6 traffic using multiple methods.
 // Returns the original sysctl values for later restoration.
+//
+// FAIL-CLOSED: IPv6 leak protection is a security control. If neither the kernel
+// sysctl disable nor a firewall drop can be confirmed in place, this returns an
+// error rather than silently reporting success — otherwise the user would leak
+// IPv6 while believing they are protected.
 func EnableIPv6Protection() (map[string]string, error) {
 	// Get network interfaces
 	interfaces, err := getNetworkInterfaces()
@@ -41,24 +46,31 @@ func EnableIPv6Protection() (map[string]string, error) {
 		return nil, fmt.Errorf("failed to get interfaces: %w", err)
 	}
 
-	// Method 1: Disable IPv6 via sysctl (most reliable)
-	originalSysctl, err := disableIPv6Sysctl(interfaces)
-	if err != nil {
-		log.Printf("[firewall] sysctl disable failed: %v, trying firewall", err)
-	}
+	// Method 1: Disable IPv6 via sysctl (most reliable). sysctlOK reflects whether
+	// the critical global disable_ipv6 keys are actually set to 1 (verified).
+	originalSysctl, sysctlOK := disableIPv6Sysctl(interfaces)
 
-	// Method 2: Try nftables inet family first (modern, handles IPv4+IPv6 unified)
+	// Method 2/3: firewall drop as defense in depth. firewallOK is only true when a
+	// backend actually installed and confirmed its drop rules.
+	firewallOK := false
 	if err := blockIPv6Nftables(); err == nil {
+		firewallOK = true
 		log.Printf("[firewall] IPv6 blocked using nftables inet family")
 	} else {
-		// Method 3: Fall back to ip6tables (defense in depth)
 		log.Printf("[firewall] nftables unavailable (%v), using ip6tables", err)
 		if err := blockIPv6Iptables(); err != nil {
 			log.Printf("[firewall] Warning: ip6tables block failed: %v", err)
+		} else {
+			firewallOK = true
 		}
 	}
 
-	log.Printf("[firewall] IPv6 protection enabled for interfaces: %v", interfaces)
+	if !sysctlOK && !firewallOK {
+		return originalSysctl, fmt.Errorf("IPv6 protection failed: neither sysctl nor firewall could block IPv6 traffic")
+	}
+
+	log.Printf("[firewall] IPv6 protection enabled (sysctl=%v, firewall=%v) for interfaces: %v",
+		sysctlOK, firewallOK, interfaces)
 	return originalSysctl, nil
 }
 
@@ -86,8 +98,9 @@ func DisableIPv6Protection(originalSysctl map[string]string) error {
 // =============================================================================
 
 // disableIPv6Sysctl disables IPv6 at the kernel level.
-// Returns original values for later restoration.
-func disableIPv6Sysctl(interfaces []string) (map[string]string, error) {
+// Returns original values for later restoration, and a bool indicating whether the
+// critical global disable_ipv6 keys were verified set to "1" afterwards.
+func disableIPv6Sysctl(interfaces []string) (map[string]string, bool) {
 	original := make(map[string]string)
 
 	// Global sysctl settings for IPv6 blocking
@@ -124,7 +137,13 @@ func disableIPv6Sysctl(interfaces []string) (map[string]string, error) {
 		}
 	}
 
-	return original, nil
+	// Verify the critical global keys actually took effect. IPv6 is considered
+	// disabled at the kernel level only when both all/default disable_ipv6 read "1".
+	allOK, _ := getSysctl("net.ipv6.conf.all.disable_ipv6")
+	defOK, _ := getSysctl("net.ipv6.conf.default.disable_ipv6")
+	verified := allOK == "1" && defOK == "1"
+
+	return original, verified
 }
 
 // restoreIPv6Sysctl restores original IPv6 sysctl settings.
@@ -187,7 +206,22 @@ func blockIPv6Iptables() error {
 		_ = runCmd("ip6tables", rule...) // Ignore errors - rules might exist
 	}
 
+	// Verify the protection chain is actually hooked into OUTPUT; without this the
+	// "|| ignore" rule application above could report success while nothing applied.
+	if !isIPv6IptablesActive() {
+		return fmt.Errorf("ip6tables IPv6 block not active after apply (verification failed)")
+	}
 	return nil
+}
+
+// isIPv6IptablesActive reports whether the IPv6 protection chain is hooked into
+// the ip6tables OUTPUT chain.
+func isIPv6IptablesActive() bool {
+	out, err := exec.Command("ip6tables", "-L", "OUTPUT", "-n").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), IPv6ChainName)
 }
 
 // unblockIPv6Iptables removes ip6tables IPv6 blocking rules.

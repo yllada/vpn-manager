@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -241,41 +240,4 @@ func isValidCIDR(cidr string) bool {
 	}
 	_, _, err := net.ParseCIDR(cidr)
 	return err == nil
-}
-
-// =============================================================================
-// SCRIPT EXECUTION (for complex multi-command operations)
-// =============================================================================
-
-// ExecuteScript runs a bash script with elevated privileges.
-// Useful for operations that need multiple commands atomically.
-func ExecuteScript(script string) error {
-	// Create a temporary script file
-	tmpfile, err := os.CreateTemp("", "vpn-manager-*.sh")
-	if err != nil {
-		return fmt.Errorf("failed to create temp script: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpfile.Name()) }()
-
-	// Write script with header
-	header := "#!/bin/bash\nset -e\n\n"
-	if _, err := tmpfile.WriteString(header + script); err != nil {
-		_ = tmpfile.Close()
-		return fmt.Errorf("failed to write temp script: %w", err)
-	}
-	_ = tmpfile.Close()
-
-	// Make executable
-	if err := os.Chmod(tmpfile.Name(), 0755); err != nil {
-		return fmt.Errorf("failed to make script executable: %w", err)
-	}
-
-	// Execute (daemon already has root)
-	cmd := exec.Command("/bin/bash", tmpfile.Name())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("script execution failed: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-
-	return nil
 }

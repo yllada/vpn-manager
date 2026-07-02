@@ -12,6 +12,8 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 )
 
 // =============================================================================
@@ -76,9 +78,39 @@ type KillSwitchParams struct {
 	LANRanges    []string // Custom LAN ranges (uses defaults if empty)
 }
 
+// validateKillSwitchParams validates every client-supplied value that reaches an
+// iptables/nft argument. A leading-dash value would be reinterpreted as a flag,
+// and a 0.0.0.0/0 LAN range would silently turn the kill switch into a no-op — so
+// both are rejected here, at the boundary.
+func validateKillSwitchParams(params KillSwitchParams) error {
+	if err := validate.InterfaceName(params.VPNInterface); err != nil {
+		return fmt.Errorf("vpn_interface: %w", err)
+	}
+	if params.VPNServerIP != "" {
+		if err := validate.IP(params.VPNServerIP); err != nil {
+			return fmt.Errorf("vpn_server_ip: %w", err)
+		}
+	}
+	for _, r := range params.LANRanges {
+		if err := validate.CIDRNotDefault(r); err != nil {
+			return fmt.Errorf("lan_range %q: %w", r, err)
+		}
+	}
+	return nil
+}
+
 // EnableKillSwitch activates firewall rules to block all non-VPN traffic.
 // Returns the backend used or an error.
+//
+// FAIL-CLOSED: a kill switch is a security control. If the ruleset cannot be
+// applied and verified, we must NOT leave traffic flowing while the user believes
+// they are protected. On any failure this tears down the partial ruleset and falls
+// back to block-all, then returns the original error so the GUI reports it.
 func EnableKillSwitch(params KillSwitchParams) (FirewallBackend, error) {
+	if err := validateKillSwitchParams(params); err != nil {
+		return BackendNone, fmt.Errorf("invalid kill switch parameters: %w", err)
+	}
+
 	backend := DetectBackend()
 	if backend == BackendNone {
 		return backend, fmt.Errorf("no firewall backend available (need iptables or nftables)")
@@ -95,13 +127,34 @@ func EnableKillSwitch(params KillSwitchParams) (FirewallBackend, error) {
 		err = enableKillSwitchNftables(params.VPNInterface, allowedIPs)
 	}
 
+	// Verify the rules are actually present; treat a missing ruleset as failure so
+	// a silent partial apply cannot masquerade as success.
+	if err == nil && !IsKillSwitchActive() {
+		err = fmt.Errorf("kill switch rules not present after apply (verification failed)")
+	}
+
 	if err != nil {
-		return backend, err
+		return backend, failClosed(backend, err)
 	}
 
 	log.Printf("[firewall] Kill switch enabled for interface %s (backend: %s, allowLAN: %v)",
 		params.VPNInterface, backend, params.AllowLAN)
 	return backend, nil
+}
+
+// failClosed tears down any partial kill switch ruleset and engages block-all so
+// no traffic leaks after a failed enable. It returns an error describing the
+// outcome, wrapping the original cause.
+func failClosed(backend FirewallBackend, cause error) error {
+	log.Printf("[firewall] Kill switch enable failed (%v); failing closed to block-all", cause)
+
+	// Remove whatever partial rules were installed so block-all starts clean.
+	_ = DisableKillSwitch()
+
+	if _, blockErr := EnableBlockAll(); blockErr != nil {
+		return fmt.Errorf("kill switch failed and block-all fallback ALSO failed (%v): %w", blockErr, cause)
+	}
+	return fmt.Errorf("kill switch failed; failed closed to block-all mode: %w", cause)
 }
 
 // buildAllowedIPs constructs the list of IPs that bypass the kill switch.
@@ -389,20 +442,35 @@ func IsKillSwitchActive() bool {
 	}
 }
 
-// checkIptablesRules checks if our iptables chain exists.
+// checkIptablesRules reports whether the kill switch is actually enforcing, not
+// merely that the chain is referenced. It requires both that OUTPUT jumps to our
+// chain AND that the chain itself contains a DROP rule — a chain created without
+// its terminating DROP (e.g. the append failed) would let traffic through while
+// looking "active". This mirrors the nftables policy-drop check.
 func checkIptablesRules() bool {
-	cmd := exec.Command("iptables", "-L", "OUTPUT", "-n")
-	output, err := cmd.Output()
+	out, err := exec.Command("iptables", "-L", "OUTPUT", "-n").Output()
+	if err != nil || !strings.Contains(string(out), KillSwitchChainName) {
+		return false
+	}
+	chain, err := exec.Command("iptables", "-L", KillSwitchChainName, "-n").Output()
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(output), KillSwitchChainName)
+	return strings.Contains(string(chain), "DROP")
 }
 
-// checkNftablesRules checks if our nftables table exists.
+// checkNftablesRules reports whether the kill switch is actually enforcing, not
+// merely that our table exists. A table can exist with a half-built chain (e.g.
+// `add table` succeeded but `add chain ... policy drop` did not), which would drop
+// nothing while looking "active". We therefore require the output chain to exist
+// AND have `policy drop`.
 func checkNftablesRules() bool {
-	cmd := exec.Command("nft", "list", "table", "inet", NftablesTableName)
-	return cmd.Run() == nil
+	cmd := exec.Command("nft", "list", "chain", "inet", NftablesTableName, "output")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "policy drop")
 }
 
 // =============================================================================

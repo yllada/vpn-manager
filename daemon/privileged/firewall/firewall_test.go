@@ -9,6 +9,30 @@ import (
 // KILL SWITCH TESTS
 // =============================================================================
 
+func TestValidateKillSwitchParams(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  KillSwitchParams
+		wantErr bool
+	}{
+		{"valid minimal", KillSwitchParams{VPNInterface: "tun0"}, false},
+		{"valid full", KillSwitchParams{VPNInterface: "wg0", VPNServerIP: "1.2.3.4", LANRanges: []string{"192.168.0.0/24"}}, false},
+		{"empty interface", KillSwitchParams{VPNInterface: ""}, true},
+		{"interface flag injection", KillSwitchParams{VPNInterface: "-j"}, true},
+		{"bad server ip", KillSwitchParams{VPNInterface: "tun0", VPNServerIP: "1.2.3.4; rm -rf /"}, true},
+		{"lan default route rejected", KillSwitchParams{VPNInterface: "tun0", LANRanges: []string{"0.0.0.0/0"}}, true},
+		{"lan bad cidr", KillSwitchParams{VPNInterface: "tun0", LANRanges: []string{"nonsense"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateKillSwitchParams(tt.params)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateKillSwitchParams(%+v) err=%v, wantErr=%v", tt.params, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDetectBackend(t *testing.T) {
 	// This test verifies the function doesn't panic
 	// Actual result depends on system configuration
