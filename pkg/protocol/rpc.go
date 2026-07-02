@@ -9,6 +9,30 @@ import (
 	"sync"
 )
 
+// MaxMessageBytes is the maximum size of a single newline-delimited message the
+// codec will read. It bounds memory use on the receiver — critical for the root
+// daemon, where an unbounded read of an attacker-controlled stream is an OOM DoS.
+const MaxMessageBytes = 10 << 20 // 10 MiB
+
+// readLimitedLine reads bytes up to and including the next '\n', returning
+// ErrMessageTooLarge if the line would exceed limit. It accumulates across the
+// bufio buffer boundary (ReadSlice returns ErrBufferFull when the delimiter is
+// not yet in the buffer) without ever holding more than limit+bufsize bytes.
+func readLimitedLine(r *bufio.Reader, limit int) ([]byte, error) {
+	var buf []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(buf)+len(chunk) > limit {
+			return nil, ErrMessageTooLarge
+		}
+		buf = append(buf, chunk...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return buf, err
+	}
+}
+
 // Codec handles JSON-RPC encoding and decoding over a connection.
 // It uses newline-delimited JSON for message framing.
 // Codec is safe for concurrent use from multiple goroutines.
@@ -83,7 +107,7 @@ func (c *Codec) ReadRequest() (*Request, error) {
 		return nil, ErrConnectionClosed
 	}
 
-	line, err := c.reader.ReadBytes('\n')
+	line, err := readLimitedLine(c.reader, MaxMessageBytes)
 	if err != nil {
 		if err == io.EOF {
 			return nil, ErrConnectionClosed
@@ -113,7 +137,7 @@ func (c *Codec) ReadResponse() (*Response, error) {
 		return nil, ErrConnectionClosed
 	}
 
-	line, err := c.reader.ReadBytes('\n')
+	line, err := readLimitedLine(c.reader, MaxMessageBytes)
 	if err != nil {
 		if err == io.EOF {
 			return nil, ErrConnectionClosed
@@ -200,7 +224,7 @@ func (d *Decoder) DecodeRequest() (*Request, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	line, err := d.r.ReadBytes('\n')
+	line, err := readLimitedLine(d.r, MaxMessageBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +242,7 @@ func (d *Decoder) DecodeResponse() (*Response, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	line, err := d.r.ReadBytes('\n')
+	line, err := readLimitedLine(d.r, MaxMessageBytes)
 	if err != nil {
 		return nil, err
 	}

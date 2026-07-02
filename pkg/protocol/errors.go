@@ -16,6 +16,11 @@ var (
 
 	// ErrUnauthorized indicates the client lacks permission for the operation.
 	ErrUnauthorized = errors.New("unauthorized")
+
+	// ErrMessageTooLarge indicates a single framed message exceeded MaxMessageBytes.
+	// It caps memory use on the (root) daemon: without it, a client that never
+	// sends a newline could stream gigabytes into a single ReadBytes call.
+	ErrMessageTooLarge = errors.New("message exceeds maximum allowed size")
 )
 
 // IsConnectionError returns true if the error indicates a connection problem.
