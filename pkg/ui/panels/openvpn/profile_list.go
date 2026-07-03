@@ -171,10 +171,6 @@ func (pl *ProfileList) LoadProfiles() {
 // - Collapsed: profile name, status, connect button
 // - Expanded: uptime, latency, traffic stats
 func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
-	// Create AdwExpanderRow for progressive disclosure
-	expanderRow := adw.NewExpanderRow()
-	expanderRow.SetTitle(profile.Name)
-
 	// Build subtitle with status and features
 	subtitle := "Disconnected"
 	if profile.RequiresOTP {
@@ -183,114 +179,48 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	if profile.SplitTunnelEnabled {
 		subtitle += " • Split Tunnel"
 	}
-	expanderRow.SetSubtitle(subtitle)
 
-	// Spinner for connecting state (added as prefix, hidden by default)
-	spinner := gtk.NewSpinner()
-	spinner.SetVisible(false)
-	expanderRow.AddPrefix(spinner)
-
-	// Connect button as suffix
-	connectBtn := gtk.NewButton()
-	connectBtn.SetIconName("media-playback-start-symbolic")
-	connectBtn.SetTooltipText("Connect")
-	connectBtn.AddCSSClass("circular")
-	connectBtn.AddCSSClass("flat")
-	connectBtn.SetVAlign(gtk.AlignCenter)
-	connectBtn.ConnectClicked(func() {
-		pl.onConnectClicked(profile)
+	w := components.BuildProfileRow(components.ProfileRowConfig{
+		Title:        profile.Name,
+		Subtitle:     subtitle,
+		ConfigAccent: profile.SplitTunnelEnabled || profile.RequiresOTP,
+		OnConnect:    func() { pl.onConnectClicked(profile) },
+		OnConfig:     func() { pl.onConfigClicked(profile) },
+		OnDiag:       func() { pl.onDiagnosticsClicked(profile) },
+		OnDelete:     func() { pl.onDeleteClicked(profile) },
 	})
-	expanderRow.AddSuffix(connectBtn)
-
-	// Config button as suffix
-	configBtn := gtk.NewButton()
-	configBtn.SetIconName("emblem-system-symbolic")
-	configBtn.SetTooltipText("Profile Settings")
-	configBtn.AddCSSClass("circular")
-	configBtn.AddCSSClass("flat")
-	configBtn.SetVAlign(gtk.AlignCenter)
-	if profile.SplitTunnelEnabled || profile.RequiresOTP {
-		configBtn.RemoveCSSClass("flat")
-		configBtn.AddCSSClass("accent")
-	}
-	configBtn.ConnectClicked(func() {
-		pl.onConfigClicked(profile)
-	})
-	expanderRow.AddSuffix(configBtn)
-
-	// Diagnostics button as suffix (Task 4.3)
-	diagBtn := gtk.NewButton()
-	diagBtn.SetIconName("dialog-information-symbolic")
-	diagBtn.SetTooltipText("Network Diagnostics")
-	diagBtn.AddCSSClass("circular")
-	diagBtn.AddCSSClass("flat")
-	diagBtn.SetVAlign(gtk.AlignCenter)
-	diagBtn.ConnectClicked(func() {
-		pl.onDiagnosticsClicked(profile)
-	})
-	expanderRow.AddSuffix(diagBtn)
-
-	// Delete button as suffix
-	deleteBtn := gtk.NewButton()
-	deleteBtn.SetIconName("user-trash-symbolic")
-	deleteBtn.SetTooltipText("Delete profile")
-	deleteBtn.AddCSSClass("circular")
-	deleteBtn.AddCSSClass("flat")
-	deleteBtn.AddCSSClass("destructive-action")
-	deleteBtn.SetVAlign(gtk.AlignCenter)
-	deleteBtn.ConnectClicked(func() {
-		pl.onDeleteClicked(profile)
-	})
-	expanderRow.AddSuffix(deleteBtn)
 
 	// ─────────────────────────────────────────────────────────────────────
 	// EXPANDED CONTENT - Detail rows (visible when expanded)
 	// ─────────────────────────────────────────────────────────────────────
+	uptimeRow := components.NewDetailRow("appointment-symbolic", "Uptime", "--")
+	w.ExpanderRow.AddRow(uptimeRow)
 
-	// Uptime row
-	uptimeRow := adw.NewActionRow()
-	uptimeRow.SetTitle("Uptime")
-	uptimeRow.SetSubtitle("--")
-	uptimeRow.AddPrefix(components.CreateRowIcon("appointment-symbolic"))
-	expanderRow.AddRow(uptimeRow)
+	latencyRow := components.NewDetailRow("network-wireless-signal-good-symbolic", "Latency", "--")
+	w.ExpanderRow.AddRow(latencyRow)
 
-	// Latency row
-	latencyRow := adw.NewActionRow()
-	latencyRow.SetTitle("Latency")
-	latencyRow.SetSubtitle("--")
-	latencyRow.AddPrefix(components.CreateRowIcon("network-wireless-signal-good-symbolic"))
-	expanderRow.AddRow(latencyRow)
-
-	// Traffic row (combined TX/RX)
-	trafficRow := adw.NewActionRow()
-	trafficRow.SetTitle("Traffic")
-	trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
-	trafficRow.AddPrefix(components.CreateRowIcon("network-transmit-receive-symbolic"))
-	expanderRow.AddRow(trafficRow)
+	trafficRow := components.NewDetailRow("network-transmit-receive-symbolic", "Traffic", "↑ 0 B  ↓ 0 B")
+	w.ExpanderRow.AddRow(trafficRow)
 
 	// Profile info row (created/last used)
-	infoRow := adw.NewActionRow()
-	infoRow.SetTitle("Profile Info")
 	infoText := fmt.Sprintf("Created: %s", profile.Created.Format("01/02/2006"))
 	if !profile.LastUsed.IsZero() {
 		infoText = fmt.Sprintf("Last used: %s", profile.LastUsed.Format("01/02/2006 15:04"))
 	}
-	infoRow.SetSubtitle(infoText)
-	infoRow.AddPrefix(components.CreateRowIcon("document-properties-symbolic"))
-	expanderRow.AddRow(infoRow)
+	w.ExpanderRow.AddRow(components.NewDetailRow("document-properties-symbolic", "Profile Info", infoText))
 
 	// Add to list
-	pl.listBox.Append(expanderRow)
+	pl.listBox.Append(w.ExpanderRow)
 
 	// Store reference
 	pl.rows[profile.ID] = &ProfileRow{
 		profile:     profile,
-		expanderRow: expanderRow,
-		connectBtn:  connectBtn,
-		configBtn:   configBtn,
-		diagBtn:     diagBtn,
-		deleteBtn:   deleteBtn,
-		spinner:     spinner,
+		expanderRow: w.ExpanderRow,
+		connectBtn:  w.ConnectBtn,
+		configBtn:   w.ConfigBtn,
+		diagBtn:     w.DiagBtn,
+		deleteBtn:   w.DeleteBtn,
+		spinner:     w.Spinner,
 		uptimeRow:   uptimeRow,
 		latencyRow:  latencyRow,
 		trafficRow:  trafficRow,

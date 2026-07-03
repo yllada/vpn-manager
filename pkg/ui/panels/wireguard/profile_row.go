@@ -29,113 +29,50 @@ type WireGuardRow struct {
 // - Collapsed: profile name, status, connect button
 // - Expanded: endpoint, traffic stats
 func (wp *WireGuardPanel) addProfileRow(profile *wireguard.Profile) {
-	// Create AdwExpanderRow for progressive disclosure
-	expanderRow := adw.NewExpanderRow()
-	expanderRow.SetTitle(profile.Name())
-
 	// Build subtitle with status and features
 	subtitle := "Disconnected"
 	if profile.SplitTunnelEnabled {
 		subtitle += " • Split Tunnel"
 	}
-	expanderRow.SetSubtitle(subtitle)
 
-	// Spinner for connecting state (added as prefix, hidden by default)
-	spinner := gtk.NewSpinner()
-	spinner.SetVisible(false)
-	expanderRow.AddPrefix(spinner)
+	// wgRow is referenced by the button handlers, which fire only after it is
+	// assigned below, so capturing it by variable here is safe.
+	var wgRow *WireGuardRow
 
-	// Connect button as suffix
-	connBtn := gtk.NewButton()
-	connBtn.SetIconName("media-playback-start-symbolic")
-	connBtn.SetTooltipText("Connect")
-	connBtn.AddCSSClass("circular")
-	connBtn.AddCSSClass("flat")
-	connBtn.SetVAlign(gtk.AlignCenter)
-	expanderRow.AddSuffix(connBtn)
-
-	// Config button as suffix
-	configBtn := gtk.NewButton()
-	configBtn.SetIconName("emblem-system-symbolic")
-	configBtn.SetTooltipText("Profile Settings")
-	configBtn.AddCSSClass("circular")
-	configBtn.AddCSSClass("flat")
-	configBtn.SetVAlign(gtk.AlignCenter)
-	if profile.SplitTunnelEnabled {
-		configBtn.RemoveCSSClass("flat")
-		configBtn.AddCSSClass("accent")
-	}
-	expanderRow.AddSuffix(configBtn)
-
-	// Diagnostics button as suffix (Task 3.6)
-	diagBtn := gtk.NewButton()
-	diagBtn.SetIconName("dialog-information-symbolic")
-	diagBtn.SetTooltipText("Network Diagnostics")
-	diagBtn.AddCSSClass("circular")
-	diagBtn.AddCSSClass("flat")
-	diagBtn.SetVAlign(gtk.AlignCenter)
-	expanderRow.AddSuffix(diagBtn)
-
-	// Delete button as suffix
-	delBtn := gtk.NewButton()
-	delBtn.SetIconName("user-trash-symbolic")
-	delBtn.SetTooltipText("Delete profile")
-	delBtn.AddCSSClass("circular")
-	delBtn.AddCSSClass("flat")
-	delBtn.AddCSSClass("destructive-action")
-	delBtn.SetVAlign(gtk.AlignCenter)
-	expanderRow.AddSuffix(delBtn)
+	w := components.BuildProfileRow(components.ProfileRowConfig{
+		Title:        profile.Name(),
+		Subtitle:     subtitle,
+		ConfigAccent: profile.SplitTunnelEnabled,
+		OnConnect:    func() { wp.onConnectProfile(wgRow) },
+		OnConfig:     func() { wp.onConfigProfile(wgRow) },
+		OnDiag:       func() { wp.onDiagnosticsProfile(wgRow) },
+		OnDelete:     func() { wp.onDeleteProfile(wgRow) },
+	})
 
 	// ─────────────────────────────────────────────────────────────────────
 	// EXPANDED CONTENT - Detail rows (visible when expanded)
 	// ─────────────────────────────────────────────────────────────────────
+	endpointRow := components.NewDetailRow("network-server-symbolic", "Endpoint", profile.Summary())
+	w.ExpanderRow.AddRow(endpointRow)
 
-	// Endpoint row
-	endpointRow := adw.NewActionRow()
-	endpointRow.SetTitle("Endpoint")
-	endpointRow.SetSubtitle(profile.Summary())
-	endpointRow.AddPrefix(components.CreateRowIcon("network-server-symbolic"))
-	expanderRow.AddRow(endpointRow)
-
-	// Traffic row (combined TX/RX)
-	trafficRow := adw.NewActionRow()
-	trafficRow.SetTitle("Traffic")
-	trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
-	trafficRow.AddPrefix(components.CreateRowIcon("network-transmit-receive-symbolic"))
-	expanderRow.AddRow(trafficRow)
+	trafficRow := components.NewDetailRow("network-transmit-receive-symbolic", "Traffic", "↑ 0 B  ↓ 0 B")
+	w.ExpanderRow.AddRow(trafficRow)
 
 	// Store row reference
-	wgRow := &WireGuardRow{
+	wgRow = &WireGuardRow{
 		profile:     profile,
-		expanderRow: expanderRow,
-		connBtn:     connBtn,
-		configBtn:   configBtn,
-		diagBtn:     diagBtn,
-		delBtn:      delBtn,
-		spinner:     spinner,
+		expanderRow: w.ExpanderRow,
+		connBtn:     w.ConnectBtn,
+		configBtn:   w.ConfigBtn,
+		diagBtn:     w.DiagBtn,
+		delBtn:      w.DeleteBtn,
+		spinner:     w.Spinner,
 		trafficRow:  trafficRow,
 		endpointRow: endpointRow,
 	}
 	wp.rows[profile.ID()] = wgRow
 
-	// Connect handlers
-	connBtn.ConnectClicked(func() {
-		wp.onConnectProfile(wgRow)
-	})
-
-	configBtn.ConnectClicked(func() {
-		wp.onConfigProfile(wgRow)
-	})
-
-	diagBtn.ConnectClicked(func() {
-		wp.onDiagnosticsProfile(wgRow)
-	})
-
-	delBtn.ConnectClicked(func() {
-		wp.onDeleteProfile(wgRow)
-	})
-
-	wp.listBox.Append(expanderRow)
+	wp.listBox.Append(w.ExpanderRow)
 }
 
 // updateRowStatus updates a row's UI based on connection status.
