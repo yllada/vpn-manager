@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -17,16 +20,37 @@ import (
 
 // checkAvailability checks if Tailscale is available and shows the appropriate view.
 // This handles 3 states: NotInstalled, DaemonStopped, Ready.
-// Called on panel creation and when user clicks "Check Again".
+// Called on panel creation, on tray-restore (RefreshStatus), and when the user
+// clicks "Check Again".
+//
+// AvailabilityState() shells out (tailscale version + status, up to 5s), so the
+// probe runs in a background goroutine and only the view swap is marshaled back
+// to the GTK main thread via renderAvailability. This keeps tray-restore and
+// panel creation from freezing the UI.
 func (tp *TailscalePanel) checkAvailability() {
 	if tp.provider == nil {
-		// Binary not found during provider creation
+		// Binary not found during provider creation — no shell-out needed.
 		tp.showNotInstalledState()
 		return
 	}
+	// Coalesce: if a probe is already running, skip — it will render the latest
+	// state when it finishes. Prevents overlapping shell-outs piling up.
+	if !tp.availabilityChecking.CompareAndSwap(false, true) {
+		return
+	}
+	resilience.SafeGoWithName("tailscale-availability-check", func() {
+		defer tp.availabilityChecking.Store(false)
+		state := tp.provider.AvailabilityState()
+		glib.IdleAdd(func() {
+			tp.renderAvailability(state)
+		})
+	})
+}
 
-	state := tp.provider.AvailabilityState()
-
+// renderAvailability applies the probed availability state to the widgets. MUST
+// run on the GTK main thread (it is only ever invoked via glib.IdleAdd from
+// checkAvailability).
+func (tp *TailscalePanel) renderAvailability(state tailscalevpn.AvailabilityState) {
 	switch state {
 	case tailscalevpn.StateNotInstalled:
 		tp.showNotInstalledState()
@@ -74,26 +98,70 @@ func (tp *TailscalePanel) showReadyState() {
 // STATUS UPDATES
 // ═══════════════════════════════════════════════════════════════════════════
 
-// UpdateStatus fetches and displays current Tailscale status.
-// Only called when provider is available (StateReady).
+// UpdateStatus refreshes the Tailscale status display. The underlying queries
+// shell out to the tailscale CLI, so they run in a background goroutine and only
+// the widget updates are marshaled back to the GTK main thread via renderStatus.
+// This is safe to call from the main thread (ticker, button handlers) without
+// freezing the UI. Only meaningful when the provider is available (StateReady).
 func (tp *TailscalePanel) UpdateStatus() {
-	// Guard: don't update if provider is nil
 	if tp.provider == nil {
 		return
 	}
+	// Coalesce: at most one fetch runs at a time. If one is already in flight,
+	// record that another refresh was requested so it re-runs once when it
+	// finishes — do NOT drop the request, since an explicit refresh may need to
+	// reflect a change that postdates the in-flight fetch.
+	tp.statusMu.Lock()
+	if tp.statusRunning {
+		tp.statusPending = true
+		tp.statusMu.Unlock()
+		return
+	}
+	tp.statusRunning = true
+	tp.statusMu.Unlock()
 
-	ctx := context.Background()
+	resilience.SafeGoWithName("tailscale-status-fetch", func() {
+		for {
+			ctx := context.Background()
+			version, _ := tp.provider.Version()
+			status, statusErr := tp.provider.Status(ctx)
+			tsStatus, tsErr := tp.provider.GetTailscaleStatus(ctx)
+			glib.IdleAdd(func() {
+				tp.renderStatus(version, status, statusErr, tsStatus, tsErr)
+			})
 
-	// Get version
-	if version, err := tp.provider.Version(); err == nil {
+			// If a refresh arrived mid-fetch, drain it and re-run once more;
+			// otherwise release the running flag and stop.
+			tp.statusMu.Lock()
+			if tp.statusPending {
+				tp.statusPending = false
+				tp.statusMu.Unlock()
+				continue
+			}
+			tp.statusRunning = false
+			tp.statusMu.Unlock()
+			return
+		}
+	})
+}
+
+// renderStatus applies fetched status to the widgets. MUST run on the GTK main
+// thread (it is only ever invoked via glib.IdleAdd from UpdateStatus).
+func (tp *TailscalePanel) renderStatus(
+	version string,
+	status *vpntypes.ProviderStatus,
+	statusErr error,
+	tsStatus *tailscalevpn.Status,
+	tsErr error,
+) {
+	// Set version (empty when the query failed).
+	if version != "" {
 		tp.versionRow.SetSubtitle(version)
 	}
 
-	// Get status
-	status, err := tp.provider.Status(ctx)
-	if err != nil {
+	if statusErr != nil {
 		tp.profileExpanderRow.SetSubtitle("Error")
-		logger.LogError("tailscale-panel", "status error: %v", err)
+		logger.LogError("tailscale-panel", "status error: %v", statusErr)
 		return
 	}
 
@@ -174,8 +242,8 @@ func (tp *TailscalePanel) UpdateStatus() {
 	// Set the subtitle with status parts
 	tp.profileExpanderRow.SetSubtitle(strings.Join(statusParts, " • "))
 
-	// Update peers list
-	tp.updatePeers()
+	// Update peers list from the status fetched off the main thread.
+	tp.renderPeers(tsStatus, tsErr)
 
 	// Disable connect button when needs login
 	tp.connectBtn.SetSensitive(status.BackendState != "NeedsLogin")

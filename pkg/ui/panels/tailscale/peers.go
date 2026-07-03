@@ -196,9 +196,11 @@ func (tp *TailscalePanel) createPeersSection() *gtk.Box {
 // updatePeers updates both Exit Nodes and Devices sections.
 // Separates peers into exit nodes (ExitNodeOption=true) and regular devices.
 // Uses signature-based cache to avoid rebuilding when peers haven't changed.
-func (tp *TailscalePanel) updatePeers() {
-	ctx := context.Background()
-	tsStatus, err := tp.provider.GetTailscaleStatus(ctx)
+// renderPeers updates the peer/exit-node/device sections from an already-fetched
+// Tailscale status. It MUST run on the GTK main thread. The status is fetched off
+// the main thread by UpdateStatus and passed in here, so this method never shells
+// out (which would block the UI).
+func (tp *TailscalePanel) renderPeers(tsStatus *tailscalevpn.Status, err error) {
 	if err != nil || tsStatus == nil || len(tsStatus.Peer) == 0 {
 		tp.clearAllPeers()
 		return

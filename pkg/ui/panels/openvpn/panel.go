@@ -45,6 +45,16 @@ type OpenVPNPanel struct {
 	buttonBox *gtk.Box
 }
 
+// Cleanup stops the panel's background goroutines (connection monitors and the
+// stats poller). Called on application shutdown to avoid leaking goroutines for
+// still-connected profiles.
+func (p *OpenVPNPanel) Cleanup() {
+	if p.profileList != nil {
+		p.profileList.StopMonitoring()
+		p.profileList.stopStatsUpdate()
+	}
+}
+
 // NewOpenVPNPanel creates a new OpenVPN panel.
 func NewOpenVPNPanel(host ports.PanelHost, onAddProfile func(), dialogFactory SplitTunnelDialogFactory) *OpenVPNPanel {
 	panel := &OpenVPNPanel{

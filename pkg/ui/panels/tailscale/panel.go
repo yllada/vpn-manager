@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -60,9 +61,29 @@ type TailscalePanel struct {
 	// Track connection state for tray updates (avoid spamming)
 	lastConnectedState bool
 
-	// Update ticker
+	// Update ticker. updatesMu guards running/stopUpdates so a repeated
+	// StartUpdates without a paired StopUpdates cannot orphan a second ticker.
+	updatesMu       sync.Mutex
+	running         bool
 	stopUpdates     chan struct{}
 	stopUpdatesOnce sync.Once
+
+	// Status-fetch coalescing. The status fetch shells out to the tailscale CLI,
+	// so it runs off the GTK main thread. At most one fetch runs at a time
+	// (statusRunning); if UpdateStatus is called while one is in flight, statusPending
+	// records it so the fetch re-runs ONCE when it completes. This matters because an
+	// explicit refresh (e.g. after an exit-node alias save) must not be dropped — the
+	// in-flight fetch may predate the change it needs to reflect. statusMu is only held
+	// for trivial state flips, never during the shell-out.
+	statusMu      sync.Mutex
+	statusRunning bool
+	statusPending bool
+
+	// availabilityChecking coalesces concurrent checkAvailability calls: the
+	// availability probe shells out (tailscale version + status, up to 5s), so it
+	// runs off the GTK main thread; this guards against overlapping probes from
+	// tray-restore, panel creation, and "Check Again" clicks piling up.
+	availabilityChecking atomic.Bool
 
 	// Empty state views for when Tailscale is not available
 	notInstalledView  *components.NotInstalledView // For StateNotInstalled
@@ -134,10 +155,22 @@ func (tp *TailscalePanel) createLayout() {
 }
 
 // StartUpdates starts periodic status updates.
+// No-op if updates are already running (defense against an unpaired StartUpdates
+// orphaning a second ticker).
 func (tp *TailscalePanel) StartUpdates() {
+	tp.updatesMu.Lock()
+	if tp.running {
+		tp.updatesMu.Unlock()
+		return
+	}
+	tp.running = true
 	// Reset sync.Once and create new channel for this update cycle
 	tp.stopUpdatesOnce = sync.Once{}
 	tp.stopUpdates = make(chan struct{})
+	stopCh := tp.stopUpdates // Capture for the goroutine so a subsequent
+	// StartUpdates (which reassigns tp.stopUpdates) cannot make this goroutine
+	// miss its own channel's close and leak.
+	tp.updatesMu.Unlock()
 
 	resilience.SafeGoWithName("tailscale-periodic-updates", func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -149,7 +182,7 @@ func (tp *TailscalePanel) StartUpdates() {
 				glib.IdleAdd(func() {
 					tp.UpdateStatus()
 				})
-			case <-tp.stopUpdates:
+			case <-stopCh:
 				return
 			}
 		}
@@ -159,9 +192,12 @@ func (tp *TailscalePanel) StartUpdates() {
 // StopUpdates stops periodic status updates.
 func (tp *TailscalePanel) StopUpdates() {
 	tp.stopUpdatesOnce.Do(func() {
+		tp.updatesMu.Lock()
+		defer tp.updatesMu.Unlock()
 		if tp.stopUpdates != nil {
 			close(tp.stopUpdates)
 		}
+		tp.running = false
 	})
 }
 

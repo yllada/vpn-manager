@@ -102,8 +102,12 @@ func (a *Application) onActivate() {
 	// Show window only if not starting minimized (autostart mode)
 	if a.startMinimized {
 		logger.LogInfo("Starting minimized to system tray")
-		// Window is created but not shown - needed for GTK app lifecycle
-		// The tray indicator will allow showing the window later
+		// Window is created but not shown - needed for GTK app lifecycle.
+		// The tray indicator will allow showing the window later. createLayout
+		// already called StartUpdates on every panel, so pause the pollers now —
+		// otherwise they would shell out every few seconds while the window stays
+		// hidden at launch. Resumed on the first showWindow() via resumePanelUpdates().
+		a.window.pausePanelUpdates()
 	} else {
 		a.window.Show()
 	}
@@ -216,7 +220,9 @@ func (a *Application) showWindow() {
 	glib.IdleAdd(func() {
 		if a.window != nil {
 			a.window.window.Present()
-			// Refresh all panel statuses to sync UI with actual VPN state
+			// Resume the pollers paused when the window was hidden to the tray,
+			// then refresh all panel statuses to sync UI with actual VPN state.
+			a.window.resumePanelUpdates()
 			a.window.RefreshAllPanels()
 		}
 	})
@@ -240,6 +246,9 @@ func (a *Application) Cleanup() {
 		}
 		if a.window.statsPanel != nil {
 			a.window.statsPanel.StopUpdates()
+		}
+		if a.window.openvpnPanel != nil {
+			a.window.openvpnPanel.Cleanup()
 		}
 	}
 	logger.LogInfo("Application cleanup completed")

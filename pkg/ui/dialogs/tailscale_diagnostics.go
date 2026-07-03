@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"github.com/yllada/vpn-manager/internal/vpn/tailscale"
@@ -129,10 +130,12 @@ func (d *TailscaleDiagnosticsDialog) runNetCheck() {
 		Error:   err,
 	}
 
-	// Update UI on main thread (GTK requires this)
-	// Note: In production, use glib.IdleAdd for thread safety
-	// For now, direct call works if already on main thread
-	d.updateResult(result)
+	// runNetCheck runs in a background goroutine (see runAllDiagnostics), so the
+	// widget mutations in updateResult MUST be marshaled to the GTK main thread.
+	// Calling them directly here is a data race.
+	glib.IdleAdd(func() {
+		d.updateResult(result)
+	})
 }
 
 // updateResult adds a result to the UI (must be called on main thread).

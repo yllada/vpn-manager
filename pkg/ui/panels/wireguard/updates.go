@@ -10,11 +10,20 @@ import (
 )
 
 // StartUpdates starts periodic status updates.
+// No-op if updates are already running (defense against an unpaired StartUpdates
+// orphaning a second ticker).
 func (wp *WireGuardPanel) StartUpdates() {
+	wp.updatesMu.Lock()
+	if wp.running {
+		wp.updatesMu.Unlock()
+		return
+	}
+	wp.running = true
 	// Reset the stop channel for new updates
 	wp.stopUpdates = make(chan struct{})
 	wp.stopUpdatesOnce = sync.Once{}
 	stopCh := wp.stopUpdates // Capture for goroutine
+	wp.updatesMu.Unlock()
 
 	resilience.SafeGoWithName("wireguard-status-updates", func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -35,9 +44,12 @@ func (wp *WireGuardPanel) StartUpdates() {
 // Safe to call multiple times (idempotent).
 func (wp *WireGuardPanel) StopUpdates() {
 	wp.stopUpdatesOnce.Do(func() {
+		wp.updatesMu.Lock()
+		defer wp.updatesMu.Unlock()
 		if wp.stopUpdates != nil {
 			close(wp.stopUpdates)
 		}
+		wp.running = false
 	})
 }
 

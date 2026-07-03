@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg -n \"func.*showWindow\" -A 25 /home/yadian/Escritorio/Personal/vpn-manager/pkg/ui/*.go)",
+      "Bash(rg -n \"running|func.*StartUpdates|func.*StopUpdates|stopUpdatesOnce|stopUpdates\" /home/yadian/Escritorio/Personal/vpn-manager/pkg/ui/panels/stats/*.go)",
+      "Bash(rg -n \"running|func.*StartUpdates|func.*StopUpdates|stopUpdatesOnce|type WireGuardPanel struct\" /home/yadian/Escritorio/Personal/vpn-manager/pkg/ui/panels/wireguard/*.go)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(break)",
+      "Bash(kill 27496 32315)",
+      "Bash(wait)",
+      "Bash(exit 0)",
+      "Bash(kill 35442)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git --no-pager diff pkg/ui/dialogs/tailscale_diagnostics.go pkg/ui/panels/openvpn/panel.go pkg/ui/panels/openvpn/profile_list.go pkg/ui/panels/tailscale/peers.go pkg/ui/window.go)",
+      "Bash(git --no-pager diff pkg/ui/app.go)"
+    ]
+  }
+}

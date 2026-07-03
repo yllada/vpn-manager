@@ -47,6 +47,47 @@ type MainWindow struct {
 	statusBar       *gtk.Box
 	statusLabel     *gtk.Label
 	daemonAvailable bool
+
+	// updatesPaused is true while the window is hidden in the tray, so the periodic
+	// pollers are stopped. Toggled only on the GTK main thread (pause/resume).
+	updatesPaused bool
+}
+
+// pausePanelUpdates stops the periodic status pollers while the window is hidden
+// in the tray, so the app stops shelling out every few seconds in the background.
+// Paired with resumePanelUpdates. Must run on the GTK main thread.
+func (mw *MainWindow) pausePanelUpdates() {
+	if mw.updatesPaused {
+		return
+	}
+	mw.updatesPaused = true
+	if mw.tailscalePanel != nil {
+		mw.tailscalePanel.StopUpdates()
+	}
+	if mw.wireguardPanel != nil {
+		mw.wireguardPanel.StopUpdates()
+	}
+	if mw.statsPanel != nil {
+		mw.statsPanel.StopUpdates()
+	}
+}
+
+// resumePanelUpdates restarts the periodic pollers when the window is shown again.
+// Must run on the GTK main thread.
+func (mw *MainWindow) resumePanelUpdates() {
+	if !mw.updatesPaused {
+		return
+	}
+	mw.updatesPaused = false
+	if mw.tailscalePanel != nil {
+		mw.tailscalePanel.StartUpdates()
+	}
+	if mw.wireguardPanel != nil {
+		mw.wireguardPanel.StartUpdates()
+	}
+	if mw.statsPanel != nil {
+		mw.statsPanel.StartUpdates()
+	}
 }
 
 // NewMainWindow creates a new main window.
@@ -69,6 +110,8 @@ func NewMainWindow(app *Application) *MainWindow {
 		if app.config.MinimizeToTray {
 			// Hide to tray - return true to prevent default close behavior
 			mw.window.SetVisible(false)
+			// Stop the periodic pollers while hidden; resumed in showWindow().
+			mw.pausePanelUpdates()
 			return true
 		}
 		// Allow normal close - app will quit

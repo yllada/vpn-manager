@@ -26,15 +26,21 @@ import (
 // ProfileList represents the VPN profile list.
 // Manages the display and interactions with connection profiles.
 type ProfileList struct {
-	host           ports.PanelHost
-	panel          *OpenVPNPanel
-	onStatusChange func(connected bool, profileName string)
-	listBox        *gtk.ListBox
-	rows              map[string]*ProfileRow
-	lastAnyConnected  bool // tracks whether any OpenVPN profile was connected
-	statsUpdating     bool
-	stopStats      chan struct{}
-	stopStatsOnce  sync.Once
+	host             ports.PanelHost
+	panel            *OpenVPNPanel
+	onStatusChange   func(connected bool, profileName string)
+	listBox          *gtk.ListBox
+	rows             map[string]*ProfileRow
+	lastAnyConnected bool // tracks whether any OpenVPN profile was connected
+	statsUpdating    bool
+	stopStats        chan struct{}
+	stopStatsOnce    sync.Once
+
+	// stopMonitor cancels all per-profile monitorConnection goroutines. Without it
+	// a monitor for a still-connected profile loops forever and leaks at shutdown.
+	// Closed once via StopMonitoring.
+	stopMonitor     chan struct{}
+	stopMonitorOnce sync.Once
 }
 
 // ProfileRow represents a profile row in the list.
@@ -60,10 +66,11 @@ type ProfileRow struct {
 // Initializes the ListBox container with appropriate styling.
 func NewProfileList(host ports.PanelHost, panel *OpenVPNPanel) *ProfileList {
 	pl := &ProfileList{
-		host:    host,
-		panel:   panel,
-		listBox: gtk.NewListBox(),
-		rows:    make(map[string]*ProfileRow),
+		host:        host,
+		panel:       panel,
+		listBox:     gtk.NewListBox(),
+		rows:        make(map[string]*ProfileRow),
+		stopMonitor: make(chan struct{}),
 	}
 
 	// Set up status change callback that updates both panel and tray
@@ -611,7 +618,15 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 
 	wasConnected := false
 
-	for range ticker.C {
+	for {
+		// Wait for the next tick, but exit promptly on shutdown so a monitor for a
+		// still-connected profile does not loop forever.
+		select {
+		case <-pl.stopMonitor:
+			return
+		case <-ticker.C:
+		}
+
 		conn, exists := pl.host.VPNManager().GetConnection(profileID)
 		if !exists {
 			// Connection removed - update UI to disconnected
@@ -619,7 +634,7 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 				pl.UpdateRowStatus(profileID, vpn.StatusDisconnected)
 				pl.onStatusChange(false, "")
 			})
-			break
+			return
 		}
 
 		status := conn.GetStatus()
@@ -650,14 +665,24 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 			glib.IdleAdd(func() {
 				pl.onStatusChange(false, "")
 			})
-			break
+			return
 		} else if status == vpn.StatusDisconnected {
 			glib.IdleAdd(func() {
 				pl.onStatusChange(false, "")
 			})
-			break
+			return
 		}
 	}
+}
+
+// StopMonitoring cancels all running monitorConnection goroutines. Called on
+// application shutdown so a monitor for a still-connected profile does not leak.
+func (pl *ProfileList) StopMonitoring() {
+	pl.stopMonitorOnce.Do(func() {
+		if pl.stopMonitor != nil {
+			close(pl.stopMonitor)
+		}
+	})
 }
 
 // UpdateRowStatus updates the visual state of a profile row.

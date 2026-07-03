@@ -46,7 +46,10 @@ type WireGuardPanel struct {
 	// Normal UI elements (hidden when WireGuard not installed)
 	buttonBox *gtk.Box
 
-	// Update management
+	// Update management. updatesMu guards running/stopUpdates so a repeated
+	// StartUpdates without a paired StopUpdates cannot orphan a second ticker.
+	updatesMu       sync.Mutex
+	running         bool
 	stopUpdates     chan struct{}
 	stopUpdatesOnce sync.Once
 }

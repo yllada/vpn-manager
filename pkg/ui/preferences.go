@@ -13,6 +13,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	"github.com/yllada/vpn-manager/internal/vpn/trust"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
@@ -582,20 +583,31 @@ func (pd *PreferencesDialog) savePreferences() {
 	pd.config.Tailscale.AcceptDNS = acceptDNS
 	pd.config.Tailscale.ExitNodeAllowLANAccess = pd.tailscaleLANGatewayRow.Active()
 
-	// Save Tailscale Advanced settings (AdvertiseExitNode, ShieldsUp, SSH)
-	pd.saveTailscaleAdvanced()
+	// Save Tailscale Advanced settings (AdvertiseExitNode, ShieldsUp, SSH) to
+	// config and capture the states that need to be applied via the daemon.
+	advertiseExitNode, shieldsUp := pd.saveTailscaleAdvanced()
 
-	// Apply Tailscale settings immediately if provider is available
+	// Apply all Tailscale settings immediately if provider is available. Every
+	// field maps to a single `tailscale set`, so AcceptRoutes/AcceptDNS (REQ) plus
+	// AdvertiseExitNode/ShieldsUp (REQ-TSA-005/006) are folded into ONE ApplySettings
+	// call. It shells out with a 10s timeout, so it runs off the GTK main thread:
+	// savePreferences is invoked from the dialog's close handler, and applying inline
+	// froze the whole UI for up to ~30s with no feedback. The context is created
+	// inside the goroutine so it is not cancelled when savePreferences returns.
 	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
 		if tsProvider, ok := provider.(*tailscale.Provider); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := tsProvider.ApplySettings(ctx, tailscale.SetOptions{
-				AcceptRoutes: &acceptRoutes,
-				AcceptDNS:    &acceptDNS,
-			}); err != nil {
-				logger.LogWarn("[Preferences] Could not apply Tailscale settings: %v", err)
-			}
+			resilience.SafeGoWithName("preferences-apply-tailscale", func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := tsProvider.ApplySettings(ctx, tailscale.SetOptions{
+					AcceptRoutes:      &acceptRoutes,
+					AcceptDNS:         &acceptDNS,
+					AdvertiseExitNode: &advertiseExitNode,
+					ShieldsUp:         &shieldsUp,
+				}); err != nil {
+					logger.LogWarn("[Preferences] Could not apply Tailscale settings: %v", err)
+				}
+			})
 		}
 	}
 
@@ -776,10 +788,15 @@ func (pd *PreferencesDialog) setSecurityControlsEnabled(enabled bool) {
 // saveTailscaleAdvanced saves Tailscale advanced settings (AdvertiseExitNode, ShieldsUp, SSH)
 // and applies them immediately via daemon for AdvertiseExitNode and ShieldsUp.
 // SSH is config-only per REQ-TSA-007 (applies on next connect).
-func (pd *PreferencesDialog) saveTailscaleAdvanced() {
+// saveTailscaleAdvanced persists the advanced Tailscale toggles to config and
+// returns the AdvertiseExitNode/ShieldsUp states that must be applied via the
+// daemon. It performs NO shell-outs itself: applying is folded into the single
+// background goroutine in savePreferences so the whole Tailscale-apply stays off
+// the GTK main thread (SetAdvertiseExitNode + SetShieldsUp were each up to 10s).
+func (pd *PreferencesDialog) saveTailscaleAdvanced() (advertiseExitNode, shieldsUp bool) {
 	// Read toggle states
-	advertiseExitNode := pd.advertiseExitNodeRow.Active()
-	shieldsUp := pd.shieldsUpRow.Active()
+	advertiseExitNode = pd.advertiseExitNodeRow.Active()
+	shieldsUp = pd.shieldsUpRow.Active()
 	ssh := pd.sshRow.Active()
 
 	// Save to config
@@ -787,23 +804,7 @@ func (pd *PreferencesDialog) saveTailscaleAdvanced() {
 	pd.config.Tailscale.ShieldsUp = shieldsUp
 	pd.config.Tailscale.SSH = ssh // Config-only per REQ-TSA-007 — applies on next `tailscale up`
 
-	// Apply AdvertiseExitNode and ShieldsUp immediately via daemon (REQ-TSA-005, REQ-TSA-006)
-	if provider, ok := pd.mainWindow.app.vpnManager.GetProvider(vpntypes.ProviderTailscale); ok {
-		if tsProvider, ok := provider.(*tailscale.Provider); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-
-			// Apply AdvertiseExitNode setting
-			if err := tsProvider.SetAdvertiseExitNode(ctx, advertiseExitNode); err != nil {
-				logger.LogWarn("[Preferences] Could not apply AdvertiseExitNode: %v", err)
-			}
-
-			// Apply ShieldsUp setting
-			if err := tsProvider.SetShieldsUp(ctx, shieldsUp); err != nil {
-				logger.LogWarn("[Preferences] Could not apply ShieldsUp: %v", err)
-			}
-		}
-	}
+	return advertiseExitNode, shieldsUp
 }
 
 // saveSecuritySettings saves security settings from UI controls to config.
