@@ -68,7 +68,7 @@ func InterfaceName(name string) error {
 		isLower := c >= 'a' && c <= 'z'
 		isUpper := c >= 'A' && c <= 'Z'
 		isDigit := c >= '0' && c <= '9'
-		if !(isLower || isUpper || isDigit || c == '_' || c == '-') {
+		if !isLower && !isUpper && !isDigit && c != '_' && c != '-' {
 			return fmt.Errorf("%w: %q contains illegal character %q", ErrInvalidInterface, name, string(c))
 		}
 	}

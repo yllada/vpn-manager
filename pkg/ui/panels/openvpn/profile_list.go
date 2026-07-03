@@ -648,7 +648,8 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 			pl.UpdateRowStatus(currentProfileID, currentStatus)
 		})
 
-		if status == vpn.StatusConnected {
+		switch status {
+		case vpn.StatusConnected:
 			if !wasConnected {
 				wasConnected = true
 				profile := conn.Profile
@@ -660,13 +661,8 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 					pl.onStatusChange(true, profileName)
 				})
 			}
-			// Keep monitoring - don't break, wait for disconnect
-		} else if status == vpn.StatusError {
-			glib.IdleAdd(func() {
-				pl.onStatusChange(false, "")
-			})
-			return
-		} else if status == vpn.StatusDisconnected {
+			// Keep monitoring - wait for disconnect
+		case vpn.StatusError, vpn.StatusDisconnected:
 			glib.IdleAdd(func() {
 				pl.onStatusChange(false, "")
 			})
