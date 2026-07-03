@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
@@ -60,42 +59,7 @@ const (
 	KB = 1024
 	MB = KB * 1024
 	GB = MB * 1024
-	TB = GB * 1024
 )
-
-// FormatBytes formats a byte count in a human-readable format.
-// Example: 1.5 GB, 256 MB, 1.2 KB, 512 B
-func FormatBytes(bytes uint64) string {
-	switch {
-	case bytes >= TB:
-		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(TB))
-	case bytes >= GB:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}
-
-// FormatBytesCompact formats bytes in a compact format for charts/graphs.
-// Example: 1.5G, 256M, 1.2K, 512B
-func FormatBytesCompact(bytes uint64) string {
-	switch {
-	case bytes >= TB:
-		return fmt.Sprintf("%.1fT", float64(bytes)/float64(TB))
-	case bytes >= GB:
-		return fmt.Sprintf("%.1fG", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1fM", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1fK", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%dB", bytes)
-	}
-}
 
 // FormatBandwidth formats bytes per second as human-readable bandwidth.
 // Example: 1.5 MB/s, 256 KB/s, 512 B/s
@@ -110,28 +74,6 @@ func FormatBandwidth(bytesPerSec float64) string {
 	default:
 		return fmt.Sprintf("%.0f B/s", bytesPerSec)
 	}
-}
-
-// =============================================================================
-// ICON HELPERS
-// =============================================================================
-
-// CreateRowIcon creates a small icon (16px) for ActionRow prefix.
-// Adds dim-label class for subtle appearance.
-func CreateRowIcon(iconName string) *gtk.Image {
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(16)
-	icon.AddCSSClass("dim-label")
-	return icon
-}
-
-// CreateLargeIcon creates a larger icon (24px) for prominent display.
-func CreateLargeIcon(iconName string) *gtk.Image {
-	icon := gtk.NewImage()
-	icon.SetFromIconName(iconName)
-	icon.SetPixelSize(24)
-	return icon
 }
 
 // =============================================================================

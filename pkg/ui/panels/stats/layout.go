@@ -4,7 +4,6 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
-	"github.com/yllada/vpn-manager/pkg/ui/panels/common"
 )
 
 // createLayout builds the statistics panel UI.
@@ -60,7 +59,7 @@ func (sp *StatsPanel) createCurrentSessionSection(page *adw.PreferencesPage) {
 	// ─── TRAFFIC ROW ───
 	trafficRow := adw.NewActionRow()
 	trafficRow.SetTitle("Traffic")
-	trafficRow.AddPrefix(common.CreateRowIcon("network-transmit-receive-symbolic"))
+	trafficRow.AddPrefix(components.CreateRowIcon("network-transmit-receive-symbolic"))
 
 	// Download/Upload labels in suffix
 	trafficBox := gtk.NewBox(gtk.OrientationHorizontal, 16)
@@ -94,7 +93,7 @@ func (sp *StatsPanel) createCurrentSessionSection(page *adw.PreferencesPage) {
 	bandwidthRow := adw.NewActionRow()
 	bandwidthRow.SetTitle("Bandwidth")
 	bandwidthRow.SetSubtitle("Current transfer speed")
-	bandwidthRow.AddPrefix(common.CreateRowIcon("network-wireless-signal-good-symbolic"))
+	bandwidthRow.AddPrefix(components.CreateRowIcon("network-wireless-signal-good-symbolic"))
 
 	// Bandwidth labels
 	bwBox := gtk.NewBox(gtk.OrientationHorizontal, 16)
@@ -127,7 +126,7 @@ func (sp *StatsPanel) createCurrentSessionSection(page *adw.PreferencesPage) {
 	// ─── DURATION ROW ───
 	durationRow := adw.NewActionRow()
 	durationRow.SetTitle("Duration")
-	durationRow.AddPrefix(common.CreateRowIcon("appointment-symbolic"))
+	durationRow.AddPrefix(components.CreateRowIcon("appointment-symbolic"))
 
 	sp.durationLabel = gtk.NewLabel("00:00:00")
 	sp.durationLabel.AddCSSClass("numeric")
@@ -139,7 +138,7 @@ func (sp *StatsPanel) createCurrentSessionSection(page *adw.PreferencesPage) {
 	// ─── CONNECTION QUALITY ROW ───
 	sp.qualityStatusRow = adw.NewActionRow()
 	sp.qualityStatusRow.SetTitle("Connection Quality")
-	sp.qualityStatusRow.AddPrefix(common.CreateRowIcon("network-vpn-symbolic"))
+	sp.qualityStatusRow.AddPrefix(components.CreateRowIcon("network-vpn-symbolic"))
 
 	qualityBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	qualityBox.SetVAlign(gtk.AlignCenter)
@@ -231,7 +230,7 @@ func (sp *StatsPanel) createTodaySummarySection(page *adw.PreferencesPage) {
 	// ─── TODAY TRAFFIC ROW ───
 	todayTrafficRow := adw.NewActionRow()
 	todayTrafficRow.SetTitle("Total Traffic")
-	todayTrafficRow.AddPrefix(common.CreateRowIcon("network-transmit-receive-symbolic"))
+	todayTrafficRow.AddPrefix(components.CreateRowIcon("network-transmit-receive-symbolic"))
 
 	todayTrafficBox := gtk.NewBox(gtk.OrientationHorizontal, 16)
 	todayTrafficBox.SetVAlign(gtk.AlignCenter)
@@ -263,7 +262,7 @@ func (sp *StatsPanel) createTodaySummarySection(page *adw.PreferencesPage) {
 	// ─── SESSIONS COUNT ROW ───
 	sessionsRow := adw.NewActionRow()
 	sessionsRow.SetTitle("Sessions")
-	sessionsRow.AddPrefix(common.CreateRowIcon("view-list-symbolic"))
+	sessionsRow.AddPrefix(components.CreateRowIcon("view-list-symbolic"))
 
 	sp.todaySessionsLabel = gtk.NewLabel("0")
 	sp.todaySessionsLabel.AddCSSClass("numeric")
@@ -275,7 +274,7 @@ func (sp *StatsPanel) createTodaySummarySection(page *adw.PreferencesPage) {
 	// ─── TOTAL TIME ROW ───
 	timeRow := adw.NewActionRow()
 	timeRow.SetTitle("Total Time")
-	timeRow.AddPrefix(common.CreateRowIcon("appointment-symbolic"))
+	timeRow.AddPrefix(components.CreateRowIcon("appointment-symbolic"))
 
 	sp.todayDurationLabel = gtk.NewLabel("0h 0m")
 	sp.todayDurationLabel.AddCSSClass("numeric")

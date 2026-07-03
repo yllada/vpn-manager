@@ -30,28 +30,6 @@ func ValidateRoute(route string) bool {
 	return ip != nil
 }
 
-// ShowAddRouteDialog shows a dialog to add a new route.
-// The onAdd callback is called with the validated route.
-func ShowAddRouteDialog(parent gtk.Widgetter, onAdd func(route string)) {
-	components.ShowInputDialog(parent, components.InputDialogConfig{
-		Title:       "Add Route",
-		Message:     "Enter an IP address or CIDR network",
-		InputLabel:  "Route",
-		Placeholder: "192.168.1.0/24",
-		ActionLabel: "Add",
-		Style:       components.DialogSuggested,
-		ValidateFunc: func(text string) bool {
-			route := strings.TrimSpace(text)
-			return route != "" && ValidateRoute(route)
-		},
-	}, func(text string) {
-		route := strings.TrimSpace(text)
-		if onAdd != nil {
-			onAdd(route)
-		}
-	})
-}
-
 // AddRouteToSlice adds a route to the slice if not already present.
 // Returns true if the route was added, false if duplicate.
 func AddRouteToSlice(routes *[]string, route string) bool {
@@ -74,43 +52,6 @@ func RemoveRouteFromSlice(routes []string, route string) []string {
 		}
 	}
 	return newRoutes
-}
-
-// CreateRouteRow creates an AdwActionRow for displaying a route.
-// The onDelete callback is called when the delete button is clicked.
-func CreateRouteRow(route string, onDelete func()) *adw.ActionRow {
-	row := adw.NewActionRow()
-	row.SetTitle(route)
-
-	// Icon based on type
-	icon := gtk.NewImage()
-	if strings.Contains(route, "/") {
-		icon.SetFromIconName("network-workgroup-symbolic")
-	} else {
-		icon.SetFromIconName("computer-symbolic")
-	}
-	icon.SetPixelSize(16)
-	row.AddPrefix(icon)
-
-	// Delete button
-	delBtn := components.NewIconButton("edit-delete-symbolic", "Remove route")
-	delBtn.SetVAlign(gtk.AlignCenter)
-	delBtn.ConnectClicked(func() {
-		if onDelete != nil {
-			onDelete()
-		}
-	})
-	row.AddSuffix(delBtn)
-
-	return row
-}
-
-// CreateEmptyRoutesRow creates a placeholder row for empty routes list.
-func CreateEmptyRoutesRow() *adw.ActionRow {
-	emptyRow := adw.NewActionRow()
-	emptyRow.SetTitle("No routes configured")
-	emptyRow.SetSubtitle("Click + to add a route")
-	return emptyRow
 }
 
 // =============================================================================
@@ -139,44 +80,6 @@ func RemoveAppFromSlice(apps []string, executable string) []string {
 		}
 	}
 	return newApps
-}
-
-// CreateAppRow creates an AdwActionRow for displaying an application.
-// The onDelete callback is called when the delete button is clicked.
-func CreateAppRow(executable string, onDelete func()) *adw.ActionRow {
-	row := adw.NewActionRow()
-
-	// App name (executable basename)
-	parts := strings.Split(executable, "/")
-	name := parts[len(parts)-1]
-	row.SetTitle(name)
-	row.SetSubtitle(executable)
-
-	// App icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("application-x-executable-symbolic")
-	icon.SetPixelSize(24)
-	row.AddPrefix(icon)
-
-	// Delete button
-	deleteBtn := components.NewIconButton("edit-delete-symbolic", "Remove application")
-	deleteBtn.SetVAlign(gtk.AlignCenter)
-	deleteBtn.ConnectClicked(func() {
-		if onDelete != nil {
-			onDelete()
-		}
-	})
-	row.AddSuffix(deleteBtn)
-
-	return row
-}
-
-// CreateEmptyAppsRow creates a placeholder row for empty apps list.
-func CreateEmptyAppsRow() *adw.ActionRow {
-	emptyRow := adw.NewActionRow()
-	emptyRow.SetTitle("No applications configured")
-	emptyRow.SetSubtitle("Click + to add an application")
-	return emptyRow
 }
 
 // GetAppName extracts the application name from executable path.

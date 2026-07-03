@@ -36,7 +36,7 @@ func (sp *StatsPanel) updateSessionsList() {
 		emptyRow := adw.NewActionRow()
 		emptyRow.SetTitle("No sessions yet")
 		emptyRow.SetSubtitle("Connect to a VPN to start tracking")
-		emptyRow.AddPrefix(common.CreateRowIcon("emblem-documents-symbolic"))
+		emptyRow.AddPrefix(components.CreateRowIcon("emblem-documents-symbolic"))
 		sp.sessionsList.Append(emptyRow)
 		return
 	}
@@ -73,7 +73,7 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 	row.SetSubtitle(subtitle)
 
 	// Add provider icon as prefix based on provider type
-	providerIcon := common.CreateRowIcon(common.GetProviderIcon(session.ProviderType))
+	providerIcon := components.CreateRowIcon(common.GetProviderIcon(session.ProviderType))
 	row.AddPrefix(providerIcon)
 
 	// Add provider badge as suffix (visible in collapsed state)
@@ -87,21 +87,21 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 	profileRow := adw.NewActionRow()
 	profileRow.SetTitle("Profile")
 	profileRow.SetSubtitle(session.ProfileID)
-	profileRow.AddPrefix(common.CreateRowIcon("user-info-symbolic"))
+	profileRow.AddPrefix(components.CreateRowIcon("user-info-symbolic"))
 	row.AddRow(profileRow)
 
 	// Add provider type detail row
 	providerRow := adw.NewActionRow()
 	providerRow.SetTitle("Provider")
 	providerRow.SetSubtitle(common.GetProviderDisplayName(session.ProviderType))
-	providerRow.AddPrefix(common.CreateRowIcon(common.GetProviderIcon(session.ProviderType)))
+	providerRow.AddPrefix(components.CreateRowIcon(common.GetProviderIcon(session.ProviderType)))
 	row.AddRow(providerRow)
 
 	// Add start time detail
 	startRow := adw.NewActionRow()
 	startRow.SetTitle("Started")
 	startRow.SetSubtitle(session.StartTime.Format("Mon Jan 2, 2006 at 15:04:05"))
-	startRow.AddPrefix(common.CreateRowIcon("appointment-symbolic"))
+	startRow.AddPrefix(components.CreateRowIcon("appointment-symbolic"))
 	row.AddRow(startRow)
 
 	// Add end time detail (if not active)
@@ -109,7 +109,7 @@ func (sp *StatsPanel) addSessionRow(session stats.SessionSummary, isActive bool)
 		endRow := adw.NewActionRow()
 		endRow.SetTitle("Ended")
 		endRow.SetSubtitle(session.EndTime.Format("Mon Jan 2, 2006 at 15:04:05"))
-		endRow.AddPrefix(common.CreateRowIcon("appointment-symbolic"))
+		endRow.AddPrefix(components.CreateRowIcon("appointment-symbolic"))
 		row.AddRow(endRow)
 	}
 
