@@ -4,7 +4,6 @@ package wireguard
 import (
 	"sync"
 
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
@@ -27,24 +26,12 @@ type WireGuardPanel struct {
 	host                  ports.PanelHost
 	provider              *wireguard.Provider
 	settingsDialogFactory SettingsDialogFactory
-	box                   *gtk.Box
 	listBox               *gtk.ListBox
 	rows                  map[string]*WireGuardRow
 
-	// Status area
-	statusBox   *gtk.Box
-	statusIcon  *gtk.Image
-	statusLabel *gtk.Label
-
-	// Empty state management
-	profilesGroup *adw.PreferencesGroup
-	emptyState    *adw.StatusPage
-
-	// Not installed state (shown when WireGuard tools are missing)
-	notInstalledView *components.NotInstalledView
-
-	// Normal UI elements (hidden when WireGuard not installed)
-	buttonBox *gtk.Box
+	// scaffold owns the shared panel chrome (status bar, profiles group, empty
+	// state, import button, not-installed view) and the visibility toggles.
+	scaffold *components.PanelScaffold
 
 	// Update management. updatesMu guards running/stopUpdates so a repeated
 	// StartUpdates without a paired StopUpdates cannot orphan a second ticker.
@@ -70,7 +57,7 @@ func NewWireGuardPanel(host ports.PanelHost, provider *wireguard.Provider, setti
 
 // GetWidget returns the panel widget.
 func (wp *WireGuardPanel) GetWidget() gtk.Widgetter {
-	return wp.box
+	return wp.scaffold.Box
 }
 
 // RefreshStatus refreshes the WireGuard status from the provider.
@@ -79,63 +66,26 @@ func (wp *WireGuardPanel) RefreshStatus() {
 	wp.updateAllRows()
 }
 
-// createLayout builds the WireGuard panel UI.
+// createLayout builds the WireGuard panel UI on the shared panel scaffold.
 func (wp *WireGuardPanel) createLayout() {
-	// Use shared panel helpers
-	cfg := components.DefaultPanelConfig("WireGuard")
-	wp.box = components.CreatePanelBox(cfg)
-
-	// Status box - using shared helper
-	statusBar := components.CreateStatusBar(cfg)
-	wp.statusBox = statusBar.Box
-	wp.statusIcon = statusBar.Icon
-	wp.statusLabel = statusBar.Label
-	wp.box.Append(wp.statusBox)
-
-	// Create NotInstalledView (hidden by default, shown if WireGuard not installed)
-	wp.notInstalledView = components.NewNotInstalledView(components.NewWireGuardNotInstalledConfig(wp.checkAvailability))
-	wp.notInstalledView.SetVisible(false)
-	wp.box.Append(wp.notInstalledView)
-
-	// Profiles section using AdwPreferencesGroup
-	wp.profilesGroup = adw.NewPreferencesGroup()
-	wp.profilesGroup.SetTitle("Profiles")
-	wp.profilesGroup.SetMarginTop(12)
-
-	// List box for profiles
+	// List box for profiles (owned by this panel for row management).
 	wp.listBox = gtk.NewListBox()
 	wp.listBox.SetSelectionMode(gtk.SelectionNone)
 	wp.listBox.AddCSSClass("boxed-list")
 
-	wp.profilesGroup.Add(wp.listBox)
-	wp.box.Append(wp.profilesGroup)
+	notInstalled := components.NewNotInstalledView(components.NewWireGuardNotInstalledConfig(wp.checkAvailability))
 
-	// Empty state as sibling (not inside ListBox)
-	wp.emptyState = adw.NewStatusPage()
-	wp.emptyState.SetIconName("network-vpn-symbolic")
-	wp.emptyState.SetTitle("No WireGuard Profiles")
-	wp.emptyState.SetDescription("Import your WireGuard configuration files to get started")
-	wp.emptyState.SetMarginTop(12)
-	wp.emptyState.SetVisible(false)
-
-	// Add an import button as the child
-	emptyImportBtn := components.NewPillButton("", "Import .conf file")
-	emptyImportBtn.SetHAlign(gtk.AlignCenter)
-	emptyImportBtn.ConnectClicked(wp.onImportProfile)
-	wp.emptyState.SetChild(emptyImportBtn)
-
-	wp.box.Append(wp.emptyState)
-
-	// Import button at bottom
-	wp.buttonBox = gtk.NewBox(gtk.OrientationHorizontal, 8)
-	wp.buttonBox.SetMarginTop(12)
-	wp.buttonBox.SetHAlign(gtk.AlignEnd)
-
-	importBtnBottom := components.NewActionButton("document-open-symbolic", "Import", components.ButtonFlat)
-	importBtnBottom.ConnectClicked(wp.onImportProfile)
-	wp.buttonBox.Append(importBtnBottom)
-
-	wp.box.Append(wp.buttonBox)
+	wp.scaffold = components.NewPanelScaffold(components.PanelScaffoldConfig{
+		Title:             "WireGuard",
+		EmptyIcon:         "network-vpn-symbolic",
+		EmptyTitle:        "No WireGuard Profiles",
+		EmptyDescription:  "Import your WireGuard configuration files to get started",
+		EmptyButtonLabel:  "Import .conf file",
+		ImportButtonLabel: "Import",
+		ListWidget:        wp.listBox,
+		NotInstalled:      notInstalled,
+		OnImport:          wp.onImportProfile,
+	})
 
 	// Check availability and show appropriate view
 	wp.checkAvailability()
@@ -168,13 +118,7 @@ func (wp *WireGuardPanel) loadProfiles() {
 
 // updateEmptyState toggles between empty state and profiles list.
 func (wp *WireGuardPanel) updateEmptyState(isEmpty bool) {
-	if isEmpty {
-		wp.profilesGroup.SetVisible(false)
-		wp.emptyState.SetVisible(true)
-	} else {
-		wp.profilesGroup.SetVisible(true)
-		wp.emptyState.SetVisible(false)
-	}
+	wp.scaffold.UpdateEmptyState(isEmpty)
 }
 
 // checkAvailability checks if WireGuard tools are installed and switches views accordingly.
@@ -183,30 +127,12 @@ func (wp *WireGuardPanel) updateEmptyState(isEmpty bool) {
 func (wp *WireGuardPanel) checkAvailability() {
 	if wp.provider != nil && wp.provider.IsAvailable() {
 		// WireGuard is installed - show normal UI
-		wp.showNormalUI()
+		wp.scaffold.ShowNormalUI()
 		wp.loadProfiles()
 	} else {
 		// WireGuard not installed - show NotInstalledView
-		wp.hideNormalUI()
+		wp.scaffold.ShowNotInstalledView()
 	}
-}
-
-// showNormalUI shows the normal WireGuard panel UI elements and hides NotInstalledView.
-func (wp *WireGuardPanel) showNormalUI() {
-	wp.notInstalledView.SetVisible(false)
-	wp.statusBox.SetVisible(true)
-	wp.profilesGroup.SetVisible(true)
-	wp.buttonBox.SetVisible(true)
-	// Empty state visibility is managed by updateEmptyState
-}
-
-// hideNormalUI hides all normal UI elements and shows NotInstalledView.
-func (wp *WireGuardPanel) hideNormalUI() {
-	wp.statusBox.SetVisible(false)
-	wp.profilesGroup.SetVisible(false)
-	wp.emptyState.SetVisible(false)
-	wp.buttonBox.SetVisible(false)
-	wp.notInstalledView.SetVisible(true)
 }
 
 // showError displays an error notification.

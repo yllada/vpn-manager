@@ -65,20 +65,23 @@ func (wp *WireGuardPanel) updateAllRows() {
 
 // updateOverallStatus updates the panel's status display.
 func (wp *WireGuardPanel) updateOverallStatus() {
+	icon := wp.scaffold.StatusBar.Icon
+	label := wp.scaffold.StatusBar.Label
+
 	status, err := wp.provider.Status(context.Background())
 	if err != nil {
-		wp.statusIcon.SetFromIconName("dialog-error-symbolic")
-		wp.statusLabel.SetText("Error")
+		icon.SetFromIconName("dialog-error-symbolic")
+		label.SetText("Error")
 		return
 	}
 
 	if status.Connected {
-		wp.statusIcon.SetFromIconName("network-vpn-symbolic")
-		wp.statusLabel.SetText("Connected")
-		wp.statusIcon.AddCSSClass("success")
+		icon.SetFromIconName("network-vpn-symbolic")
+		label.SetText("Connected")
+		icon.AddCSSClass("success")
 	} else {
-		wp.statusIcon.SetFromIconName("network-offline-symbolic")
-		wp.statusLabel.SetText("Disconnected")
-		wp.statusIcon.RemoveCSSClass("success")
+		icon.SetFromIconName("network-offline-symbolic")
+		label.SetText("Disconnected")
+		icon.RemoveCSSClass("success")
 	}
 }
