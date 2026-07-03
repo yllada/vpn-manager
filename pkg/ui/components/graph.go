@@ -205,13 +205,6 @@ func (bg *BandwidthGraph) SetMaxValue(max float64) {
 	bg.QueueDraw()
 }
 
-// SetAutoScale enables or disables auto-scaling.
-func (bg *BandwidthGraph) SetAutoScale(enabled bool) {
-	bg.mu.Lock()
-	defer bg.mu.Unlock()
-	bg.autoScale = enabled
-}
-
 // Clear removes all data from the graph.
 func (bg *BandwidthGraph) Clear() {
 	bg.mu.Lock()
@@ -221,21 +214,6 @@ func (bg *BandwidthGraph) Clear() {
 	bg.uploadData.Clear()
 	bg.maxValue = 1024
 	bg.QueueDraw()
-}
-
-// UpdateColors updates the graph colors based on the current theme.
-// Call this when the theme changes.
-func (bg *BandwidthGraph) UpdateColors(styleContext *gtk.StyleContext) { //nolint:staticcheck // gtk.StyleContext needed for color extraction, no replacement in GTK4 yet
-	bg.mu.Lock()
-	defer bg.mu.Unlock()
-
-	// Try to get accent color from theme
-	// Fall back to defaults if not available
-	if styleContext != nil {
-		// Use standard Adwaita colors
-		bg.downloadColor = [4]float64{0.21, 0.52, 0.89, 1.0} // accent_bg_color
-		bg.uploadColor = [4]float64{0.20, 0.82, 0.48, 1.0}   // success_color
-	}
 }
 
 // draw renders the graph using Cairo.

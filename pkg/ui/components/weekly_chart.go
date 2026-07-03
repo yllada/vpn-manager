@@ -261,37 +261,6 @@ func (wc *WeeklyChart) getMaxTotal() uint64 {
 	return max
 }
 
-// GetTotalDownload returns the total download for the week.
-func (wc *WeeklyChart) GetTotalDownload() uint64 {
-	wc.mu.RLock()
-	defer wc.mu.RUnlock()
-
-	var total uint64
-	for _, day := range wc.data {
-		total += day.Download
-	}
-	return total
-}
-
-// GetTotalUpload returns the total upload for the week.
-func (wc *WeeklyChart) GetTotalUpload() uint64 {
-	wc.mu.RLock()
-	defer wc.mu.RUnlock()
-
-	var total uint64
-	for _, day := range wc.data {
-		total += day.Upload
-	}
-	return total
-}
-
-// FormatDataSummary returns a human-readable summary of the week's data.
-func (wc *WeeklyChart) FormatDataSummary() string {
-	dl := wc.GetTotalDownload()
-	ul := wc.GetTotalUpload()
-	return fmt.Sprintf("Week total: ↓ %s  ↑ %s", FormatBytesCompact(dl), FormatBytesCompact(ul))
-}
-
 // FormatBytesCompact formats bytes in a compact form (e.g., "1.2 GB").
 func FormatBytesCompact(bytes uint64) string {
 	const (

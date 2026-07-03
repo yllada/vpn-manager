@@ -158,13 +158,6 @@ func (sp *StatsPanel) createCurrentSessionSection(page *adw.PreferencesPage) {
 	sp.sessionGroup.Add(sp.qualityStatusRow)
 
 	page.Add(sp.sessionGroup)
-
-	// Create a placeholder for when there's no active session
-	sp.noSessionPage = adw.NewStatusPage()
-	sp.noSessionPage.SetIconName("network-offline-symbolic")
-	sp.noSessionPage.SetTitle("No Active Session")
-	sp.noSessionPage.SetDescription("Connect to a VPN to see live statistics")
-	sp.noSessionPage.SetVisible(false)
 }
 
 // createBandwidthGraphSection creates the live bandwidth graph group.

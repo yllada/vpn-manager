@@ -34,7 +34,6 @@ type StatsPanel struct {
 	bandwidthULLabel *gtk.Label
 	qualityBar       *gtk.LevelBar
 	qualityStatusRow *adw.ActionRow
-	noSessionPage    *adw.StatusPage
 
 	// Live bandwidth graph
 	graphGroup     *adw.PreferencesGroup
