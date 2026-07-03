@@ -152,40 +152,35 @@ func (wp *WireGuardPanel) updateRowStatus(row *WireGuardRow) {
 		return subtitle
 	}
 
-	if conn == nil || conn.Status == wireguard.StatusDisconnected {
-		// Disconnected state
-		row.connBtn.SetIconName("media-playback-start-symbolic")
-		row.connBtn.SetTooltipText("Connect")
-		row.connBtn.RemoveCSSClass("destructive-action")
-		row.connBtn.AddCSSClass("flat")
-		row.spinner.SetVisible(false)
-		row.spinner.Stop()
-		row.expanderRow.SetSubtitle(buildSubtitle("Disconnected"))
-		// Reset detail rows
-		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
-	} else if conn.Status == wireguard.StatusConnecting {
-		// Connecting state
-		row.connBtn.SetIconName("media-playback-stop-symbolic")
-		row.connBtn.SetTooltipText("Cancel")
-		row.connBtn.RemoveCSSClass("flat")
-		row.connBtn.AddCSSClass("destructive-action")
-		row.spinner.SetVisible(true)
-		row.spinner.Start()
+	// Resolve the status; a nil connection means never-connected.
+	status := wireguard.StatusDisconnected
+	if conn != nil {
+		status = conn.Status
+	}
+
+	// Shared connect-button visual (icon/tooltip/CSS/spinner).
+	components.ApplyConnectButtonState(row.connBtn, row.spinner, status)
+
+	// Panel-specific side effects and subtitle per state.
+	switch status {
+	case wireguard.StatusConnecting:
 		row.expanderRow.SetSubtitle(buildSubtitle("Connecting..."))
-	} else if conn.Status == wireguard.StatusConnected {
-		// Connected state
-		row.connBtn.SetIconName("media-playback-stop-symbolic")
-		row.connBtn.SetTooltipText("Disconnect")
-		row.connBtn.RemoveCSSClass("flat")
-		row.connBtn.AddCSSClass("destructive-action")
-		row.spinner.SetVisible(false)
-		row.spinner.Stop()
+	case wireguard.StatusConnected:
 		row.expanderRow.SetSubtitle(buildSubtitle("Connected"))
 		// Auto-expand to show connection details
 		row.expanderRow.SetExpanded(true)
-
 		// Update stats using thread-safe accessor
 		bytesSent, bytesRecv, _ := conn.GetStats()
 		row.trafficRow.SetSubtitle(fmt.Sprintf("↑ %s  ↓ %s", components.FormatBytes(bytesSent), components.FormatBytes(bytesRecv)))
+	case wireguard.StatusError:
+		// Previously unhandled: a failed connect left the row stuck showing
+		// "Connecting…" with the spinner running. Now it surfaces as a retryable
+		// error and the traffic counter is reset.
+		row.expanderRow.SetSubtitle(buildSubtitle("Error"))
+		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
+	default: // StatusDisconnected, StatusDisconnecting
+		row.expanderRow.SetSubtitle(buildSubtitle("Disconnected"))
+		// Reset detail rows
+		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
 	}
 }

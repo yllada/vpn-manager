@@ -704,15 +704,12 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 	}
 	row.expanderRow.SetSubtitle(subtitle)
 
-	// Update icon and button according to state
+	// Shared connect-button visual (icon/tooltip/CSS/spinner).
+	components.ApplyConnectButtonState(row.connectBtn, row.spinner, status)
+
+	// Panel-specific side effects per state.
 	switch status {
 	case vpn.StatusDisconnected:
-		row.spinner.Stop()
-		row.spinner.SetVisible(false)
-		row.connectBtn.SetIconName("media-playback-start-symbolic")
-		row.connectBtn.SetTooltipText("Connect")
-		row.connectBtn.RemoveCSSClass("destructive-action")
-		row.connectBtn.AddCSSClass("flat")
 		row.deleteBtn.SetSensitive(true)
 		// Stop statistics update
 		pl.stopStatsUpdate()
@@ -722,12 +719,6 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
 
 	case vpn.StatusConnecting:
-		row.spinner.SetVisible(true)
-		row.spinner.Start()
-		row.connectBtn.SetIconName("process-stop-symbolic")
-		row.connectBtn.SetTooltipText("Cancel")
-		row.connectBtn.RemoveCSSClass("flat")
-		row.connectBtn.AddCSSClass("destructive-action")
 		row.deleteBtn.SetSensitive(false)
 		// Connection in progress notification - only if status changed
 		if statusChanged && pl.host.GetConfig().ShowNotifications {
@@ -735,12 +726,6 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		}
 
 	case vpn.StatusConnected:
-		row.spinner.Stop()
-		row.spinner.SetVisible(false)
-		row.connectBtn.SetIconName("media-playback-stop-symbolic")
-		row.connectBtn.SetTooltipText("Disconnect")
-		row.connectBtn.RemoveCSSClass("flat")
-		row.connectBtn.AddCSSClass("destructive-action")
 		row.deleteBtn.SetSensitive(false)
 		// Auto-expand to show connection details
 		row.expanderRow.SetExpanded(true)
@@ -752,12 +737,6 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		}
 
 	case vpn.StatusError:
-		row.spinner.Stop()
-		row.spinner.SetVisible(false)
-		row.connectBtn.SetIconName("view-refresh-symbolic")
-		row.connectBtn.SetTooltipText("Retry")
-		row.connectBtn.RemoveCSSClass("destructive-action")
-		row.connectBtn.AddCSSClass("flat")
 		row.deleteBtn.SetSensitive(true)
 		// Error notification - only if status changed
 		if statusChanged && pl.host.GetConfig().ShowNotifications {
