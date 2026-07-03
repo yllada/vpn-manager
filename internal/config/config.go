@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/yllada/vpn-manager/internal/atomicfile"
 )
 
 // TailscaleServer represents a custom Tailscale control server (Headscale).
@@ -352,7 +354,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("error serializing configuration: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
+	if err := atomicfile.Write(configPath, data, 0600); err != nil {
 		return fmt.Errorf("error saving configuration: %w", err)
 	}
 

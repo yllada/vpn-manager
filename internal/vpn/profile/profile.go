@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/yllada/vpn-manager/internal/atomicfile"
 )
 
 // Common errors returned by profile operations.
@@ -179,7 +181,7 @@ func (pm *ProfileManager) saveLocked() error {
 		return fmt.Errorf("failed to serialize profiles: %w", err)
 	}
 
-	if err := os.WriteFile(pm.configFile, data, 0600); err != nil {
+	if err := atomicfile.Write(pm.configFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write profiles file: %w", err)
 	}
 
@@ -439,7 +441,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read source file: %w", err)
 	}
-	if err := os.WriteFile(dst, data, 0600); err != nil {
+	if err := atomicfile.Write(dst, data, 0600); err != nil {
 		return fmt.Errorf("failed to write destination file: %w", err)
 	}
 	return nil
@@ -536,7 +538,7 @@ func (pm *ProfileManager) Export(filePath string) error {
 		return fmt.Errorf("failed to serialize export data: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0600); err != nil {
+	if err := atomicfile.Write(filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write export file: %w", err)
 	}
 
@@ -573,7 +575,7 @@ func (pm *ProfileManager) Import(filePath string) (int, error) {
 		// Create config file (I/O before lock)
 		configPath := filepath.Join(pm.configDir, fmt.Sprintf("%s.ovpn", profileID))
 		if ep.ConfigContent != "" {
-			if err := os.WriteFile(configPath, []byte(ep.ConfigContent), 0600); err != nil {
+			if err := atomicfile.Write(configPath, []byte(ep.ConfigContent), 0600); err != nil {
 				continue // Skip this profile on error
 			}
 		}
