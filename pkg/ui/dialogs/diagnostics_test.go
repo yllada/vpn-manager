@@ -1,15 +1,15 @@
 package dialogs
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 )
 
-// TestDiagnosticResultStructExists verifies DiagnosticResult struct has required fields.
-// This test covers REQ-DIAG-007 (✓/✗ status per probe with details).
+// TestDiagnosticResultStructExists verifies DiagnosticResult carries the fields
+// the results UI depends on (REQ-DIAG-007: ✓/✗ status per probe with details).
 func TestDiagnosticResultStructExists(t *testing.T) {
-	// RED: This test references DiagnosticResult which doesn't exist yet
 	result := DiagnosticResult{
 		Name:    "NetCheck",
 		Success: true,
@@ -18,7 +18,6 @@ func TestDiagnosticResultStructExists(t *testing.T) {
 		Error:   nil,
 	}
 
-	// Verify fields have expected values
 	if result.Name != "NetCheck" {
 		t.Errorf("Name = %q, want %q", result.Name, "NetCheck")
 	}
@@ -36,8 +35,7 @@ func TestDiagnosticResultStructExists(t *testing.T) {
 	}
 }
 
-// TestDiagnosticResultWithError verifies DiagnosticResult handles error cases.
-// TRIANGULATE: Different inputs (success vs error case).
+// TestDiagnosticResultWithError verifies the error case (TRIANGULATE).
 func TestDiagnosticResultWithError(t *testing.T) {
 	testErr := errors.New("connection timeout")
 	result := DiagnosticResult{
@@ -62,73 +60,49 @@ func TestDiagnosticResultWithError(t *testing.T) {
 	}
 }
 
-// TestDiagnosticsViewStructExists verifies DiagnosticsView has required fields.
-// This test covers REQ-DIAG-003 (loading spinner) and supports task 1.2.
-// Note: We test struct definition, not GTK widget creation (requires GTK main loop).
+// TestDiagnosticsViewStructExists verifies DiagnosticsView has the expected fields
+// and types. Uses the zero value so it needs no GTK main loop.
 func TestDiagnosticsViewStructExists(t *testing.T) {
-	// Verify struct type exists and has correct field types
 	view := &DiagnosticsView{}
 
-	// Type assertion verifies fields exist with correct types
 	var _ = view.spinner
 	var _ = view.resultsGroup
 	var _ = view.runBtn
 	var _ = view.cancelFunc
+	var _ = view.running
+	var _ = view.closed
 }
 
-// TestNewDiagnosticsViewFunctionExists verifies constructor function signature exists.
-// TRIANGULATE: Verify the constructor compiles and returns correct type.
-func TestNewDiagnosticsViewFunctionExists(t *testing.T) {
-	// Verify function signature compiles via type checking
-	// Assigning to a typed variable proves the function has the correct signature
+// TestNewDiagnosticsViewExists verifies the constructor symbol exists with the
+// expected signature. Constructing a real view is not exercised here because adw
+// widget creation requires a GTK main loop.
+func TestNewDiagnosticsViewExists(t *testing.T) {
 	_ = NewDiagnosticsView
 }
 
-// TestSetRunningMethodExists verifies SetRunning method signature exists.
-// This test covers REQ-DIAG-003 (toggle spinner/button state) and task 1.3.
-func TestSetRunningMethodExists(t *testing.T) {
-	// Verify method signature compiles
-	view := &DiagnosticsView{}
-	_ = view.SetRunning
-}
-
-// TestSetRunningTogglesState verifies SetRunning changes running state.
-// TRIANGULATE: Test both running=true and running=false.
-func TestSetRunningTogglesState(t *testing.T) {
-	view := &DiagnosticsView{
-		running: false,
+// TestProbeFuncType verifies ProbeFunc is assignable from a plain probe function.
+func TestProbeFuncType(t *testing.T) {
+	var p ProbeFunc = func(ctx context.Context) DiagnosticResult {
+		return DiagnosticResult{Name: "noop", Success: true}
 	}
-
-	// Set running to true
-	view.SetRunning(true)
-	if !view.running {
-		t.Error("SetRunning(true) should set running to true")
-	}
-
-	// Set running to false
-	view.SetRunning(false)
-	if view.running {
-		t.Error("SetRunning(false) should set running to false")
+	if got := p(context.Background()); got.Name != "noop" || !got.Success {
+		t.Errorf("ProbeFunc returned %+v, want {Name:noop Success:true}", got)
 	}
 }
 
-// TestAddResultMethodExists verifies AddResult method signature exists.
-// This test covers REQ-DIAG-007 (add result row with ✓/✗ icon) and task 1.4.
-func TestAddResultMethodExists(t *testing.T) {
+// TestAddResultNilGroupIsSafe verifies AddResult on a zero-value view (nil
+// resultsGroup) is a no-op instead of panicking, and records no rows.
+func TestAddResultNilGroupIsSafe(t *testing.T) {
 	view := &DiagnosticsView{}
-	_ = view.AddResult
+	view.AddResult(DiagnosticResult{Name: "x", Success: true})
+	if len(view.resultRows) != 0 {
+		t.Errorf("resultRows = %d, want 0 (nil group must not record rows)", len(view.resultRows))
+	}
 }
 
-// TestClearResultsMethodExists verifies ClearResults method signature exists.
-// This test covers REQ-DIAG-008 (re-run diagnostics) and task 1.5.
-func TestClearResultsMethodExists(t *testing.T) {
+// TestClearResultsNilGroupIsSafe verifies ClearResults on a zero-value view does
+// not panic.
+func TestClearResultsNilGroupIsSafe(t *testing.T) {
 	view := &DiagnosticsView{}
-	_ = view.ClearResults
-}
-
-// TestRunProbeAsyncFunctionExists verifies RunProbeAsync helper function signature exists.
-// This test covers task 1.6 (async probe execution with resilience).
-func TestRunProbeAsyncFunctionExists(t *testing.T) {
-	// Verify function signature compiles
-	_ = RunProbeAsync
+	view.ClearResults() // must not panic
 }

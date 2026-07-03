@@ -120,6 +120,20 @@ func (p *ICMPProbe) Check(ctx context.Context, host string) (time.Duration, erro
 		return 0, err
 	}
 
+	// Honor ctx cancellation: ReadFrom/WriteTo below block until the deadline,
+	// which can be seconds away. If the caller cancels ctx (e.g. the diagnostics
+	// dialog is closed), collapse the deadline to now so the blocked syscall
+	// returns immediately instead of lingering until the original deadline.
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-stopWatch:
+		}
+	}()
+
 	// Build ICMP message
 	msg := icmp.Message{
 		Type: ipv4.ICMPTypeEcho,
@@ -138,6 +152,9 @@ func (p *ICMPProbe) Check(ctx context.Context, host string) (time.Duration, erro
 	// Send
 	dst := &net.IPAddr{IP: net.ParseIP(hostIP)}
 	if _, err := conn.WriteTo(msgBytes, dst); err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return 0, context.Canceled
+		}
 		return 0, fmt.Errorf("%w: %v", ErrProbeTimeout, err)
 	}
 
@@ -145,6 +162,13 @@ func (p *ICMPProbe) Check(ctx context.Context, host string) (time.Duration, erro
 	reply := make([]byte, 1500)
 	n, _, err := conn.ReadFrom(reply)
 	if err != nil {
+		// A caller cancellation collapses the deadline via the watcher, surfacing
+		// here as an i/o timeout rather than context.Canceled; report it as a
+		// cancellation. A natural deadline expiry (socket deadline == ctx
+		// deadline) stays an ErrProbeTimeout, matching a real probe timeout.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return 0, context.Canceled
+		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			return 0, err
 		}
