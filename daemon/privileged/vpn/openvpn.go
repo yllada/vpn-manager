@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/daemon/privileged/validate"
+	"github.com/yllada/vpn-manager/internal/paths"
 )
 
 // =============================================================================
@@ -479,8 +480,10 @@ func createCredentialsFile(username, password string) (string, error) {
 		return "", nil
 	}
 
-	// Create temporary directory
-	tmpDir := filepath.Join(os.TempDir(), "vpn-managerd")
+	// Create a root-only directory under /run (not world-writable /tmp), so a
+	// local attacker cannot pre-create or symlink-swap the parent before the
+	// daemon writes the credentials file into it.
+	tmpDir := filepath.Join(paths.RuntimeDir, "ovpn-creds")
 	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		return "", err
 	}

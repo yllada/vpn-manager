@@ -86,9 +86,13 @@ type DNSProtection struct {
 
 // NewDNSProtection creates a DNS protection manager.
 func NewDNSProtection() *DNSProtection {
+	// Resolve the backup path under the per-user runtime directory. If it cannot
+	// be resolved (no XDG_RUNTIME_DIR and no home), backupPath stays empty and the
+	// resolv.conf backend — already a daemon-only stub — fails gracefully.
+	backupPath, _ := paths.ResolvConfBackupPath()
 	dp := &DNSProtection{
 		config:        DefaultDNSConfig(),
-		backupPath:    paths.ResolvConfBackupPath,
+		backupPath:    backupPath,
 		firewallChain: DNSFirewallChainName,
 	}
 	dp.detectBackend()
@@ -385,8 +389,12 @@ func (dp *DNSProtection) backupResolvConf(path string) error {
 		return err
 	}
 
-	// Write backup
-	return os.WriteFile(dp.backupPath, content, 0644)
+	if dp.backupPath == "" {
+		return fmt.Errorf("no runtime directory available for resolv.conf backup")
+	}
+	// Write backup 0600: it may contain the original nameservers, and there is no
+	// reason for it to be world-readable.
+	return os.WriteFile(dp.backupPath, content, 0600)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

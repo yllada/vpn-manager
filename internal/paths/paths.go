@@ -5,6 +5,7 @@ package paths
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // =============================================================================
@@ -33,19 +34,50 @@ const (
 )
 
 // =============================================================================
-// TEMPORARY FILES
+// RUNTIME PATHS
 // =============================================================================
 
 const (
-	// ResolvConfBackupPath is the path for backing up resolv.conf before VPN changes.
-	ResolvConfBackupPath = "/tmp/vpn-manager-resolv.conf.backup"
-
-	// TempResolvConfPath is the path for temporary resolv.conf during updates.
-	TempResolvConfPath = "/tmp/vpn-manager-resolv.conf"
-
-	// TempDirName is the name of the temporary directory for VPN Manager files.
-	TempDirName = "vpn-manager"
+	// RuntimeDir is the root-owned runtime directory for the privileged daemon's
+	// transient files (staged configs, credential files, auth-key files). It lives
+	// under /run, which — unlike /tmp — is not world-writable, so a local attacker
+	// cannot pre-create or symlink-swap files the root daemon is about to write.
+	RuntimeDir = "/run/vpn-manager"
 )
+
+// UserRuntimeDir returns a per-user, non-world-accessible runtime directory for
+// transient files written by the unprivileged GUI (e.g. a resolv.conf backup),
+// creating it if needed. It prefers $XDG_RUNTIME_DIR (owned by the user, mode
+// 0700, cleared on logout) and falls back to a 0700 directory under the user's
+// cache home when XDG_RUNTIME_DIR is unset. It deliberately never uses /tmp,
+// which is world-writable and a symlink-attack surface.
+func UserRuntimeDir() (string, error) {
+	base := os.Getenv("XDG_RUNTIME_DIR")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot determine user runtime directory: %w", err)
+		}
+		base = filepath.Join(home, ".cache")
+	}
+	dir := filepath.Join(base, UserDataDirName)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("failed to create user runtime directory %s: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// ResolvConfBackupPath returns the path used to back up resolv.conf before VPN
+// DNS changes. It resolves under the per-user runtime directory (see
+// UserRuntimeDir) rather than a fixed /tmp path, so the backup is neither
+// world-readable nor exposed to a symlink swap by another local user.
+func ResolvConfBackupPath() (string, error) {
+	dir, err := UserRuntimeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "resolv.conf.backup"), nil
+}
 
 // =============================================================================
 // DESKTOP ENTRY PATHS
