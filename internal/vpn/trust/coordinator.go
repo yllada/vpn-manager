@@ -230,7 +230,7 @@ func (c *Coordinator) handleNetworkChanged(event *eventbus.Event) {
 	c.mu.RUnlock()
 
 	// Extract network info from event
-	netInfo, ok := event.Data.(*NetworkInfo)
+	netInfo, ok := networkInfoFromEventData(event.Data)
 	if !ok {
 		logger.LogWarn("trust", "Invalid event data type for network changed: %T", event.Data)
 		return
@@ -541,6 +541,26 @@ func (c *Coordinator) activateKillSwitchForUntrusted() {
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+// networkInfoFromEventData converts a network changed event payload to NetworkInfo.
+// The NetworkMonitor publishes *eventbus.NetworkChangedData; a direct
+// *NetworkInfo payload is also accepted as a defensive fallback.
+func networkInfoFromEventData(data interface{}) (*NetworkInfo, bool) {
+	switch d := data.(type) {
+	case *eventbus.NetworkChangedData:
+		return &NetworkInfo{
+			SSID:      d.SSID,
+			BSSID:     d.BSSID,
+			Type:      NetworkType(d.Type),
+			Connected: d.Connected,
+			Interface: d.Interface,
+		}, true
+	case *NetworkInfo:
+		return d, true
+	default:
+		return nil, false
+	}
+}
 
 // parseProfileID parses a profile ID that may be in "provider:id" format.
 func (c *Coordinator) parseProfileID(profileID string) (vpntypes.VPNProviderType, string) {
