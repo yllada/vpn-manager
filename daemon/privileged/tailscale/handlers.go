@@ -16,6 +16,9 @@ func UpHandler(state *daemon.State) daemon.HandlerFunc {
 		if err := ctx.UnmarshalParams(&params); err != nil {
 			return nil, err
 		}
+		if err := params.Validate(); err != nil {
+			return nil, err
+		}
 
 		ctx.Logger.Printf("Running tailscale up (exit_node: %s, login_server: %s)",
 			params.ExitNode, params.LoginServer)
@@ -70,6 +73,9 @@ func SetHandler(state *daemon.State) daemon.HandlerFunc {
 		if err := ctx.UnmarshalParams(&params); err != nil {
 			return nil, err
 		}
+		if err := params.Validate(); err != nil {
+			return nil, err
+		}
 
 		ctx.Logger.Printf("Running tailscale set")
 
@@ -104,6 +110,9 @@ func LoginHandler(state *daemon.State) daemon.HandlerFunc {
 	return func(ctx *daemon.HandlerContext) (any, error) {
 		var params LoginParams
 		if err := ctx.UnmarshalParams(&params); err != nil {
+			return nil, err
+		}
+		if err := params.Validate(); err != nil {
 			return nil, err
 		}
 

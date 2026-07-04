@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unicode"
 )
 
 // Validation errors. Callers may wrap these; use errors.Is to classify.
@@ -34,6 +36,8 @@ var (
 	ErrInvalidIP          = errors.New("invalid IP address")
 	ErrInvalidConfigPath  = errors.New("invalid config path")
 	ErrDangerousDirective = errors.New("config file contains a directive that can execute code")
+	ErrUnsafeArg          = errors.New("value contains whitespace or a control character")
+	ErrInvalidURL         = errors.New("invalid URL")
 )
 
 // maxConfigLineBytes caps the length of a single config line we will scan, so a
@@ -84,6 +88,50 @@ func IP(s string) error {
 	}
 	if net.ParseIP(s) == nil {
 		return fmt.Errorf("%w: %q", ErrInvalidIP, s)
+	}
+	return nil
+}
+
+// SafeArg validates a value that a caller glues into a single argv token, e.g.
+// "--flag=VALUE". Because the daemon execs in argv form (no shell) and glues the
+// value after '=', shell metacharacters cannot break out and the value cannot
+// split into a separate flag token — so this is defense-in-depth for the
+// fail-closed model rather than the last line against injection. It rejects an
+// empty value, a leading dash, and any whitespace or control character, none of
+// which belong in a hostname, exit node, tag, or operator name.
+func SafeArg(s string) error {
+	if s == "" {
+		return ErrEmpty
+	}
+	if strings.HasPrefix(s, "-") {
+		return fmt.Errorf("%w: %q", ErrLeadingDash, s)
+	}
+	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return fmt.Errorf("%w: %q", ErrUnsafeArg, s)
+		}
+	}
+	return nil
+}
+
+// HTTPURL validates an absolute http or https URL that has a host. It is used for
+// the Tailscale/Headscale coordination server: the value is otherwise passed
+// verbatim to `tailscale up --login-server=`, so rejecting a malformed or
+// non-HTTP(S) value stops the daemon from being pointed at an unexpected control
+// plane through a bad URL.
+func HTTPURL(s string) error {
+	if s == "" {
+		return ErrEmpty
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidURL, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%w: scheme must be http or https, got %q", ErrInvalidURL, u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%w: missing host in %q", ErrInvalidURL, s)
 	}
 	return nil
 }

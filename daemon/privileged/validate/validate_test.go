@@ -205,3 +205,54 @@ func TestWireGuardConfigSafe(t *testing.T) {
 		})
 	}
 }
+
+func TestSafeArg(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"hostname", "my-laptop", false},
+		{"magicdns-exit-node", "us-nyc-wg-301.mullvad.ts.net", false},
+		{"ip-exit-node", "100.64.0.1", false},
+		{"tag", "tag:server", false},
+		{"operator", "yadian", false},
+		{"empty", "", true},
+		{"leading-dash", "-rf", true},
+		{"embedded-space", "my laptop", true},
+		{"tab", "a\tb", true},
+		{"newline", "a\nb", true},
+		{"control-char", "a\x00b", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := SafeArg(tt.in); (err != nil) != tt.wantErr {
+				t.Errorf("SafeArg(%q) err=%v, wantErr=%v", tt.in, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestHTTPURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"https", "https://headscale.example.com", false},
+		{"https-with-port", "https://login.tailscale.com:8080", false},
+		{"http", "http://10.0.0.5:8080", false},
+		{"empty", "", true},
+		{"no-scheme", "headscale.example.com", true},
+		{"ftp-scheme", "ftp://example.com", true},
+		{"file-scheme", "file:///etc/shadow", true},
+		{"scheme-no-host", "https://", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := HTTPURL(tt.in); (err != nil) != tt.wantErr {
+				t.Errorf("HTTPURL(%q) err=%v, wantErr=%v", tt.in, err, tt.wantErr)
+			}
+		})
+	}
+}

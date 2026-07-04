@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/daemon/privileged/validate"
+	"github.com/yllada/vpn-manager/internal/paths"
 )
 
 // Common paths for tailscale binary
@@ -41,7 +42,7 @@ func writeAuthKeyFile(key string) (arg string, cleanup func(), err error) {
 	if key == "" {
 		return "", cleanup, nil
 	}
-	dir := "/run/vpn-manager"
+	dir := paths.RuntimeDir
 	if mkErr := os.MkdirAll(dir, 0700); mkErr != nil {
 		dir = os.TempDir()
 	}
@@ -122,6 +123,38 @@ type UpParams struct {
 
 	// Operator
 	Operator string `json:"operator,omitempty"`
+}
+
+// Validate revalidates client-supplied values at the privilege boundary before
+// they are glued into `tailscale up` arguments. AuthKey is intentionally not
+// checked here: it never reaches argv (writeAuthKeyFile passes it via a 0600 file).
+func (p UpParams) Validate() error {
+	if p.ExitNode != "" {
+		if err := validate.SafeArg(p.ExitNode); err != nil {
+			return fmt.Errorf("exit_node: %w", err)
+		}
+	}
+	if p.LoginServer != "" {
+		if err := validate.HTTPURL(p.LoginServer); err != nil {
+			return fmt.Errorf("login_server: %w", err)
+		}
+	}
+	if p.Hostname != "" {
+		if err := validate.SafeArg(p.Hostname); err != nil {
+			return fmt.Errorf("hostname: %w", err)
+		}
+	}
+	if p.Operator != "" {
+		if err := validate.SafeArg(p.Operator); err != nil {
+			return fmt.Errorf("operator: %w", err)
+		}
+	}
+	for _, tag := range p.AdvertiseTags {
+		if err := validate.SafeArg(tag); err != nil {
+			return fmt.Errorf("advertise_tags: %w", err)
+		}
+	}
+	return nil
 }
 
 // UpResult contains the result of tailscale up.
@@ -224,6 +257,28 @@ type SetParams struct {
 	Operator               *string `json:"operator,omitempty"`
 }
 
+// Validate revalidates client-supplied string values before they are glued into
+// `tailscale set` arguments. Empty pointers mean "leave unchanged" and an empty
+// *ExitNode string means "clear the exit node", so both are skipped.
+func (p SetParams) Validate() error {
+	if p.ExitNode != nil && *p.ExitNode != "" {
+		if err := validate.SafeArg(*p.ExitNode); err != nil {
+			return fmt.Errorf("exit_node: %w", err)
+		}
+	}
+	if p.Hostname != nil && *p.Hostname != "" {
+		if err := validate.SafeArg(*p.Hostname); err != nil {
+			return fmt.Errorf("hostname: %w", err)
+		}
+	}
+	if p.Operator != nil && *p.Operator != "" {
+		if err := validate.SafeArg(*p.Operator); err != nil {
+			return fmt.Errorf("operator: %w", err)
+		}
+	}
+	return nil
+}
+
 // SetResult contains the result of tailscale set.
 type SetResult struct {
 	Success bool   `json:"success"`
@@ -290,6 +345,17 @@ func (m *Manager) Set(ctx context.Context, params SetParams) (*SetResult, error)
 type LoginParams struct {
 	AuthKey     string `json:"auth_key,omitempty"`
 	LoginServer string `json:"login_server,omitempty"` // For Headscale
+}
+
+// Validate revalidates the login server URL before it is glued into
+// `tailscale login`. AuthKey never reaches argv (it is passed via a 0600 file).
+func (p LoginParams) Validate() error {
+	if p.LoginServer != "" {
+		if err := validate.HTTPURL(p.LoginServer); err != nil {
+			return fmt.Errorf("login_server: %w", err)
+		}
+	}
+	return nil
 }
 
 // LoginResult contains the result of tailscale login.
@@ -396,6 +462,9 @@ func (m *Manager) Logout(ctx context.Context) error {
 func (m *Manager) SetOperator(ctx context.Context, username string) error {
 	if username == "" {
 		return fmt.Errorf("username is required")
+	}
+	if err := validate.SafeArg(username); err != nil {
+		return fmt.Errorf("username: %w", err)
 	}
 
 	cmd := exec.CommandContext(ctx, m.binaryPath, "set", "--operator="+username)

@@ -4,12 +4,14 @@
 package privileged
 
 import (
+	"fmt"
 	"log"
 	"sync"
 
 	"github.com/yllada/vpn-manager/daemon"
 	"github.com/yllada/vpn-manager/daemon/privileged/apptunnel"
 	"github.com/yllada/vpn-manager/daemon/privileged/firewall"
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 	"github.com/yllada/vpn-manager/daemon/privileged/vpn"
 )
 
@@ -183,6 +185,21 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 		var params DNSEnableParams
 		if err := ctx.UnmarshalParams(&params); err != nil {
 			return nil, err
+		}
+
+		// Revalidate at the privilege boundary: VPNInterface is passed to iptables
+		// as a standalone argv token ("-o <iface>"), so a malformed or dash-prefixed
+		// value would be reinterpreted as a flag and corrupt the ruleset. Servers are
+		// client-supplied addresses; reject any that is not a valid IP.
+		if params.VPNInterface != "" {
+			if err := validate.InterfaceName(params.VPNInterface); err != nil {
+				return nil, fmt.Errorf("vpn_interface: %w", err)
+			}
+		}
+		for _, server := range params.Servers {
+			if err := validate.IP(server); err != nil {
+				return nil, fmt.Errorf("dns server %q: %w", server, err)
+			}
 		}
 
 		ctx.Logger.Printf("Enabling DNS protection for interface %s with servers: %v", params.VPNInterface, params.Servers)
