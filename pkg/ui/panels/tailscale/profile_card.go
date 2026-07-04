@@ -17,6 +17,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/vpn"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
 )
 
@@ -132,7 +133,8 @@ func (tp *TailscalePanel) onConnectClicked() {
 		if err != nil {
 			glib.IdleAdd(func() {
 				tp.connectBtn.SetSensitive(true)
-				tp.host.ShowError("Tailscale Error", err.Error())
+				title, body := components.ExplainError("Tailscale Error", err)
+				tp.host.ShowError(title, body)
 			})
 			return
 		}
@@ -153,7 +155,8 @@ func (tp *TailscalePanel) onConnectClicked() {
 			if err := tp.provider.Disconnect(ctx, nil); err != nil {
 				glib.IdleAdd(func() {
 					tp.connectBtn.SetSensitive(true)
-					tp.host.ShowError("Disconnect Error", err.Error())
+					title, body := components.ExplainError("Disconnect Error", err)
+					tp.host.ShowError(title, body)
 				})
 				return
 			}
@@ -172,7 +175,8 @@ func (tp *TailscalePanel) onConnectClicked() {
 			if err := tp.provider.Connect(ctx, nil, vpntypes.AuthInfo{Interactive: true}); err != nil {
 				glib.IdleAdd(func() {
 					tp.connectBtn.SetSensitive(true)
-					tp.host.ShowError("Connect Error", err.Error())
+					title, body := components.ExplainError("Connect Error", err)
+					tp.host.ShowError(title, body)
 				})
 				return
 			}
@@ -212,7 +216,8 @@ func (tp *TailscalePanel) onLoginClicked() {
 					tp.showOperatorSetupDialog()
 					return
 				}
-				tp.host.ShowError("Login Error", errStr)
+				title, body := components.ExplainError("Login Error", err)
+				tp.host.ShowError(title, body)
 				return
 			}
 

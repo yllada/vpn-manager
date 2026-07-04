@@ -259,7 +259,8 @@ func (pl *ProfileList) onConnectClicked(profile *profilepkg.Profile) {
 		if conn.GetStatus() == vpn.StatusConnected || conn.GetStatus() == vpn.StatusConnecting {
 			// Disconnect
 			if err := pl.host.VPNManager().Disconnect(profile.ID); err != nil {
-				pl.host.ShowError("Error disconnecting", err.Error())
+				title, body := components.ExplainError("Error disconnecting", err)
+				pl.host.ShowError(title, body)
 			} else {
 				pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
 				pl.host.SetStatus(fmt.Sprintf("Disconnected from %s", profile.Name))
@@ -494,7 +495,8 @@ func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, usern
 
 	// Start connection
 	if err := pl.host.VPNManager().Connect(profile.ID, username, password); err != nil {
-		pl.host.ShowError("Connection error", err.Error())
+		title, body := components.ExplainError("Connection error", err)
+		pl.host.ShowError(title, body)
 		pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
 		return
 	}
