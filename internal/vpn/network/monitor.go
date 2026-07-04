@@ -16,13 +16,55 @@ import (
 // This backend shows the VPN icon in the system panel.
 type NMBackend struct {
 	available bool
+
+	// runNM executes nmcli with the given arguments. It must only be used
+	// for non-secret data: argv is world-readable in /proc/<pid>/cmdline.
+	runNM func(args ...string) error
+	// updateSecret stores the VPN password for a connection without ever
+	// putting it in a process argv (default: NetworkManager D-Bus API).
+	updateSecret func(connName, password string) error
 }
 
 // NewNMBackend creates a new NetworkManager backend.
 func NewNMBackend() *NMBackend {
-	nm := &NMBackend{}
+	nm := &NMBackend{
+		runNM:        runNMCLI,
+		updateSecret: updateVPNSecretOverDBus,
+	}
 	nm.available = nm.checkAvailable()
 	return nm
+}
+
+// runNMCLI runs nmcli with the given arguments.
+func runNMCLI(args ...string) error {
+	return exec.Command("nmcli", args...).Run()
+}
+
+// persistCredentials stores the username, password-flags and password for a
+// connection so reconnection works without asking again. Non-secret fields go
+// through nmcli; the password itself goes through the secrets updater so it
+// never appears in any process argv.
+func (nm *NMBackend) persistCredentials(connName, username, password string) error {
+	if username != "" {
+		if err := nm.runNM("connection", "modify", connName,
+			"+vpn.data", fmt.Sprintf("username=%s", username)); err != nil {
+			logger.LogWarn("nm", "Could not set username: %v", err)
+		}
+	}
+
+	// Set password-flags=0 so the password is stored by the system.
+	if err := nm.runNM("connection", "modify", connName,
+		"+vpn.data", "password-flags=0"); err != nil {
+		logger.LogWarn("nm", "Could not set password-flags: %v", err)
+	}
+
+	if password != "" {
+		if err := nm.updateSecret(connName, password); err != nil {
+			return fmt.Errorf("failed to save password: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // IsAvailable returns true if NetworkManager and OpenVPN plugin are available.
@@ -127,14 +169,8 @@ func (nm *NMBackend) Connect(connName, username, password string) error {
 	// First, try to save credentials for future reconnections
 	// This is done async so we don't block the connection
 	resilience.SafeGoWithName("nm-save-credentials", func() {
-		if username != "" {
-			_ = exec.Command("nmcli", "connection", "modify", connName,
-				"+vpn.data", fmt.Sprintf("username=%s", username),
-				"+vpn.data", "password-flags=0").Run()
-		}
-		if password != "" {
-			_ = exec.Command("nmcli", "connection", "modify", connName,
-				"vpn.secrets.password", password).Run()
+		if err := nm.persistCredentials(connName, username, password); err != nil {
+			logger.LogWarn("nm", "Could not save credentials for %s: %v", connName, err)
 		}
 	})
 
@@ -171,18 +207,14 @@ func (nm *NMBackend) connectWithPasswdFile(connName, password string) error {
 // ConnectWithSecrets connects using saved credentials plus optional OTP.
 // For OTP connections, password is NOT saved since OTP changes each time.
 func (nm *NMBackend) ConnectWithSecrets(connName, username, password, otp string) error {
-	// Save username permanently
-	if username != "" {
-		_ = exec.Command("nmcli", "connection", "modify", connName,
-			"+vpn.data", fmt.Sprintf("username=%s", username)).Run()
+	// Save username permanently. The password is only saved when there is
+	// no OTP, since OTP-based passwords change on every connection.
+	passwordToSave := ""
+	if otp == "" {
+		passwordToSave = password
 	}
-
-	// If no OTP, save password permanently for future reconnections
-	if otp == "" && password != "" {
-		_ = exec.Command("nmcli", "connection", "modify", connName,
-			"+vpn.data", "password-flags=0").Run()
-		_ = exec.Command("nmcli", "connection", "modify", connName,
-			"vpn.secrets.password", password).Run()
+	if err := nm.persistCredentials(connName, username, passwordToSave); err != nil {
+		logger.LogWarn("nm", "Could not save credentials for %s: %v", connName, err)
 	}
 
 	// Create password with OTP if needed
@@ -356,29 +388,8 @@ func (nm *NMBackend) MonitorConnection(connName string, callback func(connected 
 // SetCredentials stores credentials for a connection permanently.
 // This ensures reconnection works without asking for password again.
 func (nm *NMBackend) SetCredentials(connName, username, password string) error {
-	// Set username in connection
-	if username != "" {
-		cmd := exec.Command("nmcli", "connection", "modify", connName,
-			"+vpn.data", fmt.Sprintf("username=%s", username))
-		if err := cmd.Run(); err != nil {
-			logger.LogWarn("nm", "Could not set username: %v", err)
-		}
-	}
-
-	// Set password-flags=0 so password is stored in system
-	cmd := exec.Command("nmcli", "connection", "modify", connName,
-		"+vpn.data", "password-flags=0")
-	if err := cmd.Run(); err != nil {
-		logger.LogWarn("nm", "Could not set password-flags: %v", err)
-	}
-
-	// Save the password
-	if password != "" {
-		cmd = exec.Command("nmcli", "connection", "modify", connName,
-			"vpn.secrets.password", password)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to save password: %w", err)
-		}
+	if err := nm.persistCredentials(connName, username, password); err != nil {
+		return err
 	}
 
 	logger.LogDebug("nm", "Credentials saved for %s", connName)
