@@ -135,9 +135,17 @@ func (wp *WireGuardPanel) checkAvailability() {
 	}
 }
 
-// showError displays an error notification.
-func (wp *WireGuardPanel) showError(title, message string) {
+// showError surfaces a failure to the user. The error is always shown in the
+// UI via the host error dialog, translated into an actionable message by
+// components.ExplainError. A desktop notification is sent as an additional
+// channel when notifications are enabled.
+func (wp *WireGuardPanel) showError(fallbackTitle string, err error) {
+	if err == nil {
+		return
+	}
+	title, body := components.ExplainError(fallbackTitle, err)
+	wp.host.ShowError(title, body)
 	if wp.host.GetConfig().ShowNotifications {
-		notify.ConnectionError(title, message)
+		notify.ConnectionError(title, err.Error())
 	}
 }

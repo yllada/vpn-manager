@@ -42,7 +42,7 @@ func (wp *WireGuardPanel) onImportProfile() {
 		_, importErr := wp.provider.ImportProfile(path)
 		if importErr != nil {
 			logger.LogError("WireGuard: Import failed: %v", importErr)
-			wp.showError("Import Failed", importErr.Error())
+			wp.showError("Import Failed", importErr)
 		} else {
 			// Reload all profiles to ensure consistency
 			wp.loadProfiles()
@@ -54,16 +54,22 @@ func (wp *WireGuardPanel) onImportProfile() {
 func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 	conn := wp.provider.GetConnection(row.profile.ID())
 
+	name := row.profile.Name()
+
 	if conn != nil && conn.Status == wireguard.StatusConnected {
 		// Disconnect
 		row.connBtn.SetSensitive(false)
+		wp.host.SetStatus(fmt.Sprintf("Disconnecting from %s...", name))
 		resilience.SafeGoWithName("wireguard-disconnect", func() {
 			err := wp.provider.Disconnect(context.Background(), row.profile)
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
 					logger.LogError("WireGuard: Disconnect error: %v", err)
-					wp.showError("Disconnect Failed", err.Error())
+					wp.showError("Disconnect Failed", err)
+					wp.host.SetStatus(fmt.Sprintf("Failed to disconnect from %s", name))
+				} else {
+					wp.host.SetStatus(fmt.Sprintf("Disconnected from %s", name))
 				}
 				wp.updateRowStatus(row)
 			})
@@ -71,13 +77,17 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 	} else {
 		// Connect
 		row.connBtn.SetSensitive(false)
+		wp.host.SetStatus(fmt.Sprintf("Connecting to %s...", name))
 		resilience.SafeGoWithName("wireguard-connect", func() {
 			err := wp.provider.Connect(context.Background(), row.profile, vpntypes.AuthInfo{})
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
 				if err != nil {
 					logger.LogError("WireGuard: Connect error: %v", err)
-					wp.showError("Connection Failed", err.Error())
+					wp.showError("Connection Failed", err)
+					wp.host.SetStatus(fmt.Sprintf("Failed to connect to %s", name))
+				} else {
+					wp.host.SetStatus(fmt.Sprintf("Connected to %s", name))
 				}
 				wp.updateRowStatus(row)
 			})
@@ -106,7 +116,7 @@ func (wp *WireGuardPanel) onDeleteProfile(row *WireGuardRow) {
 		// Delete profile
 		if err := wp.provider.DeleteProfile(row.profile.ID()); err != nil {
 			logger.LogError("WireGuard: Delete error: %v", err)
-			wp.showError("Delete Failed", err.Error())
+			wp.showError("Delete Failed", err)
 			return
 		}
 
