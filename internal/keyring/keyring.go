@@ -50,7 +50,8 @@ var (
 	localStoreMu    sync.RWMutex
 	localStore      map[string]string
 	localStoreFile  string
-	saltFile        string
+	saltFile        string // legacy: read only to migrate credentials from the previous scheme
+	keyFile         string
 	encryptionKey   []byte
 	initialized     bool
 )
@@ -72,6 +73,8 @@ func initStorage() {
 		_ = keyring.Delete(serviceName, testKey)
 		useLocalStorage = false
 	} else {
+		log.Printf("keyring: system keyring unavailable (%v); falling back to encrypted local file storage. "+
+			"This is weaker than a system keyring — install gnome-keyring, kwallet, or pass for stronger protection.", err)
 		useLocalStorage = true
 		initLocalStorage()
 	}
@@ -79,102 +82,153 @@ func initStorage() {
 }
 
 func initLocalStorage() {
-	homeDir, _ := os.UserHomeDir()
-	configDir := filepath.Join(homeDir, ".config", "vpn-manager")
-	_ = os.MkdirAll(configDir, 0700)
-	localStoreFile = filepath.Join(configDir, ".credentials")
-	saltFile = filepath.Join(configDir, ".keyring-salt")
-
-	// Load or create cryptographically secure salt
-	salt, isNewSalt, err := loadOrCreateSalt()
-	if err != nil {
-		// Critical error - log and continue with empty store
-		// Credential operations will fail gracefully
-		log.Printf("keyring: failed to initialize salt: %v - credential storage disabled", err)
-		localStore = make(map[string]string)
-		return
+	if localStoreFile == "" {
+		homeDir, _ := os.UserHomeDir()
+		configDir := filepath.Join(homeDir, ".config", "vpn-manager")
+		_ = os.MkdirAll(configDir, 0700)
+		localStoreFile = filepath.Join(configDir, ".credentials")
+		saltFile = filepath.Join(configDir, ".keyring-salt")
+		keyFile = filepath.Join(configDir, ".keyring-key")
 	}
 
-	// Derive encryption key using Argon2id
-	// Using a fixed password combined with salt ensures key uniqueness per installation
-	password := []byte("vpn-manager-local-storage")
-	encryptionKey = argon2.IDKey(password, salt, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
-
-	// Load existing credentials
 	localStore = make(map[string]string)
 
-	// If this is a new salt and old credentials exist, attempt migration
-	if isNewSalt {
-		migrateOldCredentials()
+	// Load or create a random 256-bit master key. Unlike the previous scheme,
+	// the key is never derived from a hardcoded password: it is generated with
+	// crypto/rand on first use and stored with 0600 permissions. This is
+	// defense-in-depth against a leaked credentials file (backups, home-dir
+	// sync, discarded disks); it is not, and cannot be, protection against a
+	// live attacker running under the same UID — for that, a system keyring is
+	// required.
+	key, isNewKey, err := loadOrCreateKey()
+	if err != nil {
+		// Critical error - log and continue with an empty store.
+		// Credential operations will fail gracefully.
+		log.Printf("keyring: failed to initialize local encryption key: %v - credential storage disabled", err)
+		return
+	}
+	encryptionKey = key
+
+	// On first run with the new key, migrate credentials written by older
+	// encryption schemes so upgrading users don't lose saved passwords.
+	if isNewKey {
+		migrateLegacyCredentials()
 	}
 
 	loadLocalStore()
 }
 
-// loadOrCreateSalt loads an existing salt from file or creates a new one.
-// Returns the salt, whether it's newly created, and any error.
-func loadOrCreateSalt() ([]byte, bool, error) {
-	// Try to load existing salt
-	if data, err := os.ReadFile(saltFile); err == nil {
-		if len(data) == saltSize {
+// loadOrCreateKey loads the local master key from disk or creates a new random
+// one. Returns the key, whether it was newly created, and any error.
+func loadOrCreateKey() ([]byte, bool, error) {
+	// Fast path: a valid key already exists.
+	if data, err := os.ReadFile(keyFile); err == nil {
+		if len(data) == argon2KeyLen {
 			return data, false, nil
 		}
-		// Invalid salt size, regenerate
+		// A key file exists but is the wrong size (corrupt / partial write).
+		// Regenerating means any .credentials it encrypted can no longer be
+		// decrypted, so make that observable rather than losing data silently.
+		log.Printf("keyring: local key file %s is corrupt (%d bytes, expected %d); regenerating — "+
+			"previously saved credentials will need to be re-entered", keyFile, len(data), argon2KeyLen)
+		_ = os.Remove(keyFile)
 	}
 
-	// Generate new cryptographically secure salt
-	salt := make([]byte, saltSize)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+	key := make([]byte, argon2KeyLen)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, false, err
 	}
 
-	// Persist salt with secure permissions (owner read/write only)
-	if err := os.WriteFile(saltFile, salt, 0600); err != nil {
+	// O_EXCL guards against a concurrent process creating the key at the same time.
+	f, err := os.OpenFile(keyFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			// Lost the race: prefer the key already written by the other process.
+			if data, rerr := os.ReadFile(keyFile); rerr == nil && len(data) == argon2KeyLen {
+				return data, false, nil
+			}
+		}
+		return nil, false, err
+	}
+	defer f.Close()
+
+	if _, err := f.Write(key); err != nil {
+		_ = os.Remove(keyFile)
 		return nil, false, err
 	}
 
-	return salt, true, nil
+	return key, true, nil
 }
 
-// migrateOldCredentials attempts to migrate credentials from old encryption scheme.
-// This provides backward compatibility during the transition period.
-func migrateOldCredentials() {
-	// Check if old credentials file exists
+// legacyLocalPassword is the fixed password used by the previous key-derivation
+// scheme. It is retained ONLY to decrypt and migrate credentials written by that
+// scheme; it is never used to encrypt new data.
+const legacyLocalPassword = "vpn-manager-local-storage"
+
+// migrateLegacyCredentials re-encrypts credentials that were stored with an
+// older encryption scheme using the current random master key. It runs once,
+// when a fresh master key is created (typically on upgrade).
+func migrateLegacyCredentials() {
 	data, err := os.ReadFile(localStoreFile)
 	if err != nil {
-		return // No old credentials to migrate
+		return // No existing credentials to migrate.
 	}
 
-	// Try to decrypt with old key derivation (SHA256 of predictable data)
-	oldKey := deriveOldKey()
-	if oldKey == nil {
+	for _, legacyKey := range legacyKeys() {
+		if legacyKey == nil {
+			continue
+		}
+
+		decrypted, err := decryptWithKey(data, legacyKey)
+		if err != nil {
+			continue // Not this scheme (or already migrated); try the next.
+		}
+
+		var oldStore map[string]string
+		if err := json.Unmarshal(decrypted, &oldStore); err != nil {
+			continue
+		}
+
+		// Back up, then re-encrypt with the current master key.
+		backupFile := localStoreFile + ".bak"
+		_ = os.Rename(localStoreFile, backupFile)
+
+		localStore = oldStore
+		if err := saveLocalStore(); err != nil {
+			// Restore backup on failure.
+			_ = os.Rename(backupFile, localStoreFile)
+			return
+		}
+
+		_ = os.Remove(backupFile)
 		return
 	}
 
-	decrypted, err := decryptWithKey(data, oldKey)
-	if err != nil {
-		return // Old credentials not decryptable or already migrated
+	// A credentials file exists but no known scheme could decrypt it — this
+	// happens if the master key was lost or corrupted while the file was written
+	// by the current scheme. The data is unrecoverable; surface it so the user
+	// knows to re-enter passwords instead of failing silently.
+	if len(data) > 0 {
+		log.Printf("keyring: existing credentials file %s could not be decrypted with any known key; "+
+			"saved passwords will need to be re-entered", localStoreFile)
+	}
+}
+
+// legacyKeys returns the decryption keys for previous storage schemes, newest
+// first, for migration purposes only.
+func legacyKeys() [][]byte {
+	var keys [][]byte
+
+	// Previous scheme: Argon2id(fixed password, per-install salt).
+	if salt, err := os.ReadFile(saltFile); err == nil && len(salt) == saltSize {
+		keys = append(keys, argon2.IDKey([]byte(legacyLocalPassword), salt,
+			argon2Time, argon2Memory, argon2Threads, argon2KeyLen))
 	}
 
-	var oldStore map[string]string
-	if err := json.Unmarshal(decrypted, &oldStore); err != nil {
-		return
-	}
+	// Oldest scheme: SHA256(hostname + machine-id + uid).
+	keys = append(keys, deriveOldKey())
 
-	// Backup old file
-	backupFile := localStoreFile + ".bak"
-	_ = os.Rename(localStoreFile, backupFile)
-
-	// Re-encrypt with new key
-	localStore = oldStore
-	if err := saveLocalStore(); err != nil {
-		// Restore backup on failure
-		_ = os.Rename(backupFile, localStoreFile)
-		return
-	}
-
-	// Remove backup after successful migration
-	_ = os.Remove(backupFile)
+	return keys
 }
 
 // deriveOldKey recreates the old insecure key for migration purposes.

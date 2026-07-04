@@ -1,10 +1,15 @@
 package keyring
 
 import (
+	"crypto/rand"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"golang.org/x/crypto/argon2"
 )
 
 // setupTestEnv creates a temporary directory for test storage
@@ -17,6 +22,7 @@ func setupTestEnv(t *testing.T) func() {
 	origLocalStore := localStore
 	origLocalStoreFile := localStoreFile
 	origSaltFile := saltFile
+	origKeyFile := keyFile
 	origEncryptionKey := encryptionKey
 	origInitialized := initialized
 
@@ -28,6 +34,7 @@ func setupTestEnv(t *testing.T) func() {
 	localStore = make(map[string]string)
 	localStoreFile = filepath.Join(tmpDir, ".credentials")
 	saltFile = filepath.Join(tmpDir, ".keyring-salt")
+	keyFile = filepath.Join(tmpDir, ".keyring-key")
 	encryptionKey = nil
 	initialized = false
 
@@ -40,6 +47,7 @@ func setupTestEnv(t *testing.T) func() {
 		localStore = origLocalStore
 		localStoreFile = origLocalStoreFile
 		saltFile = origSaltFile
+		keyFile = origKeyFile
 		encryptionKey = origEncryptionKey
 		initialized = origInitialized
 	}
@@ -266,49 +274,123 @@ func TestDecrypt_InvalidData(t *testing.T) {
 	}
 }
 
-func TestLoadOrCreateSalt_NewSalt(t *testing.T) {
+func TestLoadOrCreateKey_New(t *testing.T) {
 	tmpDir := t.TempDir()
-	origSaltFile := saltFile
-	saltFile = filepath.Join(tmpDir, ".keyring-salt")
-	defer func() { saltFile = origSaltFile }()
+	origKeyFile := keyFile
+	keyFile = filepath.Join(tmpDir, ".keyring-key")
+	defer func() { keyFile = origKeyFile }()
 
-	salt, isNew, err := loadOrCreateSalt()
+	key, isNew, err := loadOrCreateKey()
 	if err != nil {
-		t.Fatalf("loadOrCreateSalt failed: %v", err)
+		t.Fatalf("loadOrCreateKey failed: %v", err)
 	}
 	if !isNew {
-		t.Error("Expected isNew=true for new salt")
+		t.Error("Expected isNew=true for new key")
 	}
-	if len(salt) != saltSize {
-		t.Errorf("Salt size: expected %d, got %d", saltSize, len(salt))
+	if len(key) != argon2KeyLen {
+		t.Errorf("Key size: expected %d, got %d", argon2KeyLen, len(key))
 	}
 
-	if _, err := os.Stat(saltFile); os.IsNotExist(err) {
-		t.Error("Salt file was not created")
+	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+		t.Error("Key file was not created")
 	}
 }
 
-func TestLoadOrCreateSalt_ExistingSalt(t *testing.T) {
+func TestLoadOrCreateKey_Existing(t *testing.T) {
 	tmpDir := t.TempDir()
-	origSaltFile := saltFile
-	saltFile = filepath.Join(tmpDir, ".keyring-salt")
-	defer func() { saltFile = origSaltFile }()
+	origKeyFile := keyFile
+	keyFile = filepath.Join(tmpDir, ".keyring-key")
+	defer func() { keyFile = origKeyFile }()
 
-	salt1, _, err := loadOrCreateSalt()
+	key1, _, err := loadOrCreateKey()
 	if err != nil {
-		t.Fatalf("First loadOrCreateSalt failed: %v", err)
+		t.Fatalf("First loadOrCreateKey failed: %v", err)
 	}
 
-	salt2, isNew, err := loadOrCreateSalt()
+	key2, isNew, err := loadOrCreateKey()
 	if err != nil {
-		t.Fatalf("Second loadOrCreateSalt failed: %v", err)
+		t.Fatalf("Second loadOrCreateKey failed: %v", err)
 	}
 	if isNew {
-		t.Error("Expected isNew=false for existing salt")
+		t.Error("Expected isNew=false for existing key")
 	}
 
-	if string(salt1) != string(salt2) {
-		t.Error("Salts should be identical")
+	if string(key1) != string(key2) {
+		t.Error("Keys should be identical across loads")
+	}
+}
+
+// TestMigrateLegacyCredentials verifies that credentials written by the previous
+// Argon2(fixed-password, salt) scheme are transparently re-encrypted with a fresh
+// random master key on upgrade, without data loss.
+func TestMigrateLegacyCredentials(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	origUseLocalStorage := useLocalStorage
+	origLocalStore := localStore
+	origLocalStoreFile := localStoreFile
+	origSaltFile := saltFile
+	origKeyFile := keyFile
+	origEncryptionKey := encryptionKey
+	origInitialized := initialized
+	defer func() {
+		useLocalStorage = origUseLocalStorage
+		localStore = origLocalStore
+		localStoreFile = origLocalStoreFile
+		saltFile = origSaltFile
+		keyFile = origKeyFile
+		encryptionKey = origEncryptionKey
+		initialized = origInitialized
+	}()
+
+	localStoreFile = filepath.Join(tmpDir, ".credentials")
+	saltFile = filepath.Join(tmpDir, ".keyring-salt")
+	keyFile = filepath.Join(tmpDir, ".keyring-key")
+
+	// Simulate the previous scheme: Argon2(fixed password, salt)-encrypted creds.
+	salt := make([]byte, saltSize)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		t.Fatalf("salt gen failed: %v", err)
+	}
+	if err := os.WriteFile(saltFile, salt, 0600); err != nil {
+		t.Fatalf("write salt failed: %v", err)
+	}
+	legacyKey := argon2.IDKey([]byte(legacyLocalPassword), salt,
+		argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
+
+	// Encrypt a credential map with the legacy key and persist it.
+	encryptionKey = legacyKey
+	payload, _ := json.Marshal(map[string]string{"legacy-profile": "legacy-secret"})
+	blob, err := encrypt(payload)
+	if err != nil {
+		t.Fatalf("legacy encrypt failed: %v", err)
+	}
+	if err := os.WriteFile(localStoreFile, blob, 0600); err != nil {
+		t.Fatalf("write legacy creds failed: %v", err)
+	}
+
+	// Initialize fresh (new random key) and confirm the credential migrated.
+	useLocalStorage = true
+	localStore = make(map[string]string)
+	encryptionKey = nil
+	initialized = false
+	initLocalStorage()
+
+	pw, err := Get("legacy-profile")
+	if err != nil {
+		t.Fatalf("Get after migration failed: %v", err)
+	}
+	if pw != "legacy-secret" {
+		t.Errorf("Expected 'legacy-secret', got '%s'", pw)
+	}
+
+	// The new key file must exist and must NOT equal the legacy derived key.
+	newKey, err := os.ReadFile(keyFile)
+	if err != nil {
+		t.Fatalf("key file missing after migration: %v", err)
+	}
+	if string(newKey) == string(legacyKey) {
+		t.Error("Migration should use a fresh random key, not the legacy key")
 	}
 }
 
@@ -319,6 +401,7 @@ func TestPersistence(t *testing.T) {
 	origLocalStore := localStore
 	origLocalStoreFile := localStoreFile
 	origSaltFile := saltFile
+	origKeyFile := keyFile
 	origEncryptionKey := encryptionKey
 	origInitialized := initialized
 
@@ -327,6 +410,7 @@ func TestPersistence(t *testing.T) {
 		localStore = origLocalStore
 		localStoreFile = origLocalStoreFile
 		saltFile = origSaltFile
+		keyFile = origKeyFile
 		encryptionKey = origEncryptionKey
 		initialized = origInitialized
 	}()
@@ -335,6 +419,7 @@ func TestPersistence(t *testing.T) {
 	localStore = make(map[string]string)
 	localStoreFile = filepath.Join(tmpDir, ".credentials")
 	saltFile = filepath.Join(tmpDir, ".keyring-salt")
+	keyFile = filepath.Join(tmpDir, ".keyring-key")
 	encryptionKey = nil
 	initialized = false
 	initLocalStorage()
