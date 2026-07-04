@@ -5,7 +5,7 @@
 <h1 align="center">VPN Manager</h1>
 
 <p align="center">
-  <strong>A GTK4 VPN client for Linux with enterprise-grade security features</strong><br>
+  <strong>A GTK4 VPN client for Linux with a built-in kill switch, DNS leak protection, and privilege-separated architecture</strong><br>
   <em>OpenVPN, WireGuard & Tailscale in one native interface</em>
 </p>
 
@@ -31,7 +31,7 @@
 
 ## Why VPN Manager?
 
-Most Linux VPN solutions require terminal commands or lack modern security features. VPN Manager provides a native GTK4/libadwaita interface with enterprise security that works out of the box.
+Most Linux VPN solutions require terminal commands or lack modern security features. VPN Manager provides a native GTK4/libadwaita interface backed by a privilege-separated daemon, with a kill switch, DNS leak protection, and keyring-backed credential storage — all configurable from the UI.
 
 ## Features
 

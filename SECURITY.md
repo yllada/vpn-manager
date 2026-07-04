@@ -17,15 +17,11 @@ VPN Manager implements multiple security layers to protect your data:
 ### Credential Storage
 
 - **System Keyring**: Credentials are stored using the system's secret service (libsecret/GNOME Keyring) when available
-- **Encrypted Fallback**: When keyring is unavailable, credentials are encrypted using:
-  - **AES-256-GCM** for symmetric encryption
-  - **Argon2id** for key derivation (memory-hard, resistant to GPU attacks)
-  - **Secure random** IV generation for each encryption operation
-
-### Memory Protection
-
-- **SecureString**: Sensitive data in memory is zeroed after use
-- **Constant-time comparison**: Prevents timing attacks on credential verification
+- **Encrypted Fallback**: When no system keyring is available, credentials are stored in an encrypted local file:
+  - **AES-256-GCM** authenticated encryption
+  - **Random 256-bit key** generated with `crypto/rand` on first use and stored with `0600` permissions at `~/.config/vpn-manager/.keyring-key` (Argon2id is used only to decrypt and migrate credentials saved by older versions)
+  - **Random nonce** for every encryption operation
+  - This fallback protects the credentials file at rest (backups, home-directory sync, discarded disks). It cannot protect against a process running under the same user account — a system keyring is the stronger option and is preferred whenever available.
 
 ### Network Security
 
@@ -37,9 +33,9 @@ VPN Manager implements multiple security layers to protect your data:
 
 **Please do NOT report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability, please report it by emailing:
-
-📧 **vpn-manager-security@example.com**
+If you discover a security vulnerability, please report it privately via
+[GitHub Security Advisories](https://github.com/yllada/vpn-manager/security/advisories/new)
+("Report a vulnerability" on the repository's Security tab).
 
 ### What to Include
 
@@ -99,13 +95,12 @@ VPN Manager requires certain elevated permissions:
 ### Threat Model
 
 VPN Manager protects against:
-- ✅ Credential theft from disk (encrypted storage)
-- ✅ Memory scraping (SecureString zeroing)
-- ✅ Timing attacks (constant-time comparisons)
+- ✅ Credential theft from disk (system keyring, or encrypted file storage as fallback)
 - ✅ Network leaks (kill switch, DNS protection)
 
 VPN Manager does NOT protect against:
 - ❌ Compromised system/root access
+- ❌ Other processes running under your own user account (secrets held in memory are not locked or zeroed)
 - ❌ Malicious VPN providers
 - ❌ Physical access to unlocked system
 
@@ -113,7 +108,7 @@ VPN Manager does NOT protect against:
 
 | Date | Auditor | Scope | Result |
 |------|---------|-------|--------|
-| 2026-03 | Internal | Full codebase | 8.5/10 security score |
+| 2026-07 | Internal | Full codebase | Findings triaged; fixes for the critical items have landed on `main` (see the "Unreleased" section of the CHANGELOG) and ship with the next release |
 
 ## Acknowledgments
 
