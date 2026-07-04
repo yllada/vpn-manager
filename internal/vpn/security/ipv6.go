@@ -116,12 +116,11 @@ func (ip6 *IPv6Protection) Enable(vpnInterface string, vpnSupportsIPv6 bool) err
 
 	if shouldBlock {
 		// Use daemon for privileged operations (required)
-		if !daemon.IsDaemonAvailable() {
+		if !daemonAvailable() {
 			return fmt.Errorf("vpn-managerd daemon is not running")
 		}
 
-		client := &daemon.IPv6ProtectionClient{}
-		if err := client.Enable(daemon.IPv6EnableParams{
+		if err := ipv6Enable(daemon.IPv6EnableParams{
 			Mode:        string(ip6.config.Mode),
 			BlockWebRTC: ip6.config.BlockWebRTC,
 		}); err != nil {
@@ -148,12 +147,11 @@ func (ip6 *IPv6Protection) Disable() error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !daemon.IsDaemonAvailable() {
+	if !daemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &daemon.IPv6ProtectionClient{}
-	if err := client.Disable(); err != nil {
+	if err := ipv6Disable(); err != nil {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
 

@@ -139,35 +139,7 @@ func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams)
 	// Build OpenVPN arguments. The config is the root-only staged copy, not the
 	// client-supplied path, so the bytes openvpn parses are exactly the bytes we
 	// scanned.
-	args := []string{
-		"--config", stagedConfig,
-		"--verb", "3",
-		// SECURITY (C1): force all script execution off regardless of config
-		// contents. Combined with the directive scan above, this is defense in
-		// depth against remote-code-execution via a malicious config file.
-		"--script-security", "0",
-	}
-
-	if credFile != "" {
-		args = append(args, "--auth-user-pass", credFile)
-	}
-
-	// Split tunneling configuration
-	if params.SplitTunnelEnable && params.SplitTunnelMode == "include" {
-		args = append(args, "--route-nopull")
-		args = append(args, "--pull-filter", "ignore", "redirect-gateway")
-
-		for _, route := range params.SplitTunnelRoutes {
-			route = strings.TrimSpace(route)
-			if route == "" {
-				continue
-			}
-			network, netmask := parseRouteForOpenVPN(route)
-			if network != "" {
-				args = append(args, "--route", network, netmask)
-			}
-		}
-	}
+	args := buildOpenVPNArgs(stagedConfig, credFile, params)
 
 	// Create the process
 	// NOTE: We use exec.Command instead of exec.CommandContext because OpenVPN
@@ -429,10 +401,12 @@ func (m *OpenVPNManager) waitForProcess(proc *OpenVPNProcess, credFile string) {
 // CONFIG STAGING (TOCTOU-safe C1 validation)
 // =============================================================================
 
-const (
-	ovpnStagingDir     = "/run/vpn-manager/ovpn"
-	maxOVPNConfigBytes = 1 << 20 // 1 MiB
-)
+const maxOVPNConfigBytes = 1 << 20 // 1 MiB
+
+// ovpnStagingDir is the root-only directory where validated configs are staged
+// for execution. Package-level var (not const) so tests can redirect staging to
+// a temp dir; production code never reassigns it.
+var ovpnStagingDir = "/run/vpn-manager/ovpn"
 
 // stageOpenVPNConfig validates the client config and writes a root-only copy for
 // openvpn to execute, returning the staged path. openvpn derives nothing from the
@@ -475,16 +449,57 @@ func removeStagedOpenVPNConfig(configPath string) {
 // HELPER FUNCTIONS
 // =============================================================================
 
+// buildOpenVPNArgs constructs the openvpn argv. Secrets are NEVER placed in
+// argv (argv is world-readable via /proc): credentials travel only through the
+// 0600 credentials file referenced by --auth-user-pass. The config argument
+// must be the root-only staged copy, never the client-supplied path.
+func buildOpenVPNArgs(stagedConfig, credFile string, params OpenVPNConnectParams) []string {
+	args := []string{
+		"--config", stagedConfig,
+		"--verb", "3",
+		// SECURITY (C1): force all script execution off regardless of config
+		// contents. Combined with the directive scan during staging, this is
+		// defense in depth against remote-code-execution via a malicious config.
+		"--script-security", "0",
+	}
+
+	if credFile != "" {
+		args = append(args, "--auth-user-pass", credFile)
+	}
+
+	// Split tunneling configuration
+	if params.SplitTunnelEnable && params.SplitTunnelMode == "include" {
+		args = append(args, "--route-nopull")
+		args = append(args, "--pull-filter", "ignore", "redirect-gateway")
+
+		for _, route := range params.SplitTunnelRoutes {
+			route = strings.TrimSpace(route)
+			if route == "" {
+				continue
+			}
+			network, netmask := parseRouteForOpenVPN(route)
+			if network != "" {
+				args = append(args, "--route", network, netmask)
+			}
+		}
+	}
+
+	return args
+}
+
+// ovpnCredsDir is the root-only directory under /run (not world-writable /tmp)
+// for transient credential files, so a local attacker cannot pre-create or
+// symlink-swap the parent before the daemon writes the credentials file into
+// it. Package-level var (not const) so tests can redirect it to a temp dir;
+// production code never reassigns it.
+var ovpnCredsDir = filepath.Join(paths.RuntimeDir, "ovpn-creds")
+
 func createCredentialsFile(username, password string) (string, error) {
 	if username == "" && password == "" {
 		return "", nil
 	}
 
-	// Create a root-only directory under /run (not world-writable /tmp), so a
-	// local attacker cannot pre-create or symlink-swap the parent before the
-	// daemon writes the credentials file into it.
-	tmpDir := filepath.Join(paths.RuntimeDir, "ovpn-creds")
-	if err := os.MkdirAll(tmpDir, 0700); err != nil {
+	if err := os.MkdirAll(ovpnCredsDir, 0700); err != nil {
 		return "", err
 	}
 
@@ -494,7 +509,7 @@ func createCredentialsFile(username, password string) (string, error) {
 		return "", fmt.Errorf("failed to generate random filename: %w", err)
 	}
 
-	credFile := filepath.Join(tmpDir, hex.EncodeToString(randBytes))
+	credFile := filepath.Join(ovpnCredsDir, hex.EncodeToString(randBytes))
 	content := fmt.Sprintf("%s\n%s\n", username, password)
 
 	if err := os.WriteFile(credFile, []byte(content), 0600); err != nil {

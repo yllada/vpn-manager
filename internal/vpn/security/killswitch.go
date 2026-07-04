@@ -131,12 +131,11 @@ func (ks *KillSwitch) Enable(vpnInterface string, vpnServerIP string) error {
 	ks.vpnServerIP = vpnServerIP
 
 	// Use daemon for privileged operations
-	if !daemon.IsDaemonAvailable() {
+	if !daemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &daemon.KillSwitchClient{}
-	result, err := client.Enable(daemon.KillSwitchEnableParams{
+	result, err := killSwitchEnable(daemon.KillSwitchEnableParams{
 		VPNInterface: vpnInterface,
 		VPNServerIP:  vpnServerIP,
 		AllowLAN:     ks.allowLAN,
@@ -223,12 +222,11 @@ func (ks *KillSwitch) disable() error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !daemon.IsDaemonAvailable() {
+	if !daemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &daemon.KillSwitchClient{}
-	if err := client.Disable(); err != nil {
+	if err := killSwitchDisable(); err != nil {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
@@ -275,12 +273,11 @@ func (ks *KillSwitch) EnableBlockAll() error {
 	}
 
 	// Use daemon for privileged operations (required)
-	if !daemon.IsDaemonAvailable() {
+	if !daemonAvailable() {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	client := &daemon.KillSwitchClient{}
-	result, err := client.EnableBlockAll()
+	result, err := killSwitchEnableBlockAll()
 	if err != nil {
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
@@ -362,7 +359,7 @@ func (ks *KillSwitch) SaveState() error {
 	ks.mu.Unlock()
 
 	// Ensure state directory exists
-	if err := paths.EnsureStateDir(); err != nil {
+	if err := ensureStateDir(); err != nil {
 		// Log warning but don't fail - state saving is best-effort
 		log.Printf("KillSwitch: Warning: failed to ensure state directory: %v", err)
 		return err
@@ -375,7 +372,7 @@ func (ks *KillSwitch) SaveState() error {
 	}
 
 	// Atomic write: write to temp file, then rename
-	statePath := paths.KillSwitchStatePath
+	statePath := killSwitchStatePath
 	tempPath := statePath + ".tmp"
 
 	// Write to temp file (this may require root privileges)
@@ -414,7 +411,7 @@ func writeStateFile(path string, data []byte) error {
 // LoadState reads the persisted kill switch state from disk.
 // Returns nil if no state file exists (not an error condition).
 func LoadState() (*KillSwitchState, error) {
-	statePath := paths.KillSwitchStatePath
+	statePath := killSwitchStatePath
 
 	// Check if state file exists
 	if !paths.StateFileExists(statePath) {
@@ -522,7 +519,7 @@ func (ks *KillSwitch) checkNftablesRules() bool {
 
 // ClearState removes the state file after successful disable.
 func (ks *KillSwitch) ClearState() error {
-	statePath := paths.KillSwitchStatePath
+	statePath := killSwitchStatePath
 
 	if !paths.StateFileExists(statePath) {
 		return nil
