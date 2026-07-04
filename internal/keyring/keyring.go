@@ -150,9 +150,15 @@ func loadOrCreateKey() ([]byte, bool, error) {
 		}
 		return nil, false, err
 	}
-	defer f.Close()
-
 	if _, err := f.Write(key); err != nil {
+		_ = f.Close()
+		_ = os.Remove(keyFile)
+		return nil, false, err
+	}
+
+	// Check Close explicitly: on a write-back filesystem it can surface a
+	// deferred flush error, and a truncated key file must not be left behind.
+	if err := f.Close(); err != nil {
 		_ = os.Remove(keyFile)
 		return nil, false, err
 	}
