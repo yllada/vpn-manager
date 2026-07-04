@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > ⚠ **Upgrade note:** the socket now requires group membership. After updating, log out and back in (or run `sudo usermod -aG vpn-manager $USER` then re-login) so the GUI can reach the daemon.
 
+### Security
+- **Sandboxed the root daemon's systemd unit** — `vpn-managerd` now runs with `NoNewPrivileges`, a `CapabilityBoundingSet` restricted to exactly what it uses (network administration, socket ownership, privilege-drop for spawned VPN tools, and cgroup management for split tunneling — not blanket root), a `RestrictAddressFamilies` allow-list, a `@system-service` seccomp filter, and the usual `LockPersonality`/`ProtectClock`/`ProtectHostname`/`ProtectKernelLogs`/`RestrictRealtime`/`RestrictSUIDSGID` restrictions. `ReadWritePaths` re-opens only the specific `/etc` locations the daemon must write. Every directive carries a comment explaining why it is set — or, for the kernel-tunable/module/cgroup protections that must stay off, why it cannot be tightened.
+
 ### Added
 - **First-run daemon diagnosis** — When the GUI cannot reach the background service at startup it now explains *why* with a copyable fix, instead of silently looking broken: the service isn't running (`systemctl enable --now vpn-managerd`), the user isn't in the `vpn-manager` group yet (`usermod` command shown), or — the common post-install case — the group was assigned but the session hasn't picked it up, which just needs logging out and back in. A Retry button re-checks without restarting the app.
 
