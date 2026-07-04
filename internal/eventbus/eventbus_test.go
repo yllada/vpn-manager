@@ -24,40 +24,6 @@ func TestEventBus_Subscribe(t *testing.T) {
 	}
 }
 
-func TestEventBus_SubscribeAll(t *testing.T) {
-	bus := NewEventBus(EventBusConfig{AsyncWorkers: 0})
-
-	var count int32
-	bus.SubscribeAll(func(e *Event) {
-		atomic.AddInt32(&count, 1)
-	})
-
-	bus.Publish(NewEvent(EventConnectionStarting, "test", nil))
-	bus.Publish(NewEvent(EventConnectionEstablished, "test", nil))
-	bus.Publish(NewEvent(EventConnectionClosed, "test", nil))
-
-	if atomic.LoadInt32(&count) != 3 {
-		t.Errorf("Expected 3 events, got %d", count)
-	}
-}
-
-func TestEventBus_SubscribeOnce(t *testing.T) {
-	bus := NewEventBus(EventBusConfig{AsyncWorkers: 0})
-
-	var count int32
-	bus.SubscribeOnce(EventStatusChanged, func(e *Event) {
-		atomic.AddInt32(&count, 1)
-	})
-
-	bus.Publish(NewEvent(EventStatusChanged, "test", nil))
-	bus.Publish(NewEvent(EventStatusChanged, "test", nil))
-	bus.Publish(NewEvent(EventStatusChanged, "test", nil))
-
-	if atomic.LoadInt32(&count) != 1 {
-		t.Errorf("Expected 1 call (once), got %d", count)
-	}
-}
-
 func TestEventBus_Unsubscribe(t *testing.T) {
 	bus := NewEventBus(EventBusConfig{AsyncWorkers: 0})
 
@@ -72,26 +38,6 @@ func TestEventBus_Unsubscribe(t *testing.T) {
 
 	if atomic.LoadInt32(&count) != 1 {
 		t.Errorf("Expected 1 call before unsubscribe, got %d", count)
-	}
-}
-
-func TestEventBus_SubscribeWithFilter(t *testing.T) {
-	bus := NewEventBus(EventBusConfig{AsyncWorkers: 0})
-
-	var count int32
-	bus.SubscribeWithFilter(EventConnectionEstablished, func(e *Event) {
-		atomic.AddInt32(&count, 1)
-	}, func(e *Event) bool {
-		// Only accept events from "vpn" source
-		return e.Source == "vpn"
-	})
-
-	bus.Publish(NewEvent(EventConnectionEstablished, "vpn", nil))
-	bus.Publish(NewEvent(EventConnectionEstablished, "other", nil))
-	bus.Publish(NewEvent(EventConnectionEstablished, "vpn", nil))
-
-	if atomic.LoadInt32(&count) != 2 {
-		t.Errorf("Expected 2 filtered events, got %d", count)
 	}
 }
 
@@ -131,26 +77,6 @@ func TestEventBus_AsyncDelivery(t *testing.T) {
 
 	if atomic.LoadInt32(&count) != 10 {
 		t.Errorf("Expected 10 events, got %d", count)
-	}
-}
-
-func TestEventBus_PublishSync(t *testing.T) {
-	bus := NewEventBus(EventBusConfig{
-		AsyncWorkers: 2,
-		QueueSize:    100,
-	})
-	defer bus.Close()
-
-	received := false
-	bus.Subscribe(EventShutdown, func(e *Event) {
-		received = true
-	})
-
-	// This should be synchronous
-	bus.PublishSync(NewEvent(EventShutdown, "test", nil))
-
-	if !received {
-		t.Error("Sync publish should deliver immediately")
 	}
 }
 
@@ -236,47 +162,5 @@ func TestEvent_WithContext(t *testing.T) {
 	// Original event should be unchanged
 	if event.Context == ctx {
 		t.Error("Original event should not be modified")
-	}
-}
-
-func TestWaitForEvent(t *testing.T) {
-	// Reset global bus for this test
-	oldBus := globalBus
-	globalBus = NewEventBus(EventBusConfig{AsyncWorkers: 0})
-	defer func() { globalBus = oldBus }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	// Publish after a delay
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		Emit(EventConnectionEstablished, "test", "data")
-	}()
-
-	event, err := WaitForEvent(ctx, EventConnectionEstablished)
-	if err != nil {
-		t.Errorf("WaitForEvent failed: %v", err)
-	}
-	if event == nil {
-		t.Fatal("Expected event, got nil")
-	}
-	if event.Data != "data" {
-		t.Error("Event data mismatch")
-	}
-}
-
-func TestWaitForEvent_Timeout(t *testing.T) {
-	// Reset global bus for this test
-	oldBus := globalBus
-	globalBus = NewEventBus(EventBusConfig{AsyncWorkers: 0})
-	defer func() { globalBus = oldBus }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	_, err := WaitForEvent(ctx, EventConnectionEstablished)
-	if err == nil {
-		t.Error("Expected timeout error")
 	}
 }

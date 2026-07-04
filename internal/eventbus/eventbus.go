@@ -10,7 +10,6 @@ package eventbus
 import (
 	"context"
 	"log"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -241,16 +240,11 @@ type TrustAuthRequiredData struct {
 // EventHandler is a function that handles events.
 type EventHandler func(*Event)
 
-// TypedEventHandler handles events with type-safe data extraction.
-type TypedEventHandler[T any] func(eventType EventType, data T)
-
 // Subscription represents an active event subscription.
 type Subscription struct {
 	id        uint64
 	eventType EventType
 	handler   EventHandler
-	filter    func(*Event) bool
-	once      bool
 	bus       *EventBus
 }
 
@@ -269,7 +263,6 @@ func (s *Subscription) Unsubscribe() {
 type EventBus struct {
 	mu            sync.RWMutex
 	subscriptions map[EventType][]*Subscription
-	allHandlers   []*Subscription // Handlers for all events
 	nextID        uint64
 
 	// Async settings
@@ -319,7 +312,6 @@ func GetEventBus() *EventBus {
 func NewEventBus(config EventBusConfig) *EventBus {
 	bus := &EventBus{
 		subscriptions: make(map[EventType][]*Subscription),
-		allHandlers:   make([]*Subscription, 0),
 		asyncWorkers:  config.AsyncWorkers,
 	}
 
@@ -363,56 +355,6 @@ func (bus *EventBus) Subscribe(eventType EventType, handler EventHandler) *Subsc
 	return sub
 }
 
-// SubscribeAll registers a handler for all event types.
-func (bus *EventBus) SubscribeAll(handler EventHandler) *Subscription {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
-
-	sub := &Subscription{
-		id:        atomic.AddUint64(&bus.nextID, 1),
-		eventType: "*",
-		handler:   handler,
-		bus:       bus,
-	}
-
-	bus.allHandlers = append(bus.allHandlers, sub)
-	return sub
-}
-
-// SubscribeOnce registers a handler that fires only once.
-func (bus *EventBus) SubscribeOnce(eventType EventType, handler EventHandler) *Subscription {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
-
-	sub := &Subscription{
-		id:        atomic.AddUint64(&bus.nextID, 1),
-		eventType: eventType,
-		handler:   handler,
-		once:      true,
-		bus:       bus,
-	}
-
-	bus.subscriptions[eventType] = append(bus.subscriptions[eventType], sub)
-	return sub
-}
-
-// SubscribeWithFilter registers a handler with custom filtering.
-func (bus *EventBus) SubscribeWithFilter(eventType EventType, handler EventHandler, filter func(*Event) bool) *Subscription {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
-
-	sub := &Subscription{
-		id:        atomic.AddUint64(&bus.nextID, 1),
-		eventType: eventType,
-		handler:   handler,
-		filter:    filter,
-		bus:       bus,
-	}
-
-	bus.subscriptions[eventType] = append(bus.subscriptions[eventType], sub)
-	return sub
-}
-
 // unsubscribe removes a subscription by ID.
 func (bus *EventBus) unsubscribe(id uint64) {
 	bus.mu.Lock()
@@ -428,15 +370,6 @@ func (bus *EventBus) unsubscribe(id uint64) {
 		}
 		bus.subscriptions[eventType] = newSubs
 	}
-
-	// Remove from all handlers
-	newAll := make([]*Subscription, 0, len(bus.allHandlers))
-	for _, sub := range bus.allHandlers {
-		if sub.id != id {
-			newAll = append(newAll, sub)
-		}
-	}
-	bus.allHandlers = newAll
 }
 
 // Publish sends an event to all subscribers.
@@ -462,51 +395,18 @@ func (bus *EventBus) Publish(event *Event) {
 	}
 }
 
-// PublishSync ensures synchronous delivery regardless of config.
-func (bus *EventBus) PublishSync(event *Event) {
-	atomic.AddUint64(&bus.published, 1)
-	bus.deliverEvent(event)
-}
-
 // deliverEvent sends the event to matching handlers.
 func (bus *EventBus) deliverEvent(event *Event) {
 	bus.mu.RLock()
 
 	// Get handlers for this event type
 	handlers := append([]*Subscription{}, bus.subscriptions[event.Type]...)
-	allHandlers := append([]*Subscription{}, bus.allHandlers...)
 
 	bus.mu.RUnlock()
 
-	var toRemove []uint64
-
-	// Deliver to specific handlers
 	for _, sub := range handlers {
-		if sub.filter != nil && !sub.filter(event) {
-			continue
-		}
-
 		bus.safeDeliver(sub.handler, event)
 		atomic.AddUint64(&bus.delivered, 1)
-
-		if sub.once {
-			toRemove = append(toRemove, sub.id)
-		}
-	}
-
-	// Deliver to all-event handlers
-	for _, sub := range allHandlers {
-		if sub.filter != nil && !sub.filter(event) {
-			continue
-		}
-
-		bus.safeDeliver(sub.handler, event)
-		atomic.AddUint64(&bus.delivered, 1)
-	}
-
-	// Remove once-handlers
-	for _, id := range toRemove {
-		bus.unsubscribe(id)
 	}
 }
 
@@ -553,47 +453,4 @@ func Emit(eventType EventType, source string, data interface{}) {
 // On is a shorthand for subscribing to events on the global bus.
 func On(eventType EventType, handler EventHandler) *Subscription {
 	return GetEventBus().Subscribe(eventType, handler)
-}
-
-// Once is a shorthand for one-time subscription on the global bus.
-func Once(eventType EventType, handler EventHandler) *Subscription {
-	return GetEventBus().SubscribeOnce(eventType, handler)
-}
-
-// SubscribeTyped creates a type-safe subscription.
-// It extracts the data field and casts it to the expected type.
-func SubscribeTyped[T any](bus *EventBus, eventType EventType, handler TypedEventHandler[T]) *Subscription {
-	return bus.Subscribe(eventType, func(event *Event) {
-		if data, ok := event.Data.(T); ok {
-			handler(event.Type, data)
-		} else {
-			// Try pointer type
-			if data, ok := event.Data.(*T); ok && data != nil {
-				handler(event.Type, *data)
-			} else {
-				log.Printf("[WARN] EventBus: type mismatch for event %s, expected %s got %s",
-					event.Type, reflect.TypeOf((*T)(nil)).Elem(), reflect.TypeOf(event.Data))
-			}
-		}
-	})
-}
-
-// WaitForEvent waits for a specific event type with timeout.
-func WaitForEvent(ctx context.Context, eventType EventType) (*Event, error) {
-	ch := make(chan *Event, 1)
-
-	sub := GetEventBus().SubscribeOnce(eventType, func(e *Event) {
-		select {
-		case ch <- e:
-		default:
-		}
-	})
-	defer sub.Unsubscribe()
-
-	select {
-	case event := <-ch:
-		return event, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
 }

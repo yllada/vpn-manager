@@ -57,12 +57,6 @@ const (
 // =============================================================================
 
 const (
-	// DefaultCircuitBreakerFailureThreshold is failures before opening circuit.
-	DefaultCircuitBreakerFailureThreshold = 5
-	// DefaultCircuitBreakerSuccessThreshold is successes to close from half-open.
-	DefaultCircuitBreakerSuccessThreshold = 2
-	// DefaultCircuitBreakerTimeout is how long circuit stays open.
-	DefaultCircuitBreakerTimeout = 30 * time.Second
 	// DefaultRetryMaxAttempts is the maximum number of retry attempts.
 	DefaultRetryMaxAttempts = 5
 	// DefaultRetryInitialDelay is the initial delay before first retry.

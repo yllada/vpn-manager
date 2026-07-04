@@ -485,25 +485,6 @@ func (s *Server) State() *State {
 	return s.state
 }
 
-// BroadcastEvent sends an event to all connected clients.
-// This is used to notify clients of state changes.
-func (s *Server) BroadcastEvent(eventType string, data any) {
-	notification, err := protocol.NewRequest(0, "event."+eventType, data)
-	if err != nil {
-		s.logger.Printf("Failed to create notification: %v", err)
-		return
-	}
-
-	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
-	for client := range s.clients {
-		if err := client.codec.WriteRequest(notification); err != nil {
-			s.logger.Printf("Failed to send notification to client: %v", err)
-		}
-	}
-}
-
 // getPeerCredentials retrieves the credentials of the connected peer.
 func getPeerCredentials(conn *net.UnixConn) (*syscall.Ucred, error) {
 	raw, err := conn.SyscallConn()

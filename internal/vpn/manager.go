@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/yllada/vpn-manager/internal/errors"
-	"github.com/yllada/vpn-manager/internal/eventbus"
 	"github.com/yllada/vpn-manager/internal/logger"
-	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/shutdown"
 	"github.com/yllada/vpn-manager/internal/vpn/health"
 	"github.com/yllada/vpn-manager/internal/vpn/network"
@@ -84,9 +82,6 @@ type Manager struct {
 	dnsProtection  *security.DNSProtection
 	ipv6Protection *security.IPv6Protection
 
-	// Resilience
-	circuitBreaker *resilience.CircuitBreaker
-
 	// Trust management (uses Coordinator pattern)
 	trustCoordinator *trust.Coordinator
 
@@ -104,16 +99,6 @@ func NewManager() (*Manager, error) {
 		return nil, errors.WrapError(err, "failed to initialize profile manager")
 	}
 
-	// Create circuit breaker for connection resilience
-	cbConfig := resilience.DefaultCircuitBreakerConfig()
-	cbConfig.OnStateChange = func(from, to resilience.CircuitState) {
-		logger.LogInfo("VPN Circuit Breaker: %s -> %s", from, to)
-		eventbus.Emit(eventbus.EventStatusChanged, "CircuitBreaker", map[string]string{
-			"from": from.String(),
-			"to":   to.String(),
-		})
-	}
-
 	m := &Manager{
 		profileManager:   pm,
 		connections:      make(map[string]*Connection),
@@ -123,7 +108,6 @@ func NewManager() (*Manager, error) {
 		nmBackend:        network.NewNMBackend(),
 		dnsProtection:    security.NewDNSProtection(),
 		ipv6Protection:   security.NewIPv6Protection(),
-		circuitBreaker:   resilience.NewCircuitBreaker(cbConfig),
 	}
 
 	// Initialize health checker with default config
@@ -206,11 +190,6 @@ func (m *Manager) DNSProtection() *security.DNSProtection {
 // IPv6Protection returns the IPv6 protection manager.
 func (m *Manager) IPv6Protection() *security.IPv6Protection {
 	return m.ipv6Protection
-}
-
-// CircuitBreaker returns the circuit breaker.
-func (m *Manager) CircuitBreaker() *resilience.CircuitBreaker {
-	return m.circuitBreaker
 }
 
 // HealthChecker returns the health checker instance.
