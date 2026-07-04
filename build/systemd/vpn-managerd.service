@@ -9,21 +9,67 @@ ExecStart=/usr/bin/vpn-managerd
 Restart=on-failure
 RestartSec=5
 
-# Run as root (required for iptables, sysctl, etc.)
+# Run as root: the daemon programs the firewall (iptables/nft), writes sysctls,
+# manages cgroups for per-app split tunneling, and spawns openvpn/wg-quick/
+# tailscale. The hardening below narrows what that root process can reach.
 User=root
 Group=root
 
-# Security hardening (what we CAN restrict)
+# --- Filesystem ---------------------------------------------------------------
 PrivateTmp=true
 ProtectHome=read-only
+# full makes /usr, /boot and /etc read-only. The daemon must still write a few
+# /etc paths (kill-switch persistence unit, NetworkManager DNS drop-ins,
+# resolv.conf) and its state dir, so those are re-opened read-write below.
 ProtectSystem=full
+ReadWritePaths=/var/lib/vpn-manager /etc/systemd/system /etc/NetworkManager /etc/resolv.conf
 
-# Cannot restrict these - daemon needs full access for firewall operations
+# Cannot restrict these — the daemon's whole job needs them:
+#   ProtectKernelTunables: writes /proc/sys/net/ipv6/... to disable IPv6 leaks.
+#   ProtectKernelModules:  iptables/nft trigger netfilter module autoload.
+#   ProtectControlGroups:  per-app split tunneling manipulates the cgroup tree.
 ProtectKernelTunables=false
 ProtectKernelModules=false
 ProtectControlGroups=false
 
-# Socket directory
+# --- Privileges ---------------------------------------------------------------
+# No component relies on gaining privileges through a setuid helper; openvpn's
+# --user/--group only DROPS privileges, which NoNewPrivileges does not block.
+NoNewPrivileges=yes
+
+# Capabilities the daemon and its children actually use. Deliberately broader
+# than "CAP_NET_ADMIN CAP_NET_RAW" — that minimal set would break socket
+# ownership, IPv6 sysctls, cgroup split tunneling, and openvpn's privilege drop.
+#   CAP_NET_ADMIN     firewall rules, routing, tun device, sysctls
+#   CAP_NET_RAW       iptables raw table, ICMP reachability probes
+#   CAP_CHOWN         chown the daemon socket to root:vpn-manager
+#   CAP_FOWNER        set socket/state permissions regardless of owner
+#   CAP_DAC_OVERRIDE  read/write config, resolv.conf and cgroup files
+#   CAP_KILL          terminate openvpn even after it drops to --user
+#   CAP_SETUID/SETGID openvpn/tailscaled drop privileges (inherited by children)
+#   CAP_SETPCAP       openvpn drops its own capability set after setuid
+#   CAP_SYS_ADMIN     per-app split tunneling manages the cgroup v2 hierarchy
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_KILL CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_SYS_ADMIN
+
+# Socket families: AF_UNIX (the control socket), AF_INET/AF_INET6 (VPN traffic
+# and probes), AF_NETLINK (iptables/ip route programming), AF_PACKET (openvpn
+# tap/dhcp). Blocks exotic families a compromised child might otherwise open.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+
+# --- Cheap, child-safe sandboxing ---------------------------------------------
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+SystemCallArchitectures=native
+# @system-service is the recommended baseline and permits fork/exec of the VPN
+# tools. If a spawned tool ever fails with EPERM on a syscall, relax this first.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Socket directory (/run/vpn-manager, owned root, created before ExecStart).
 RuntimeDirectory=vpn-manager
 RuntimeDirectoryMode=0755
 
