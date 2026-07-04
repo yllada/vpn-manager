@@ -20,9 +20,15 @@ PrivateTmp=true
 ProtectHome=read-only
 # full makes /usr, /boot and /etc read-only. The daemon must still write a few
 # /etc paths (kill-switch persistence unit, NetworkManager DNS drop-ins,
-# resolv.conf) and its state dir, so those are re-opened read-write below.
+# resolv.conf), so those are re-opened read-write below.
 ProtectSystem=full
-ReadWritePaths=/var/lib/vpn-manager /etc/systemd/system /etc/NetworkManager /etc/resolv.conf
+# StateDirectory makes systemd create and bind /var/lib/vpn-manager (0755, root)
+# BEFORE ExecStart — listing it under ReadWritePaths instead fails namespace
+# setup with 226/NAMESPACE when the dir does not exist yet.
+StateDirectory=vpn-manager
+# Leading "-" makes each path optional: a system without NetworkManager (or with
+# resolv.conf absent) must not fail sandbox setup. Missing paths are skipped.
+ReadWritePaths=-/etc/systemd/system -/etc/NetworkManager -/etc/resolv.conf
 
 # Cannot restrict these — the daemon's whole job needs them:
 #   ProtectKernelTunables: writes /proc/sys/net/ipv6/... to disable IPv6 leaks.
