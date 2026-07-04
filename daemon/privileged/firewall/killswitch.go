@@ -205,9 +205,10 @@ func enableKillSwitchIptables(vpnIface string, allowedIPs []string) error {
 		}
 	}
 
-	// Allow DNS (important for VPN server resolution)
-	_ = runCmd("iptables", "-A", KillSwitchChainName, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT")
-	_ = runCmd("iptables", "-A", KillSwitchChainName, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT")
+	// NOTE: deliberately NO global port-53 ACCEPT here. DNS is already covered
+	// by the VPN interface rule (tunnel resolvers) and the allowed-destination
+	// rules (LAN resolvers when AllowLAN is set). An any-destination DNS accept
+	// would let queries leak to arbitrary resolvers outside the tunnel.
 
 	// Block everything else
 	if err := runCmd("iptables", "-A", KillSwitchChainName, "-j", "DROP"); err != nil {
@@ -262,11 +263,10 @@ func enableKillSwitchNftables(vpnIface string, allowedIPs []string) error {
 			"ip", "daddr", ip, "accept")
 	}
 
-	// Allow DNS
-	_ = runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"udp", "dport", DNSPortStr, "accept")
-	_ = runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"tcp", "dport", DNSPortStr, "accept")
+	// NOTE: deliberately NO global port-53 accept here. DNS is already covered
+	// by the VPN interface rule (tunnel resolvers) and the allowed-destination
+	// rules (LAN resolvers when AllowLAN is set). An any-destination DNS accept
+	// would let queries leak to arbitrary resolvers outside the tunnel.
 
 	return nil
 }
@@ -366,9 +366,9 @@ func enableBlockAllIptables() error {
 		_ = runCmd("iptables", "-A", KillSwitchChainName, "-d", ip, "-j", "ACCEPT")
 	}
 
-	// Allow DNS (essential for showing error messages)
-	_ = runCmd("iptables", "-A", KillSwitchChainName, "-p", "udp", "--dport", DNSPortStr, "-j", "ACCEPT")
-	_ = runCmd("iptables", "-A", KillSwitchChainName, "-p", "tcp", "--dport", DNSPortStr, "-j", "ACCEPT")
+	// NOTE: deliberately NO global port-53 ACCEPT here. Block-all means block
+	// all non-local traffic; a LAN resolver still works through the LAN range
+	// accepts above, and anything else is exactly what this mode must stop.
 
 	// Block everything else
 	if err := runCmd("iptables", "-A", KillSwitchChainName, "-j", "DROP"); err != nil {
@@ -416,11 +416,9 @@ func enableBlockAllNftables() error {
 			"ip", "daddr", ip, "accept")
 	}
 
-	// Allow DNS
-	_ = runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"udp", "dport", DNSPortStr, "accept")
-	_ = runCmd("nft", "add", "rule", "inet", NftablesTableName, "output",
-		"tcp", "dport", DNSPortStr, "accept")
+	// NOTE: deliberately NO global port-53 accept here. Block-all means block
+	// all non-local traffic; a LAN resolver still works through the LAN range
+	// accepts above, and anything else is exactly what this mode must stop.
 
 	return nil
 }
@@ -478,7 +476,9 @@ func checkNftablesRules() bool {
 // =============================================================================
 
 // runCmd executes a command directly (daemon already has root privileges).
-func runCmd(name string, args ...string) error {
+// Declared as a variable so tests can substitute a recorder and assert the
+// exact rule set that would be applied, without touching the real firewall.
+var runCmd = func(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
