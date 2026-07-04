@@ -264,7 +264,7 @@ func (ks *KillSwitch) Status() string {
 // EnableBlockAll enables the kill switch to block all non-local traffic.
 // This is used when VPN connection fails on an untrusted network and
 // BlockOnUntrustedFailure is enabled. It blocks all outbound traffic
-// except local networks and DNS.
+// except local networks; DNS is only reachable through LAN resolvers.
 // Requires the vpn-managerd daemon to be running.
 func (ks *KillSwitch) EnableBlockAll() error {
 	ks.mu.Lock()
@@ -334,7 +334,8 @@ type KillSwitchState struct {
 
 // KillSwitchConfig provides configuration options for the kill switch.
 type KillSwitchConfig struct {
-	// Mode is "strict" (block all non-VPN) or "normal" (allow fallback DNS).
+	// Mode is "strict" (block all non-VPN) or "normal" (allow established
+	// connections and DNS via the VPN interface or LAN resolvers only).
 	Mode string
 	// AllowLAN enables local network access while kill switch is active.
 	AllowLAN bool
