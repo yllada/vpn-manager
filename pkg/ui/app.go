@@ -33,6 +33,11 @@ type Application struct {
 	// startMinimized indicates whether to start hidden in system tray
 	startMinimized bool
 
+	// trayAvailable caches whether a system tray (StatusNotifierItem host) was
+	// detected at startup. Used to avoid stranding the user behind a hidden
+	// window on environments (e.g. GNOME vanilla) that have no tray.
+	trayAvailable bool
+
 	// Event subscriptions for cleanup
 	trustAuthSubscription *eventbus.Subscription
 }
@@ -96,11 +101,21 @@ func (a *Application) onActivate() {
 		logger.LogWarn("app", "Orphaned VPN detected on startup: interface=%s, ip=%s", info.Interface, info.IPAddress)
 	}
 
+	// Detect whether a system tray is actually present. On environments with no
+	// StatusNotifierItem host (e.g. GNOME vanilla) the tray icon never appears,
+	// so we must not hide/start-hidden the window with no way to bring it back.
+	a.trayAvailable = IsTrayAvailable()
+	if !a.trayAvailable {
+		logger.LogWarn("No system tray detected (no StatusNotifierWatcher host); tray-dependent behavior will fall back to a visible window")
+	}
+
 	// Create main window
 	a.window = NewMainWindow(a)
 
-	// Show window only if not starting minimized (autostart mode)
-	if a.startMinimized {
+	// Show window only if not starting minimized (autostart mode) AND a tray is
+	// actually available. If started with --minimized but there is no tray, show
+	// the window anyway so the app is never invisible with no way to open it.
+	if a.startMinimized && a.trayAvailable {
 		logger.LogInfo("Starting minimized to system tray")
 		// Window is created but not shown - needed for GTK app lifecycle.
 		// The tray indicator will allow showing the window later. createLayout
@@ -109,6 +124,9 @@ func (a *Application) onActivate() {
 		// hidden at launch. Resumed on the first showWindow() via resumePanelUpdates().
 		a.window.pausePanelUpdates()
 	} else {
+		if a.startMinimized {
+			logger.LogWarn("Started with --minimized but no system tray detected; showing window instead of starting hidden")
+		}
 		a.window.Show()
 	}
 

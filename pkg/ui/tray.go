@@ -63,6 +63,7 @@ type TrayIndicator struct {
 	// Menu items - kept minimal for enterprise UX
 	statusItem     *systray.MenuItem
 	uptimeItem     *systray.MenuItem
+	connectItem    *systray.MenuItem
 	disconnectItem *systray.MenuItem
 	openAppItem    *systray.MenuItem
 	quitItem       *systray.MenuItem
@@ -133,6 +134,14 @@ func (t *TrayIndicator) onReady() {
 	// ════════════════════════════════════════════════════════════════════════
 	// ACTIONS SECTION
 	// ════════════════════════════════════════════════════════════════════════
+
+	// Connect - submenu listing saved OpenVPN profiles so the user can connect
+	// without opening the main window. The submenu is populated once from the
+	// profiles present at startup (fyne.io/systray does not support removing
+	// menu items live). Profiles added at runtime won't appear here until the
+	// app is restarted; the main window remains the source of truth for those.
+	t.connectItem = systray.AddMenuItem("Connect", "Connect to a saved VPN profile")
+	t.buildConnectSubmenu()
 
 	// Disconnect - only shown when connected
 	t.disconnectItem = systray.AddMenuItem("Disconnect", "Disconnect from VPN")
@@ -695,6 +704,76 @@ func (t *TrayIndicator) setCurrentNetworkTrustLevel(level trust.TrustLevel) {
 // ════════════════════════════════════════════════════════════════════════════
 // TRAY CONNECTION METHODS (called from main window)
 // ════════════════════════════════════════════════════════════════════════════
+
+// buildConnectSubmenu populates the "Connect" submenu with one entry per saved
+// OpenVPN profile and wires each entry to quickConnect. Called once from
+// onReady on the systray goroutine. If there are no profiles, a disabled hint
+// item is shown instead.
+func (t *TrayIndicator) buildConnectSubmenu() {
+	if t.connectItem == nil {
+		return
+	}
+
+	profiles := t.app.vpnManager.ProfileManager().List()
+	if len(profiles) == 0 {
+		empty := t.connectItem.AddSubMenuItem("No saved profiles", "Add a profile from the main window")
+		empty.Disable()
+		return
+	}
+
+	for _, profile := range profiles {
+		profile := profile // capture per-iteration for the goroutine closure
+		item := t.connectItem.AddSubMenuItem(profile.Name, fmt.Sprintf("Connect to %s", profile.Name))
+		resilience.SafeGoWithName("tray-connect-"+profile.ID, func() {
+			for {
+				select {
+				case <-item.ClickedCh:
+					t.quickConnect(profile)
+				case <-t.done:
+					return
+				}
+			}
+		})
+	}
+}
+
+// quickConnect connects to a saved profile straight from the tray, mirroring
+// the main window's connect logic:
+//   - already connected/connecting: no-op (surface a status hint).
+//   - saved password, no OTP: connect directly with stored credentials.
+//   - saved password, OTP required: show the floating OTP dialog.
+//   - no saved credentials: show the floating password dialog (which chains to
+//     OTP when the profile requires it).
+//
+// Runs on the systray goroutine. The connect/keyring calls are plain Go work;
+// every GTK operation is reached through ConnectFromTray / the floating dialogs,
+// which already dispatch to the GTK main thread via glib.IdleAdd.
+func (t *TrayIndicator) quickConnect(profile *profilepkg.Profile) {
+	if conn, exists := t.app.vpnManager.GetConnection(profile.ID); exists {
+		if status := conn.GetStatus(); status == vpn.StatusConnected || status == vpn.StatusConnecting {
+			glib.IdleAdd(func() {
+				if t.app.window != nil {
+					t.app.window.SetStatus(fmt.Sprintf("%s is already connected", profile.Name))
+				}
+			})
+			return
+		}
+	}
+
+	if profile.SavePassword {
+		if savedPassword, err := keyring.Get(profile.ID); err == nil && savedPassword != "" {
+			if profile.RequiresOTP {
+				t.showFloatingOTPDialog(profile, profile.Username, savedPassword)
+			} else {
+				t.ConnectFromTray(profile, profile.Username, savedPassword)
+			}
+			return
+		}
+	}
+
+	// No usable saved credentials — prompt for them (dialog handles OTP follow-up).
+	t.ShowFloatingPasswordDialog(profile)
+}
 
 // ConnectFromTray connects to a VPN profile from the tray.
 // This is called when connecting via dialogs or external triggers.

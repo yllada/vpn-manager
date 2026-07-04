@@ -138,7 +138,13 @@ func (pd *PreferencesDialog) buildGeneralPage() *adw.PreferencesPage {
 	// Minimize to tray row
 	pd.minimizeToTrayRow = adw.NewSwitchRow()
 	pd.minimizeToTrayRow.SetTitle("Minimize to Tray")
-	pd.minimizeToTrayRow.SetSubtitle("Keep running in the system tray when window is closed")
+	if pd.mainWindow.app.trayAvailable {
+		pd.minimizeToTrayRow.SetSubtitle("Keep running in the system tray when window is closed")
+	} else {
+		// No StatusNotifierItem host detected: hiding to a tray that will never
+		// appear would strand the user, so closing quits regardless of this switch.
+		pd.minimizeToTrayRow.SetSubtitle("No system tray detected — the window will close normally when this is on")
+	}
 	pd.minimizeToTrayRow.SetActive(pd.config.MinimizeToTray)
 	systemGroup.Add(pd.minimizeToTrayRow)
 

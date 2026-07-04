@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -14,6 +15,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/vpn"
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
@@ -52,6 +54,11 @@ type MainWindow struct {
 	// updatesPaused is true while the window is hidden in the tray, so the periodic
 	// pollers are stopped. Toggled only on the GTK main thread (pause/resume).
 	updatesPaused bool
+
+	// noTrayWarnOnce ensures the "no system tray detected" notice fires at most
+	// once per session when the user closes the window with Minimize-to-Tray on
+	// but no tray is available.
+	noTrayWarnOnce sync.Once
 }
 
 // pausePanelUpdates stops the periodic status pollers while the window is hidden
@@ -108,12 +115,18 @@ func NewMainWindow(app *Application) *MainWindow {
 	// If enabled: hide window, keep app running in tray
 	// If disabled: quit the application
 	mw.window.ConnectCloseRequest(func() bool {
-		if app.config.MinimizeToTray {
+		if app.config.MinimizeToTray && app.trayAvailable {
 			// Hide to tray - return true to prevent default close behavior
 			mw.window.SetVisible(false)
 			// Stop the periodic pollers while hidden; resumed in showWindow().
 			mw.pausePanelUpdates()
 			return true
+		}
+		// Minimize-to-Tray is on but no tray exists: hiding would strand the
+		// user behind an invisible window. Treat it as if the preference were
+		// off (normal close, app quits) and inform the user once why.
+		if app.config.MinimizeToTray && !app.trayAvailable {
+			mw.warnTrayUnavailableOnce()
 		}
 		// Allow normal close - app will quit
 		return false
@@ -475,6 +488,22 @@ func (mw *MainWindow) setupResponsiveLayout() {
 // Show displays the window.
 func (mw *MainWindow) Show() {
 	mw.window.SetVisible(true)
+}
+
+// warnTrayUnavailableOnce informs the user, at most once per session, that
+// Minimize-to-Tray is enabled but no system tray was detected, so closing the
+// window quits the application. This prevents the "invisible app with no way
+// back" trap on environments without a StatusNotifierItem host (e.g. GNOME
+// vanilla). Both a log line and a desktop notification are emitted.
+func (mw *MainWindow) warnTrayUnavailableOnce() {
+	mw.noTrayWarnOnce.Do(func() {
+		logger.LogWarn("Minimize to Tray is enabled but no system tray was detected; closing the window will quit VPN Manager")
+		notify.Show(notify.Notification{
+			Title:   "VPN Manager",
+			Message: "No system tray detected. Closing the window quits the app. Disable \"Minimize to Tray\" in Preferences to hide this notice.",
+			Type:    notify.Warning,
+		})
+	})
 }
 
 // RefreshAllPanels refreshes the status of all VPN panels.
