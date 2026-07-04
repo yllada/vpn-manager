@@ -101,7 +101,8 @@ fi
 
 # Copy assets to source directory
 echo "📄 Copying files..."
-cp "${PROJECT_DIR}/assets/vpn-manager.desktop" "${SOURCE_DIR}/"
+cp "${PROJECT_DIR}/assets/com.vpnmanager.app.desktop" "${SOURCE_DIR}/"
+cp "${PROJECT_DIR}/assets/com.vpnmanager.app.metainfo.xml" "${SOURCE_DIR}/"
 cp "${PROJECT_DIR}/assets/icons/vpn-manager.svg" "${SOURCE_DIR}/"
 cp "${PROJECT_DIR}/README.md" "${SOURCE_DIR}/"
 cp "${PROJECT_DIR}/LICENSE" "${SOURCE_DIR}/" 2>/dev/null || \
@@ -137,6 +138,7 @@ Source0:        %{name}-%{version}.tar.gz
 # Dependencies
 Requires:       gtk4 >= 4.10
 Requires:       libadwaita >= 1.3
+Requires:       libnotify
 Requires:       systemd
 Recommends:     (openvpn or openvpn3)
 Recommends:     wireguard-tools
@@ -174,8 +176,12 @@ install -Dm755 ${DAEMON_NAME} %{buildroot}%{_bindir}/${DAEMON_NAME}
 # Systemd service (use explicit path, not macro in install target)
 install -Dm644 ${DAEMON_NAME}.service %{buildroot}/usr/lib/systemd/system/${DAEMON_NAME}.service
 
-# Desktop file
-install -Dm644 %{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
+# Desktop file (named after the app id so desktop environments can
+# associate the running window with its launcher entry)
+install -Dm644 com.vpnmanager.app.desktop %{buildroot}%{_datadir}/applications/com.vpnmanager.app.desktop
+
+# AppStream metadata
+install -Dm644 com.vpnmanager.app.metainfo.xml %{buildroot}%{_datadir}/metainfo/com.vpnmanager.app.metainfo.xml
 
 # Icons
 install -Dm644 %{name}.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
@@ -233,7 +239,8 @@ fi
 %{_bindir}/%{name}
 %{_bindir}/${DAEMON_NAME}
 /usr/lib/systemd/system/${DAEMON_NAME}.service
-%{_datadir}/applications/%{name}.desktop
+%{_datadir}/applications/com.vpnmanager.app.desktop
+%{_datadir}/metainfo/com.vpnmanager.app.metainfo.xml
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_docdir}/%{name}/
 

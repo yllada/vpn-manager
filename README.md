@@ -164,7 +164,7 @@ sudo apt install golang gcc libgtk-4-dev libadwaita-1-dev
 # Build
 git clone https://github.com/yllada/vpn-manager.git
 cd vpn-manager
-go build -o vpn-manager .
+go build -o vpn-manager ./cmd/vpn-manager
 
 # Install daemon (required for privileged operations)
 cd build && sudo ./install-daemon.sh

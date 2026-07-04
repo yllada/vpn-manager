@@ -118,8 +118,12 @@ fi
 
 # Copy files
 echo "📄 Copying files..."
-cp "${PROJECT_DIR}/assets/vpn-manager.desktop" "${BUILD_DIR}/${PKG_DIR}/usr/share/applications/"
+cp "${PROJECT_DIR}/assets/com.vpnmanager.app.desktop" "${BUILD_DIR}/${PKG_DIR}/usr/share/applications/"
 cp "${PROJECT_DIR}/assets/icons/vpn-manager.svg" "${BUILD_DIR}/${PKG_DIR}/usr/share/icons/hicolor/scalable/apps/"
+
+# AppStream metadata
+mkdir -p "${BUILD_DIR}/${PKG_DIR}/usr/share/metainfo"
+cp "${PROJECT_DIR}/assets/com.vpnmanager.app.metainfo.xml" "${BUILD_DIR}/${PKG_DIR}/usr/share/metainfo/"
 
 # Copy hicolor icons if exist
 if [ -d "${PROJECT_DIR}/assets/icons/hicolor" ]; then
@@ -141,7 +145,7 @@ Version: ${VERSION}
 Section: net
 Priority: optional
 Architecture: ${ARCH}
-Depends: libgtk-4-1, libadwaita-1-0
+Depends: libgtk-4-1, libadwaita-1-0, libnotify-bin
 Recommends: openvpn | openvpn3, wireguard-tools, tailscale
 Installed-Size: $(du -sk "${BUILD_DIR}/${PKG_DIR}/usr" | cut -f1)
 Maintainer: VPN Manager Team <yadian.llada@gmail.com>

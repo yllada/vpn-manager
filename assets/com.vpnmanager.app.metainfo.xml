@@ -33,7 +33,7 @@
     </ul>
   </description>
   
-  <launchable type="desktop-id">vpn-manager.desktop</launchable>
+  <launchable type="desktop-id">com.vpnmanager.app.desktop</launchable>
   
   <url type="homepage">https://github.com/yllada/vpn-manager</url>
   <url type="bugtracker">https://github.com/yllada/vpn-manager/issues</url>
