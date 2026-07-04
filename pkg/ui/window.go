@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/config"
+	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/vpn"
@@ -193,6 +194,16 @@ func (mw *MainWindow) createLayout() {
 		mw.onDaemonStatusChanged(available)
 	})
 	contentBox.Append(mw.daemonBanner)
+
+	// First-run "relogin wall": if the daemon is unreachable at startup, show a
+	// prominent dialog that diagnoses WHY (service not running, user not in the
+	// vpn-manager group, or membership pending re-login) instead of failing
+	// silently. Deferred with IdleAdd so the window is presented first.
+	if !mw.daemonAvailable {
+		glib.IdleAdd(func() {
+			mw.showDaemonDiagnosisDialog()
+		})
+	}
 
 	contentBox.Append(mw.viewStack)
 
@@ -809,6 +820,24 @@ func (mw *MainWindow) RefreshDaemonStatus() {
 	if mw.daemonBanner != nil {
 		mw.daemonBanner.Refresh()
 	}
+}
+
+// showDaemonDiagnosisDialog diagnoses why the daemon socket is unreachable and
+// presents an actionable dialog (start the service, join the vpn-manager
+// group, or log out to apply pending membership). If the daemon became
+// reachable in the meantime, it just refreshes the banner instead.
+func (mw *MainWindow) showDaemonDiagnosisDialog() {
+	diag := daemon.DiagnoseDaemon()
+	if diag.Reason == daemon.ReasonReachable {
+		mw.RefreshDaemonStatus()
+		return
+	}
+
+	logger.LogWarn("Daemon unreachable at startup: %s", diag.Title)
+	components.ShowDaemonDiagnosisDialog(mw.window, diag, daemon.DiagnoseDaemon, func() {
+		mw.RefreshDaemonStatus()
+		mw.ShowToast("Connected to the background service", 3)
+	})
 }
 
 // GetWindow returns the parent window for presenting dialogs.

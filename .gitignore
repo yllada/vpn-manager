@@ -121,3 +121,6 @@ docs/*.tmp
 .env
 .env.local
 *.local
+
+# CodeGraph local index
+.codegraph/
