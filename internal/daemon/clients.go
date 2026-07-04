@@ -8,6 +8,12 @@ import (
 	"fmt"
 )
 
+// daemonCtx returns a context carrying the default daemon timeout. It is used
+// by the non-context method variants that delegate to their WithContext twins.
+func daemonCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), DefaultDaemonTimeout)
+}
+
 // =============================================================================
 // KILL SWITCH CLIENT
 // =============================================================================
@@ -190,17 +196,9 @@ type GatewayEnableResult struct {
 
 // Enable enables LAN gateway via daemon.
 func (c *LANGatewayClient) Enable(params GatewayEnableParams) (*GatewayEnableResult, error) {
-	var result GatewayEnableResult
-
-	err := CallDaemon("gateway.enable", params, &result, func() error {
-		return fmt.Errorf("daemon unavailable, LAN gateway requires daemon for proper operation")
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.EnableWithContext(ctx, params)
 }
 
 // EnableWithContext enables LAN gateway with context support.
@@ -220,9 +218,9 @@ func (c *LANGatewayClient) EnableWithContext(ctx context.Context, params Gateway
 
 // Disable disables LAN gateway.
 func (c *LANGatewayClient) Disable() error {
-	var result map[string]bool
-
-	return CallDaemon("gateway.disable", nil, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.DisableWithContext(ctx)
 }
 
 // DisableWithContext disables LAN gateway with context support.
@@ -271,16 +269,9 @@ type TunnelSetupResult struct {
 
 // Setup configures split tunneling via daemon.
 func (c *SplitTunnelClient) Setup(params TunnelSetupParams) (*TunnelSetupResult, error) {
-	var result TunnelSetupResult
-
-	err := CallDaemon("tunnel.setup", params, &result, func() error {
-		return fmt.Errorf("daemon unavailable, split tunnel requires daemon for proper operation")
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.SetupWithContext(ctx, params)
 }
 
 // SetupWithContext configures split tunneling with context support.
@@ -353,14 +344,9 @@ type OpenVPNStatusResult struct {
 
 // Connect starts an OpenVPN connection via daemon.
 func (c *OpenVPNClient) Connect(params OpenVPNConnectParams) (*OpenVPNConnectResult, error) {
-	var result OpenVPNConnectResult
-
-	err := CallDaemon("openvpn.connect", params, &result, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.ConnectWithContext(ctx, params)
 }
 
 // ConnectWithContext starts an OpenVPN connection with context support.
@@ -377,10 +363,9 @@ func (c *OpenVPNClient) ConnectWithContext(ctx context.Context, params OpenVPNCo
 
 // Disconnect stops an OpenVPN connection.
 func (c *OpenVPNClient) Disconnect(profileID string) error {
-	var result map[string]bool
-
-	params := map[string]string{"profile_id": profileID}
-	return CallDaemon("openvpn.disconnect", params, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.DisconnectWithContext(ctx, profileID)
 }
 
 // DisconnectWithContext stops an OpenVPN connection with context support.
@@ -447,14 +432,9 @@ type WireGuardStatusResult struct {
 
 // Connect brings up a WireGuard interface via daemon.
 func (c *WireGuardClient) Connect(params WireGuardConnectParams) (*WireGuardConnectResult, error) {
-	var result WireGuardConnectResult
-
-	err := CallDaemon("wireguard.connect", params, &result, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.ConnectWithContext(ctx, params)
 }
 
 // ConnectWithContext brings up a WireGuard interface with context support.
@@ -471,10 +451,9 @@ func (c *WireGuardClient) ConnectWithContext(ctx context.Context, params WireGua
 
 // Disconnect brings down a WireGuard interface.
 func (c *WireGuardClient) Disconnect(interfaceName string) error {
-	var result map[string]bool
-
-	params := map[string]string{"interface_name": interfaceName}
-	return CallDaemon("wireguard.disconnect", params, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.DisconnectWithContext(ctx, interfaceName)
 }
 
 // DisconnectWithContext brings down a WireGuard interface with context support.
@@ -584,14 +563,9 @@ type TailscaleLoginResult struct {
 
 // Up runs tailscale up via daemon.
 func (c *TailscaleClient) Up(params TailscaleUpParams) (*TailscaleUpResult, error) {
-	var result TailscaleUpResult
-
-	err := CallDaemon("tailscale.up", params, &result, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.UpWithContext(ctx, params)
 }
 
 // UpWithContext runs tailscale up with context support.
@@ -608,9 +582,9 @@ func (c *TailscaleClient) UpWithContext(ctx context.Context, params TailscaleUpP
 
 // Down runs tailscale down via daemon.
 func (c *TailscaleClient) Down() error {
-	var result map[string]bool
-
-	return CallDaemon("tailscale.down", nil, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.DownWithContext(ctx)
 }
 
 // DownWithContext runs tailscale down with context support.
@@ -622,14 +596,9 @@ func (c *TailscaleClient) DownWithContext(ctx context.Context) error {
 
 // Set runs tailscale set via daemon.
 func (c *TailscaleClient) Set(params TailscaleSetParams) (*TailscaleSetResult, error) {
-	var result TailscaleSetResult
-
-	err := CallDaemon("tailscale.set", params, &result, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.SetWithContext(ctx, params)
 }
 
 // SetWithContext runs tailscale set with context support.
@@ -646,14 +615,9 @@ func (c *TailscaleClient) SetWithContext(ctx context.Context, params TailscaleSe
 
 // Login runs tailscale login via daemon.
 func (c *TailscaleClient) Login(params TailscaleLoginParams) (*TailscaleLoginResult, error) {
-	var result TailscaleLoginResult
-
-	err := CallDaemon("tailscale.login", params, &result, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.LoginWithContext(ctx, params)
 }
 
 // LoginWithContext runs tailscale login with context support.
@@ -670,9 +634,9 @@ func (c *TailscaleClient) LoginWithContext(ctx context.Context, params Tailscale
 
 // Logout runs tailscale logout via daemon.
 func (c *TailscaleClient) Logout() error {
-	var result map[string]bool
-
-	return CallDaemon("tailscale.logout", nil, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.LogoutWithContext(ctx)
 }
 
 // LogoutWithContext runs tailscale logout with context support.
@@ -684,10 +648,9 @@ func (c *TailscaleClient) LogoutWithContext(ctx context.Context) error {
 
 // SetOperator configures the tailscale operator via daemon.
 func (c *TailscaleClient) SetOperator(username string) error {
-	var result map[string]any
-
-	params := map[string]string{"username": username}
-	return CallDaemon("tailscale.set_operator", params, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.SetOperatorWithContext(ctx, username)
 }
 
 // SetOperatorWithContext configures the tailscale operator with context support.
@@ -707,14 +670,9 @@ type TaildropClient struct{}
 
 // Send sends a file to the target device via Taildrop.
 func (c *TaildropClient) Send(filePath, target string) error {
-	var result map[string]any
-
-	params := map[string]string{
-		"file_path": filePath,
-		"target":    target,
-	}
-
-	return CallDaemon("taildrop.send", params, &result, nil)
+	ctx, cancel := daemonCtx()
+	defer cancel()
+	return c.SendWithContext(ctx, filePath, target)
 }
 
 // SendWithContext sends a file to the target device with context support.
