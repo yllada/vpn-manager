@@ -683,14 +683,14 @@
                   </div>
                 </div>
               </div>
-              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Add VPN Manager APT repository (one-time setup)</span>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-500 dark:text-slate-400"># Add VPN Manager APT repository (one-time setup)</span>
 <span class="text-gnome">curl</span> -fsSL https://yllada.github.io/vpn-manager/apt/gpg.key | <span class="text-gnome">sudo</span> gpg --dearmor -o /usr/share/keyrings/vpn-manager.gpg
 <span class="text-gnome">echo</span> <span class="text-amber-600 dark:text-amber-400">"deb [signed-by=/usr/share/keyrings/vpn-manager.gpg] https://yllada.github.io/vpn-manager/apt stable main"</span> | <span class="text-gnome">sudo</span> tee /etc/apt/sources.list.d/vpn-manager.list
 
-<span class="text-slate-400 dark:text-slate-500"># Install VPN Manager</span>
+<span class="text-slate-500 dark:text-slate-400"># Install VPN Manager</span>
 <span class="text-gnome">sudo</span> apt update && <span class="text-gnome">sudo</span> apt install vpn-manager
 
-<span class="text-slate-400 dark:text-slate-500"># Future updates: just run apt upgrade!</span>
+<span class="text-slate-500 dark:text-slate-400"># Future updates: just run apt upgrade!</span>
 <span class="text-gnome">sudo</span> apt update && <span class="text-gnome">sudo</span> apt upgrade</code></pre>
             </div>
             <p class="text-sm text-slate-500 mt-4 text-center">
@@ -716,7 +716,7 @@
                   </div>
                 </div>
               </div>
-              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Loading install command...</span></code></pre>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-500 dark:text-slate-400"># Loading install command...</span></code></pre>
             </div>
             <p class="text-sm text-slate-500 mt-4 text-center">
               Supported: Ubuntu 24.04+, Debian 12+
@@ -741,7 +741,7 @@
                   </div>
                 </div>
               </div>
-              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Loading install command...</span></code></pre>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-500 dark:text-slate-400"># Loading install command...</span></code></pre>
             </div>
             <p class="text-sm text-slate-500 mt-4 text-center">
               Supported: Fedora 40+, RHEL 9+
@@ -766,7 +766,7 @@
                   </div>
                 </div>
               </div>
-              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Loading install command...</span></code></pre>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-500 dark:text-slate-400"># Loading install command...</span></code></pre>
             </div>
             <p class="text-sm text-slate-500 mt-4 text-center">
               Requires: <code class="text-gnome bg-gnome/10 px-2 py-0.5 rounded">sudo pacman -S gtk4 libadwaita</code>
@@ -791,21 +791,21 @@
                   </div>
                 </div>
               </div>
-              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-400 dark:text-slate-500"># Requirements: Go 1.21+, GTK4 4.14+, libadwaita 1.5+</span>
+              <pre class="p-5 overflow-x-auto"><code class="text-sm text-slate-700 dark:text-slate-300 font-mono" data-install-cmd><span class="text-slate-500 dark:text-slate-400"># Requirements: Go 1.21+, GTK4 4.14+, libadwaita 1.5+</span>
 
-<span class="text-slate-400 dark:text-slate-500"># Clone and build</span>
+<span class="text-slate-500 dark:text-slate-400"># Clone and build</span>
 <span class="text-gnome">git</span> clone https://github.com/yllada/vpn-manager.git
 <span class="text-gnome">cd</span> vpn-manager
 <span class="text-gnome">go</span> build -o vpn-manager .
 
-<span class="text-slate-400 dark:text-slate-500"># Install daemon (REQUIRED)</span>
+<span class="text-slate-500 dark:text-slate-400"># Install daemon (REQUIRED)</span>
 <span class="text-gnome">cd</span> build && <span class="text-gnome">sudo</span> ./install-daemon.sh && <span class="text-gnome">cd</span> ..
 
-<span class="text-slate-400 dark:text-slate-500"># Install system-wide (optional)</span>
+<span class="text-slate-500 dark:text-slate-400"># Install system-wide (optional)</span>
 <span class="text-gnome">sudo</span> cp vpn-manager /usr/local/bin/
 <span class="text-gnome">sudo</span> cp assets/vpn-manager.desktop /usr/share/applications/
 
-<span class="text-slate-400 dark:text-slate-500"># Run</span>
+<span class="text-slate-500 dark:text-slate-400"># Run</span>
 ./vpn-manager</code></pre>
             </div>
             <p class="text-sm text-slate-500 mt-4 text-center">
@@ -1316,7 +1316,7 @@
           
           <div id="contributors-grid" class="flex flex-wrap justify-center gap-4 max-w-3xl mx-auto">
             <!-- Contributors loaded dynamically via JavaScript -->
-            <div class="text-slate-400 dark:text-slate-500 text-sm">Loading contributors...</div>
+            <div class="text-slate-500 dark:text-slate-400 text-sm">Loading contributors...</div>
           </div>
           
           <div class="text-center mt-8">

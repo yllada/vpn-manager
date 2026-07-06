@@ -165,20 +165,20 @@
       
       return {
         ubuntu: debAsset 
-          ? `<span class="text-slate-400 dark:text-slate-500"># Download and install VPN Manager ${version}</span>
+          ? `<span class="text-slate-500 dark:text-slate-400"># Download and install VPN Manager ${version}</span>
 <span class="text-gnome">wget</span> ${debAsset.browser_download_url}
 <span class="text-gnome">sudo</span> dpkg -i ${debAsset.name}
 
-<span class="text-slate-400 dark:text-slate-500"># Run</span>
+<span class="text-slate-500 dark:text-slate-400"># Run</span>
 vpn-manager`
           : generateTarballCommand(tarAsset, version),
           
         fedora: rpmAsset
-          ? `<span class="text-slate-400 dark:text-slate-500"># Download and install VPN Manager ${version}</span>
+          ? `<span class="text-slate-500 dark:text-slate-400"># Download and install VPN Manager ${version}</span>
 <span class="text-gnome">wget</span> ${rpmAsset.browser_download_url}
 <span class="text-gnome">sudo</span> dnf install ./${rpmAsset.name}
 
-<span class="text-slate-400 dark:text-slate-500"># Run</span>
+<span class="text-slate-500 dark:text-slate-400"># Run</span>
 vpn-manager`
           : generateTarballCommand(tarAsset, version),
           
@@ -187,13 +187,13 @@ vpn-manager`
     }
     
     function generateTarballCommand(tarAsset, version) {
-      if (!tarAsset) return '<span class="text-slate-400 dark:text-slate-500"># No release available, build from source</span>';
-      return `<span class="text-slate-400 dark:text-slate-500"># Download and install VPN Manager ${version}</span>
+      if (!tarAsset) return '<span class="text-slate-500 dark:text-slate-400"># No release available, build from source</span>';
+      return `<span class="text-slate-500 dark:text-slate-400"># Download and install VPN Manager ${version}</span>
 <span class="text-gnome">wget</span> ${tarAsset.browser_download_url}
 <span class="text-gnome">tar</span> xzf ${tarAsset.name}
 <span class="text-gnome">sudo</span> mv vpn-manager /usr/local/bin/
 
-<span class="text-slate-400 dark:text-slate-500"># Run</span>
+<span class="text-slate-500 dark:text-slate-400"># Run</span>
 vpn-manager`;
     }
 
@@ -670,7 +670,7 @@ vpn-manager`;
       const contributors = await fetchContributors();
       
       if (!contributors || contributors.length === 0) {
-        grid.innerHTML = '<p class="text-slate-400 dark:text-slate-500 text-sm">Could not load contributors</p>';
+        grid.innerHTML = '<p class="text-slate-500 dark:text-slate-400 text-sm">Could not load contributors</p>';
         return;
       }
 
