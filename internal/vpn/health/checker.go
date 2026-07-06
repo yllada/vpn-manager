@@ -196,7 +196,7 @@ func (c *Checker) checkConnection(conn *ConnectionInfo) {
 	c.mu.Unlock()
 
 	// Perform connectivity test
-	latency, err := c.testConnectivity()
+	latency, err := c.testConnectivity(conn)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -247,7 +247,7 @@ func (c *Checker) checkConnection(conn *ConnectionInfo) {
 
 // testConnectivity tests network connectivity through the VPN tunnel.
 // Returns latency and error. Uses the configured probe chain with fallback.
-func (c *Checker) testConnectivity() (time.Duration, error) {
+func (c *Checker) testConnectivity(conn *ConnectionInfo) (time.Duration, error) {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), c.config.CheckTimeout*3)
 	defer cancel()
@@ -256,6 +256,16 @@ func (c *Checker) testConnectivity() (time.Duration, error) {
 	host := "8.8.8.8:53"
 	if len(c.config.TestHosts) > 0 {
 		host = c.config.TestHosts[0]
+	}
+
+	// Prefer probing the VPN server itself over an arbitrary public host. The
+	// server is reachable (the tunnel is established to it) and is permitted by
+	// the kill switch, so a split-tunnel VPN with the kill switch on no longer
+	// fails this check just because 8.8.8.8 is (correctly) blocked. If the
+	// server can't be reached, the VPN link really is down and reconnect is the
+	// right response.
+	if conn != nil && conn.ServerIP != "" {
+		host = conn.ServerIP
 	}
 
 	latency, err := c.probeChain.Check(ctx, host)

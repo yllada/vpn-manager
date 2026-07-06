@@ -497,6 +497,7 @@ func (m *Manager) ListConnectionsForHealth() []*health.ConnectionInfo {
 			ProfileName: conn.Profile.Name,
 			Status:      health.ConnectionStatus(conn.Status),
 			Profile:     conn.Profile,
+			ServerIP:    m.getVPNServerIP(conn.Profile),
 		})
 	}
 	return result
@@ -518,5 +519,6 @@ func (m *Manager) GetConnectionForHealth(profileID string) (*health.ConnectionIn
 		ProfileName: conn.Profile.Name,
 		Status:      health.ConnectionStatus(conn.Status),
 		Profile:     conn.Profile,
+		ServerIP:    m.getVPNServerIP(conn.Profile),
 	}, true
 }

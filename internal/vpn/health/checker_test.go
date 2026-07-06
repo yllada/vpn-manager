@@ -1,9 +1,45 @@
 package health
 
 import (
+	"context"
 	"testing"
 	"time"
 )
+
+// recordingProbe captures the host it was asked to probe and always succeeds.
+type recordingProbe struct{ lastHost string }
+
+func (p *recordingProbe) Check(_ context.Context, host string) (time.Duration, error) {
+	p.lastHost = host
+	return time.Millisecond, nil
+}
+func (p *recordingProbe) Name() string      { return "recording" }
+func (p *recordingProbe) IsAvailable() bool { return true }
+
+// TestTestConnectivityPrefersServerIP guards the split-tunnel + kill-switch fix:
+// when the connection carries a VPN server IP, the health probe must target that
+// server (which the kill switch permits) instead of the default public host
+// (which it correctly blocks, causing false "degraded" and reconnect loops).
+func TestTestConnectivityPrefersServerIP(t *testing.T) {
+	c := NewChecker(nil, DefaultConfig())
+	probe := &recordingProbe{}
+	c.probeChain = probe
+
+	if _, err := c.testConnectivity(&ConnectionInfo{ServerIP: "203.0.113.9"}); err != nil {
+		t.Fatalf("testConnectivity error: %v", err)
+	}
+	if probe.lastHost != "203.0.113.9" {
+		t.Errorf("probe host = %q, want VPN server IP 203.0.113.9", probe.lastHost)
+	}
+
+	// With no server IP, it falls back to the default external target.
+	if _, err := c.testConnectivity(&ConnectionInfo{}); err != nil {
+		t.Fatalf("testConnectivity error: %v", err)
+	}
+	if probe.lastHost == "203.0.113.9" {
+		t.Errorf("with no server IP the probe should use the default host, got %q", probe.lastHost)
+	}
+}
 
 func TestState_String(t *testing.T) {
 	tests := []struct {

@@ -46,6 +46,13 @@ type ConnectionInfo struct {
 	ProfileName string
 	Status      ConnectionStatus
 	Profile     *profile.Profile
+	// ServerIP is the VPN server's address (from the profile's remote directive).
+	// The health check probes this instead of an arbitrary external host: it is
+	// reachable (the tunnel is established to it) and, unlike a public IP, it is
+	// permitted by the kill switch — so a split-tunnel VPN with the kill switch
+	// on no longer reports a false connectivity failure. Empty falls back to the
+	// default external probe target.
+	ServerIP string
 }
 
 // ConnectionProvider is the interface that the VPN manager must implement
