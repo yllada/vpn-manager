@@ -318,6 +318,20 @@ html {
 }
 
 /* ===== 10. SCROLL REVEAL ===== */
+/* Scroll reveals hide their target until IntersectionObserver adds .visible.
+   If JS never runs, the observer never fires, so gate the hidden state on the
+   .js class (set by the head script) — no JS means the content stays visible
+   instead of shipping blank. */
+html:not(.js) .reveal,
+html:not(.js) .reveal-left,
+html:not(.js) .reveal-right,
+html:not(.js) .reveal-scale,
+html:not(.js) .stagger-children > * {
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+}
+
 .reveal {
   opacity: 0;
   transform: translateY(40px);

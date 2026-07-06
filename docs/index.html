@@ -25,6 +25,11 @@
   <!-- Theme initialization (prevent flash) -->
   <script>
     (function() {
+      // Mark that JS is running so CSS can gate scroll-reveal hiding on it:
+      // without JS the IntersectionObserver never un-hides sections, so the
+      // content must stay visible rather than ship blank.
+      document.documentElement.classList.add('js');
+
       const stored = localStorage.getItem('vpn-manager-theme');
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       const isDark = stored === 'dark' || (!stored && prefersDark);
