@@ -5,12 +5,30 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/yllada/vpn-manager/pkg/protocol"
 )
+
+// skipIfSocketNotSecurable skips a test that must Start() the server when this
+// process cannot secure the socket. secureSocket chowns the socket owner to
+// uid 0, which needs root. When the socket group is absent secureSocket skips
+// that chown gracefully (so the test can run), but once the group exists a
+// non-root process fails with EPERM — e.g. on a developer machine where
+// installing the package created the vpn-manager group. CI runs as root and
+// exercises the full path.
+func skipIfSocketNotSecurable(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		return
+	}
+	if _, err := user.LookupGroup(DefaultSocketGroup); err == nil {
+		t.Skipf("not root and group %q exists: securing the socket requires root to chown to uid 0", DefaultSocketGroup)
+	}
+}
 
 func TestNewServer(t *testing.T) {
 	server := NewServer()
@@ -155,7 +173,7 @@ func TestStateConcurrency(t *testing.T) {
 }
 
 func TestServerIntegration(t *testing.T) {
-	// Skip if not running as root (can't create socket in /var/run)
+	skipIfSocketNotSecurable(t)
 	// Use temp directory for testing
 	tempDir := t.TempDir()
 	socketPath := filepath.Join(tempDir, "test.sock")
@@ -224,6 +242,7 @@ func TestServerIntegration(t *testing.T) {
 }
 
 func TestServerMethodNotFound(t *testing.T) {
+	skipIfSocketNotSecurable(t)
 	tempDir := t.TempDir()
 	socketPath := filepath.Join(tempDir, "test.sock")
 
@@ -268,6 +287,7 @@ func TestServerMethodNotFound(t *testing.T) {
 }
 
 func TestServerStateHandler(t *testing.T) {
+	skipIfSocketNotSecurable(t)
 	tempDir := t.TempDir()
 	socketPath := filepath.Join(tempDir, "test.sock")
 
@@ -413,6 +433,7 @@ func TestGetMethodTimeout(t *testing.T) {
 }
 
 func TestProcessRequestCreatesContextWithTimeout(t *testing.T) {
+	skipIfSocketNotSecurable(t)
 	tempDir := t.TempDir()
 	socketPath := filepath.Join(tempDir, "test.sock")
 
@@ -471,6 +492,7 @@ func TestProcessRequestCreatesContextWithTimeout(t *testing.T) {
 }
 
 func TestProcessRequestTimeoutReturnsError(t *testing.T) {
+	skipIfSocketNotSecurable(t)
 	tempDir := t.TempDir()
 	socketPath := filepath.Join(tempDir, "test.sock")
 
