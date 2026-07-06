@@ -213,6 +213,13 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	tunIface := m.detectTunInterface()
 	vpnServerIP := m.getVPNServerIP(conn.Profile)
 
+	// Remember these so the Auto-mode network lock can, on an unexpected drop,
+	// keep the VPN server reachable (otherwise reconnection would be blocked).
+	conn.mu.Lock()
+	conn.tunIface = tunIface
+	conn.serverIP = vpnServerIP
+	conn.mu.Unlock()
+
 	// Kill Switch.
 	//   Always (lockdown): block all non-VPN traffic for the whole session —
 	//     only traffic through the tunnel is ever allowed.
@@ -461,19 +468,24 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 						conn.LastError = status.LastError
 						conn.Status = StatusError
 					}
+					lockIface := conn.tunIface
+					lockServer := conn.serverIP
 					conn.mu.Unlock()
 
 					// Network lock: an established tunnel dropped without the user
 					// asking to disconnect. In Auto mode the kill switch stays out
 					// of the way while connected, so engage the block now to stop
-					// traffic leaking in the clear until the VPN comes back. Always
+					// traffic leaking in the clear until the VPN comes back. Use
+					// Enable (block everything EXCEPT the tunnel and the VPN server)
+					// — NOT block-all — so the server the VPN must reconnect to stays
+					// reachable; otherwise the lock would strand the user. Always
 					// mode is already blocking; Off does nothing.
 					if wasConnected && !conn.userDisconnect.Load() &&
 						m.killSwitch != nil && m.killSwitch.GetMode() == security.KillSwitchAuto {
-						if err := m.killSwitch.EnableBlockAll(); err != nil {
+						if err := m.killSwitch.Enable(lockIface, lockServer); err != nil {
 							logger.LogWarn("killswitch", "failed to engage network lock after drop: %v", err)
 						} else {
-							logger.LogWarn("killswitch", "VPN tunnel dropped — network locked until reconnect (Auto kill switch)")
+							logger.LogWarn("killswitch", "VPN tunnel dropped — network locked (VPN server still reachable for reconnect; Auto kill switch)")
 						}
 					}
 

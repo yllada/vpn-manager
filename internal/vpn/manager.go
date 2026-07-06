@@ -69,6 +69,12 @@ type Connection struct {
 	// monitor can tell it apart from an unexpected tunnel drop: only the latter
 	// engages the Auto-mode network lock.
 	userDisconnect atomic.Bool
+	// tunIface and serverIP are captured at connect time so the Auto-mode network
+	// lock can, on an unexpected drop, block everything EXCEPT the VPN server —
+	// otherwise the lock would block the very server the VPN must reach to
+	// reconnect, stranding the user. (Guarded by mu.)
+	tunIface string
+	serverIP string
 }
 
 // Manager orchestrates VPN connections.
