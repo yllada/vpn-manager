@@ -621,9 +621,32 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 			}
 		}()
 
-		retries := 0
-		maxRetries := 3
-		backoff := time.Second
+		// Backoff policy. The daemon starts this loop at boot, but `tailscale
+		// file get` exits immediately until Tailscale is actually logged in, so
+		// the loop MUST keep retrying (capped) rather than giving up — otherwise
+		// Taildrop receive stays dead for the whole session once the user logs
+		// in later. Backoff is only reset after a run that stayed up long enough
+		// to be considered healthy; resetting on mere process start would spin
+		// forever every second while Tailscale is down (flooding the journal).
+		const minBackoff = time.Second
+		const maxBackoff = time.Minute
+		const healthyRun = 30 * time.Second
+		backoff := minBackoff
+
+		// retryAfter sleeps for the current backoff, then doubles it up to the
+		// cap. Returns false if the loop was cancelled while waiting.
+		retryAfter := func(reason string) bool {
+			log.Printf("Taildrop receive loop %s, retrying in %v", reason, backoff)
+			select {
+			case <-loopCtx.Done():
+				return false
+			case <-time.After(backoff):
+			}
+			if backoff *= 2; backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			return true
+		}
 
 		for {
 			select {
@@ -636,36 +659,20 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 			cmd := exec.CommandContext(loopCtx, m.binaryPath, "file", "get", "--loop", "--verbose", outputDir)
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
-				log.Printf("Failed to create stdout pipe: %v", err)
-				// Apply retry logic instead of returning immediately
-				retries++
-				if retries >= maxRetries {
-					log.Printf("Taildrop receive loop failed %d times on pipe creation, giving up", maxRetries)
+				if !retryAfter(fmt.Sprintf("could not create stdout pipe (%v)", err)) {
 					return
 				}
-				log.Printf("Retrying stdout pipe in %v (attempt %d/%d)", backoff, retries, maxRetries)
-				time.Sleep(backoff)
-				backoff *= 2
 				continue
 			}
 
 			if err := cmd.Start(); err != nil {
-				log.Printf("Failed to start tailscale file get: %v", err)
-				// Apply retry logic instead of returning immediately
-				retries++
-				if retries >= maxRetries {
-					log.Printf("Taildrop receive loop failed %d times on start, giving up", maxRetries)
+				if !retryAfter(fmt.Sprintf("could not start (%v)", err)) {
 					return
 				}
-				log.Printf("Retrying start in %v (attempt %d/%d)", backoff, retries, maxRetries)
-				time.Sleep(backoff)
-				backoff *= 2
 				continue
 			}
 
-			// Reset retries on successful start
-			retries = 0
-			backoff = time.Second
+			startedAt := time.Now()
 
 			// Read and parse output
 			scanner := bufio.NewScanner(stdout)
@@ -700,16 +707,16 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 			default:
 			}
 
-			// Process crashed - apply backoff and retry
-			retries++
-			if retries >= maxRetries {
-				log.Printf("Taildrop receive loop failed %d times, giving up", maxRetries)
+			// A run that stayed up long enough was genuinely working (Tailscale
+			// was up and delivering files); reset the backoff so a later crash
+			// recovers fast. A fast exit means Tailscale is not ready yet, so we
+			// keep the escalating backoff to avoid hammering.
+			if time.Since(startedAt) >= healthyRun {
+				backoff = minBackoff
+			}
+			if !retryAfter("exited") {
 				return
 			}
-
-			log.Printf("Taildrop receive loop exited, retrying in %v (attempt %d/%d)", backoff, retries, maxRetries)
-			time.Sleep(backoff)
-			backoff *= 2 // Exponential backoff
 		}
 	}()
 
