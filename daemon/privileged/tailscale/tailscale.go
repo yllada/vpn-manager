@@ -632,11 +632,21 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 		const maxBackoff = time.Minute
 		const healthyRun = 30 * time.Second
 		backoff := minBackoff
+		loggedAtCap := false
 
 		// retryAfter sleeps for the current backoff, then doubles it up to the
-		// cap. Returns false if the loop was cancelled while waiting.
+		// cap. Returns false if the loop was cancelled while waiting. It logs
+		// while the backoff is still escalating and once when it first reaches
+		// the cap, then stays silent on steady capped retries — otherwise a
+		// machine that never logs into Tailscale would print a line every
+		// minute forever. The next healthy run resets both backoff and this flag.
 		retryAfter := func(reason string) bool {
-			log.Printf("Taildrop receive loop %s, retrying in %v", reason, backoff)
+			if backoff < maxBackoff || !loggedAtCap {
+				log.Printf("Taildrop receive loop %s, retrying in %v", reason, backoff)
+			}
+			if backoff >= maxBackoff {
+				loggedAtCap = true
+			}
 			select {
 			case <-loopCtx.Done():
 				return false
@@ -713,6 +723,7 @@ func (m *Manager) StartReceiveLoop(ctx context.Context, outputDir string, onRece
 			// keep the escalating backoff to avoid hammering.
 			if time.Since(startedAt) >= healthyRun {
 				backoff = minBackoff
+				loggedAtCap = false
 			}
 			if !retryAfter("exited") {
 				return
