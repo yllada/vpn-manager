@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **DNS and IPv6 protection actually apply now** — Like the kill switch, the DNS Mode (System / Cloudflare / Google / Custom), DNS-over-HTTPS/TLS blocking, IPv6 Mode, and WebRTC-block settings were written to config but never applied to the runtime and never enabled on connect — the whole Security pane was cosmetic. All of them are now applied at startup and when Preferences are saved, enabled when a VPN connects, and restored when it disconnects. Custom/Cloudflare/Google resolvers are actually used, and IPv6 is blocked by default to prevent leaks on IPv4-only tunnels.
+
 ### Changed
 - **Kill switch modes now behave as their labels promise** — "On Disconnect" and "Always On" previously did the same thing: both blocked all non-tunnel traffic the moment the VPN connected. That silently cut general internet on split-tunnel VPNs (which route only some traffic through the tunnel) and didn't match the UI's "block all traffic *when VPN disconnects*". They are now distinct, following the industry pattern (Mullvad's *kill switch* vs *lockdown*): **On Disconnect** is a network lock — it stays out of the way while the tunnel is healthy (so split tunnels keep working) and blocks all traffic only if the tunnel drops unexpectedly, clearing on reconnect; **Always On** remains full lockdown (only VPN traffic, the whole session). A user-requested disconnect never trips the lock.
 
