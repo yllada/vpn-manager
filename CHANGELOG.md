@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-07-06
+
+### Fixed
+- **Daemon would not start under the new sandbox** — `2.3.0` shipped the hardened systemd unit with `ReadWritePaths=/var/lib/vpn-manager`, but that directory does not exist until the daemon creates it at runtime, so systemd failed to set up the mount namespace and the service died with `226/NAMESPACE` on every start. The unit now uses `StateDirectory=vpn-manager` (systemd pre-creates the directory before `ExecStart`) and marks the optional `/etc` paths so a missing one can't break sandbox setup. **This makes 2.3.1 the first release whose hardened daemon actually starts — 2.3.0 is broken and should be skipped.**
+- **Daemon not enabled at boot on "degraded" systems** — The Debian post-install gated `systemctl enable` behind `systemctl is-system-running`, which returns non-zero whenever any unrelated unit has failed (the common "degraded" state), silently skipping both enable and start. The daemon then never came up after a reboot. Enable now runs unconditionally when booted under systemd (`/run/systemd/system`).
+- **Taildrop receive loop flooded the journal** — Because the daemon starts the loop at boot but `tailscale file get` exits immediately until Tailscale is logged in, and the retry counter reset on every process start, the loop respawned every second forever logging `attempt 1/3`. It now uses capped exponential backoff (up to 1 minute), resets only after a genuinely healthy run so Taildrop recovers once Tailscale connects, and stays silent on steady capped retries instead of printing a line every minute.
+
 ## [2.3.0] - 2026-07-04
+
+> ⚠ **Skip 2.3.0** — its hardened daemon fails to start (`226/NAMESPACE`). Use 2.3.1.
 
 ### Security
 - **Boundary validation for the root daemon** — Added `daemon/privileged/validate`, a single package that revalidates every client-supplied value (IPs, CIDRs, interface names, config paths, config contents) at the privilege boundary. Root handlers no longer trust client-side validation, which an attacker speaking the socket protocol directly could bypass.
