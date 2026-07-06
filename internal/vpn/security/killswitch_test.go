@@ -9,6 +9,25 @@ import (
 	"testing"
 )
 
+// TestParseKillSwitchMode pins the config→runtime mode mapping. The bug this
+// guards: the Preferences UI stores "off"/"on-disconnect"/"always-on" but the
+// runtime constants are "off"/"auto"/"always", so a naive comparison never
+// matched and the kill switch stayed Off regardless of the setting.
+func TestParseKillSwitchMode(t *testing.T) {
+	cases := map[string]KillSwitchMode{
+		"off":           KillSwitchOff,
+		"on-disconnect": KillSwitchAuto,
+		"always-on":     KillSwitchAlways,
+		"":              KillSwitchOff, // empty → safe default
+		"garbage":       KillSwitchOff, // unknown → safe default
+	}
+	for in, want := range cases {
+		if got := ParseKillSwitchMode(in); got != want {
+			t.Errorf("ParseKillSwitchMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // newTestKillSwitch builds a KillSwitch with a deterministic backend, bypassing
 // host-dependent backend detection.
 func newTestKillSwitch(backend string) *KillSwitch {

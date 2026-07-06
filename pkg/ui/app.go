@@ -71,6 +71,11 @@ func NewApplication(appID, version string, startMinimized bool) (*Application, e
 		startMinimized: startMinimized,
 	}
 
+	// Apply persisted security settings to the runtime — the config is otherwise
+	// only read to populate the Preferences UI, so without this the kill switch
+	// stays Off regardless of what the user configured.
+	vpnManager.ApplyKillSwitchConfig(cfg.Security.KillSwitchMode, cfg.Security.KillSwitchLAN)
+
 	// Connect activation signal
 	gtkApp.ConnectActivate(application.onActivate)
 

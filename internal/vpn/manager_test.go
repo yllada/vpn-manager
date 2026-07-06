@@ -5,8 +5,39 @@ import (
 	"testing"
 
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
+	"github.com/yllada/vpn-manager/internal/vpn/security"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
+
+// TestApplyKillSwitchConfig guards the fix for the kill switch being a dead
+// feature: the mode chosen in Preferences was written to config but never
+// applied to the runtime KillSwitch (which starts Off), so it never armed on
+// connect. ApplyKillSwitchConfig is what bridges config → runtime.
+func TestApplyKillSwitchConfig(t *testing.T) {
+	m := &Manager{killSwitch: security.NewKillSwitch()}
+
+	// Precondition: a fresh kill switch is Off — the exact reason the feature
+	// silently did nothing before this wiring existed.
+	if got := m.killSwitch.GetMode(); got != security.KillSwitchOff {
+		t.Fatalf("new kill switch should start Off, got %q", got)
+	}
+
+	m.ApplyKillSwitchConfig("always-on", true)
+	if got := m.killSwitch.GetMode(); got != security.KillSwitchAlways {
+		t.Errorf("after applying always-on: GetMode = %q, want %q", got, security.KillSwitchAlways)
+	}
+	if !m.killSwitch.GetAllowLAN() {
+		t.Error("AllowLAN should be true after applying config")
+	}
+
+	m.ApplyKillSwitchConfig("off", false)
+	if got := m.killSwitch.GetMode(); got != security.KillSwitchOff {
+		t.Errorf("after applying off: GetMode = %q, want %q", got, security.KillSwitchOff)
+	}
+
+	// A nil kill switch must be a safe no-op, not a panic.
+	(&Manager{}).ApplyKillSwitchConfig("always-on", false)
+}
 
 func TestNewManager(t *testing.T) {
 	m, err := NewManager()

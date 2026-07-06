@@ -824,6 +824,11 @@ func (pd *PreferencesDialog) saveSecuritySettings() {
 	}
 	pd.config.Security.KillSwitchLAN = pd.killSwitchLANRow.Active()
 
+	// Apply to the runtime kill switch so the change takes effect immediately,
+	// not just on the next app start.
+	pd.mainWindow.app.vpnManager.ApplyKillSwitchConfig(
+		pd.config.Security.KillSwitchMode, pd.config.Security.KillSwitchLAN)
+
 	// ─────────────────────────────────────────────────────────────────────
 	// DNS PROTECTION SETTINGS
 	// ─────────────────────────────────────────────────────────────────────

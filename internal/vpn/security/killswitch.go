@@ -29,6 +29,21 @@ const (
 	KillSwitchAlways KillSwitchMode = "always"
 )
 
+// ParseKillSwitchMode maps a persisted config value ("off", "on-disconnect",
+// "always-on") to the runtime KillSwitchMode. The config vocabulary differs from
+// the runtime constants, so this bridges them. Unknown values fall back to Off so
+// a malformed config never silently arms or disarms protection.
+func ParseKillSwitchMode(configValue string) KillSwitchMode {
+	switch configValue {
+	case "always-on":
+		return KillSwitchAlways
+	case "on-disconnect":
+		return KillSwitchAuto
+	default:
+		return KillSwitchOff
+	}
+}
+
 // KillSwitch manages firewall rules to prevent traffic leaks when VPN disconnects.
 // It uses iptables (or nftables) to block all non-VPN traffic.
 type KillSwitch struct {

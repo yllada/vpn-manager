@@ -265,6 +265,19 @@ func (m *Manager) KillSwitch() *security.KillSwitch {
 	return m.killSwitch
 }
 
+// ApplyKillSwitchConfig applies persisted kill switch settings to the runtime
+// kill switch. Without this the mode chosen in Preferences is written to config
+// but the runtime object stays KillSwitchOff, so enablePostConnectionFeatures
+// never arms it on connect — the kill switch silently does nothing. Call this at
+// startup and whenever the setting changes.
+func (m *Manager) ApplyKillSwitchConfig(mode string, allowLAN bool) {
+	if m.killSwitch == nil {
+		return
+	}
+	m.killSwitch.SetAllowLAN(allowLAN)
+	m.killSwitch.SetMode(security.ParseKillSwitchMode(mode))
+}
+
 // AppTunnel returns the per-app tunnel manager.
 func (m *Manager) AppTunnel() *tunnel.AppTunnel {
 	return m.appTunnel
