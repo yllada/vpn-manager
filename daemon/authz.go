@@ -1,5 +1,7 @@
 package daemon
 
+import "strings"
+
 // This file defines the daemon's authorization model.
 //
 // SECURITY (C3) — what actually enforces access, and the honest residual:
@@ -57,7 +59,15 @@ func classOf(method string) methodClass {
 	return classPrivileged
 }
 
-// isPrivilegedMethod reports whether a method mutates system state (for audit logs).
+// isPrivilegedMethod reports whether a method mutates system state (for audit
+// logs). Read-only queries (methods ending in .status/.list) are privileged for
+// access control but change nothing, and the UI polls them every ~2s — auditing
+// them would bury the real state-changing events (connect, enable, disconnect…)
+// in the trail. Every mutating method uses a different verb, so the suffix check
+// never excludes one. state.get is already classPublic.
 func isPrivilegedMethod(method string) bool {
-	return classOf(method) == classPrivileged
+	if classOf(method) != classPrivileged {
+		return false
+	}
+	return !strings.HasSuffix(method, ".status") && !strings.HasSuffix(method, ".list")
 }

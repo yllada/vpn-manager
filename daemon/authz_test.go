@@ -17,6 +17,29 @@ func TestClassOf(t *testing.T) {
 	if !isPrivilegedMethod("some.new.unlisted.method") {
 		t.Error("unlisted methods must default to privileged for auditing")
 	}
+
+	// Read-only queries (.status/.list) must NOT be audited: the UI polls them
+	// every ~2s and would otherwise bury the real state-changing events.
+	for _, m := range []string{
+		"openvpn.status", "wireguard.status", "tailscale.status",
+		"killswitch.status", "dns.status", "gateway.status", "tunnel.status",
+		"openvpn.list", "wireguard.list",
+	} {
+		if isPrivilegedMethod(m) {
+			t.Errorf("read-only query %q must not be audited as a privileged (mutating) call", m)
+		}
+	}
+
+	// Mutating methods must still be audited even though some share a prefix with
+	// the read-only queries above.
+	for _, m := range []string{
+		"openvpn.connect", "openvpn.disconnect", "killswitch.enable",
+		"dns.disable", "tunnel.setup", "tailscale.up", "taildrop.send",
+	} {
+		if !isPrivilegedMethod(m) {
+			t.Errorf("mutating method %q must be audited", m)
+		}
+	}
 }
 
 // TestIsAuthorized documents the honest behavior: authorization is a UID floor
