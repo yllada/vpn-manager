@@ -865,6 +865,15 @@ func (pd *PreferencesDialog) saveSecuritySettings() {
 		pd.config.Security.IPv6Mode = pd.ipv6IDs[ipv6Idx]
 	}
 	pd.config.Security.BlockWebRTC = pd.blockWebRTCRow.Active()
+
+	// Apply DNS and IPv6 settings to the runtime so the change takes effect
+	// immediately, not just on the next app start. Placed after the config
+	// values above are assigned so the just-saved values are what get applied.
+	pd.mainWindow.app.vpnManager.ApplyDNSConfig(
+		pd.config.Security.DNSMode, pd.config.Security.CustomDNS,
+		pd.config.Security.BlockDoH, pd.config.Security.BlockDoT)
+	pd.mainWindow.app.vpnManager.ApplyIPv6Config(
+		pd.config.Security.IPv6Mode, pd.config.Security.BlockWebRTC)
 }
 
 // Show displays the preferences dialog.

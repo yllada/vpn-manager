@@ -8,6 +8,37 @@ import (
 	"testing"
 )
 
+// TestParseIPv6Config pins the config→runtime mapping. The bug this guards: the
+// Preferences UI stores "allow"/"block"/"disable"/"auto" but the runtime modes
+// are "auto"/"block"/"allow"/"route", so the chosen mode never reached the
+// runtime. Note "disable" collapses to block (runtime has no separate mode).
+func TestParseIPv6Config(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     string
+		wantMode IPv6Mode
+	}{
+		{"allow maps to allow", "allow", IPv6ModeAllow},
+		{"block maps to block", "block", IPv6ModeBlock},
+		{"disable collapses to block", "disable", IPv6ModeBlock},
+		{"auto maps to auto", "auto", IPv6ModeAuto},
+		{"empty falls back to block (no leak)", "", IPv6ModeBlock},
+		{"unknown falls back to block (no leak)", "garbage", IPv6ModeBlock},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ParseIPv6Config(tt.mode, true)
+			if cfg.Mode != tt.wantMode {
+				t.Errorf("Mode = %q, want %q", cfg.Mode, tt.wantMode)
+			}
+			if !cfg.BlockWebRTC {
+				t.Error("BlockWebRTC not passed through")
+			}
+		})
+	}
+}
+
 // TestDefaultIPv6ConfigBlocks pins the safe default: block IPv6 outright and
 // block WebRTC, preventing leaks unless the user opts out.
 func TestDefaultIPv6ConfigBlocks(t *testing.T) {

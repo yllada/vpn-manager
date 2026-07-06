@@ -128,11 +128,56 @@ func (dp *DNSProtection) Backend() string {
 	return dp.resolvedBackend
 }
 
+// ParseDNSConfig maps persisted config values to a runtime DNSConfig. The
+// Preferences UI vocabulary ("system"/"cloudflare"/"google"/"custom") differs
+// from the runtime modes, so this bridges them and resolves the well-known
+// resolver IPs for the preset providers. It never returns Mode=Off: the UI has
+// no "off" option, so DNS protection always stays on (auto by default).
+func ParseDNSConfig(mode string, customDNS []string, blockDoH, blockDoT bool) DNSConfig {
+	cfg := DNSConfig{
+		BlockDNSOverHTTPS: blockDoH,
+		BlockDNSOverTLS:   blockDoT,
+	}
+
+	switch mode {
+	case "cloudflare":
+		cfg.Mode = DNSProtectionCustom
+		cfg.CustomServers = []string{"1.1.1.1", "1.0.0.1"}
+	case "google":
+		cfg.Mode = DNSProtectionCustom
+		cfg.CustomServers = []string{"8.8.8.8", "8.8.4.4"}
+	case "custom":
+		cfg.Mode = DNSProtectionCustom
+		cfg.CustomServers = customDNS
+	default: // "system" and any unknown value → auto, VPN-provided DNS
+		cfg.Mode = DNSProtectionAuto
+		cfg.CustomServers = nil
+	}
+
+	return cfg
+}
+
 // SetConfig updates the DNS protection configuration.
 func (dp *DNSProtection) SetConfig(config DNSConfig) {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	dp.config = config
+}
+
+// ConfiguredServers returns a copy of the DNS servers held in the current
+// config. Enable applies whatever server list it is handed (it does not read
+// dp.config.CustomServers), so callers pass this through as the vpnDNS argument
+// to actually route through the configured cloudflare/google/custom resolvers.
+// Returns nil in auto/system mode, where Enable falls back to the VPN gateway.
+func (dp *DNSProtection) ConfiguredServers() []string {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	if len(dp.config.CustomServers) == 0 {
+		return nil
+	}
+	servers := make([]string, len(dp.config.CustomServers))
+	copy(servers, dp.config.CustomServers)
+	return servers
 }
 
 // Enable activates DNS leak protection for the VPN interface.

@@ -39,6 +39,54 @@ func TestApplyKillSwitchConfig(t *testing.T) {
 	(&Manager{}).ApplyKillSwitchConfig("always-on", false)
 }
 
+// TestApplyDNSConfig guards the fix for DNS protection being a dead setting:
+// the mode chosen in Preferences was written to config but never reflected onto
+// the runtime DNSProtection object, so the configured resolver was never used
+// on connect. ApplyDNSConfig is what bridges config → runtime.
+func TestApplyDNSConfig(t *testing.T) {
+	m := &Manager{dnsProtection: security.NewDNSProtection()}
+
+	m.ApplyDNSConfig("cloudflare", nil, true, false)
+	if got := m.dnsProtection.ConfiguredServers(); len(got) != 2 ||
+		got[0] != "1.1.1.1" || got[1] != "1.0.0.1" {
+		t.Errorf("after cloudflare: ConfiguredServers = %v, want [1.1.1.1 1.0.0.1]", got)
+	}
+
+	m.ApplyDNSConfig("custom", []string{"9.9.9.9"}, false, true)
+	if got := m.dnsProtection.ConfiguredServers(); len(got) != 1 || got[0] != "9.9.9.9" {
+		t.Errorf("after custom: ConfiguredServers = %v, want [9.9.9.9]", got)
+	}
+
+	// system/auto mode holds no custom servers (Enable falls back to gateway).
+	m.ApplyDNSConfig("system", nil, true, true)
+	if got := m.dnsProtection.ConfiguredServers(); got != nil {
+		t.Errorf("after system: ConfiguredServers = %v, want nil", got)
+	}
+
+	// A nil DNS protection must be a safe no-op, not a panic.
+	(&Manager{}).ApplyDNSConfig("cloudflare", nil, true, true)
+}
+
+// TestApplyIPv6Config guards the fix for IPv6 protection being a dead setting:
+// the mode chosen in Preferences was written to config but never reflected onto
+// the runtime IPv6Protection object. ApplyIPv6Config bridges config → runtime.
+func TestApplyIPv6Config(t *testing.T) {
+	m := &Manager{ipv6Protection: security.NewIPv6Protection()}
+
+	m.ApplyIPv6Config("allow", false)
+	if got := m.ipv6Protection.GetConfig(); got.Mode != security.IPv6ModeAllow || got.BlockWebRTC {
+		t.Errorf("after allow: config = %+v, want Mode=allow BlockWebRTC=false", got)
+	}
+
+	m.ApplyIPv6Config("disable", true)
+	if got := m.ipv6Protection.GetConfig(); got.Mode != security.IPv6ModeBlock || !got.BlockWebRTC {
+		t.Errorf("after disable: config = %+v, want Mode=block BlockWebRTC=true", got)
+	}
+
+	// A nil IPv6 protection must be a safe no-op, not a panic.
+	(&Manager{}).ApplyIPv6Config("block", true)
+}
+
 func TestNewManager(t *testing.T) {
 	m, err := NewManager()
 	if err != nil {

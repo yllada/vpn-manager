@@ -135,10 +135,23 @@ func (m *Manager) Disconnect(profileID string) error {
 	// Wait a moment for cleanup
 	time.Sleep(CleanupDelay)
 
-	// Disable kill switch if no other connections remain
+	// Disable kill switch, DNS and IPv6 protection if no other connections
+	// remain, restoring the system to its pre-VPN state on user disconnect.
+	// (Shutdown hooks also restore these on app exit; this covers the normal
+	// disconnect path.)
 	if len(m.connections) <= 1 {
 		if err := m.killSwitch.Disable(); err != nil {
 			logger.LogWarn("killswitch", "failed to disable: %v", err)
+		}
+		if m.dnsProtection != nil {
+			if err := m.dnsProtection.Disable(); err != nil {
+				logger.LogWarn("dns", "failed to disable: %v", err)
+			}
+		}
+		if m.ipv6Protection != nil {
+			if err := m.ipv6Protection.Disable(); err != nil {
+				logger.LogWarn("ipv6", "failed to disable: %v", err)
+			}
 		}
 	}
 
@@ -217,6 +230,26 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 			if err := m.killSwitch.Disable(); err != nil {
 				logger.LogDebug("killswitch", "no prior network lock to clear: %v", err)
 			}
+		}
+	}
+
+	// DNS Protection. Enable applies whatever server list it is handed (it does
+	// not read its own config.CustomServers), so pass the configured servers —
+	// the cloudflare/google/custom resolvers — as vpnDNS. In auto/system mode
+	// ConfiguredServers returns nil and Enable falls back to the VPN gateway DNS.
+	if m.dnsProtection != nil {
+		dnsServers := m.dnsProtection.ConfiguredServers()
+		if err := m.dnsProtection.Enable(tunIface, dnsServers); err != nil {
+			logger.LogWarn("dns", "failed to enable: %v", err)
+		}
+	}
+
+	// IPv6 Protection. Pass vpnSupportsIPv6=false: OpenVPN tunnels here are IPv4,
+	// so the safe choice blocks IPv6 to prevent leaks (auto/route modes also
+	// block when the VPN lacks IPv6 support).
+	if m.ipv6Protection != nil {
+		if err := m.ipv6Protection.Enable(tunIface, false); err != nil {
+			logger.LogWarn("ipv6", "failed to enable: %v", err)
 		}
 	}
 

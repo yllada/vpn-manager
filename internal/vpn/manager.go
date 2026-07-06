@@ -283,6 +283,32 @@ func (m *Manager) ApplyKillSwitchConfig(mode string, allowLAN bool) {
 	m.killSwitch.SetMode(security.ParseKillSwitchMode(mode))
 }
 
+// ApplyDNSConfig applies persisted DNS protection settings to the runtime DNS
+// protection object. Like the kill switch, the mode chosen in Preferences is
+// written to config but the runtime object keeps its defaults until this maps
+// config → runtime, so the configured resolver (cloudflare/google/custom) is
+// never applied on connect. Call this at startup and whenever the setting
+// changes. Takes primitives so the vpn package need not import internal/config.
+func (m *Manager) ApplyDNSConfig(mode string, customDNS []string, blockDoH, blockDoT bool) {
+	if m.dnsProtection == nil {
+		return
+	}
+	m.dnsProtection.SetConfig(security.ParseDNSConfig(mode, customDNS, blockDoH, blockDoT))
+}
+
+// ApplyIPv6Config applies persisted IPv6 protection settings to the runtime
+// IPv6 protection object. Without this the mode chosen in Preferences never
+// reaches the runtime, so IPv6 leak protection stays at its default and the
+// user's choice is silently ignored on connect. Call this at startup and
+// whenever the setting changes. Takes primitives so the vpn package need not
+// import internal/config.
+func (m *Manager) ApplyIPv6Config(mode string, blockWebRTC bool) {
+	if m.ipv6Protection == nil {
+		return
+	}
+	m.ipv6Protection.SetConfig(security.ParseIPv6Config(mode, blockWebRTC))
+}
+
 // AppTunnel returns the per-app tunnel manager.
 func (m *Manager) AppTunnel() *tunnel.AppTunnel {
 	return m.appTunnel

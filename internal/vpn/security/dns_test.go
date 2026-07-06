@@ -25,6 +25,52 @@ func newTestDNSProtection(t *testing.T, backend string) *DNSProtection {
 	}
 }
 
+// TestParseDNSConfig pins the config→runtime mapping. The bug this guards: the
+// Preferences UI stores "system"/"cloudflare"/"google"/"custom" but the runtime
+// modes are "off"/"auto"/"strict"/"custom" and Enable applies whatever server
+// list it is handed, so without this bridge the chosen resolver was never used.
+func TestParseDNSConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		mode        string
+		customDNS   []string
+		wantMode    DNSProtectionMode
+		wantServers []string
+	}{
+		{"system maps to auto with no servers", "system", nil, DNSProtectionAuto, nil},
+		{"cloudflare maps to custom with 1.1.1.1", "cloudflare", nil, DNSProtectionCustom, []string{"1.1.1.1", "1.0.0.1"}},
+		{"google maps to custom with 8.8.8.8", "google", nil, DNSProtectionCustom, []string{"8.8.8.8", "8.8.4.4"}},
+		{"custom passes through user servers", "custom", []string{"9.9.9.9"}, DNSProtectionCustom, []string{"9.9.9.9"}},
+		{"empty falls back to auto (never off)", "", nil, DNSProtectionAuto, nil},
+		{"unknown falls back to auto (never off)", "garbage", nil, DNSProtectionAuto, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := ParseDNSConfig(tt.mode, tt.customDNS, true, false)
+			if cfg.Mode != tt.wantMode {
+				t.Errorf("Mode = %q, want %q", cfg.Mode, tt.wantMode)
+			}
+			if cfg.Mode == DNSProtectionOff {
+				t.Error("ParseDNSConfig must never return Mode=Off (UI has no off)")
+			}
+			if len(cfg.CustomServers) != len(tt.wantServers) {
+				t.Fatalf("CustomServers = %v, want %v", cfg.CustomServers, tt.wantServers)
+			}
+			for i, s := range tt.wantServers {
+				if cfg.CustomServers[i] != s {
+					t.Errorf("CustomServers[%d] = %q, want %q", i, cfg.CustomServers[i], s)
+				}
+			}
+			// DoH/DoT flags always pass through verbatim.
+			if !cfg.BlockDNSOverHTTPS || cfg.BlockDNSOverTLS {
+				t.Errorf("block flags = DoH:%v DoT:%v, want DoH:true DoT:false",
+					cfg.BlockDNSOverHTTPS, cfg.BlockDNSOverTLS)
+			}
+		})
+	}
+}
+
 // TestDefaultDNSConfigIsProtective pins the safe defaults: protection on
 // (auto) with DoH/DoT blocking enabled.
 func TestDefaultDNSConfigIsProtective(t *testing.T) {

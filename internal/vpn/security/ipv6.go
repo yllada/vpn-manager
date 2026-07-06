@@ -68,6 +68,28 @@ func NewIPv6Protection() *IPv6Protection {
 	}
 }
 
+// ParseIPv6Config maps persisted config values to a runtime IPv6Config. The
+// Preferences UI vocabulary ("allow"/"block"/"disable"/"auto") differs slightly
+// from the runtime modes: the UI "disable" means "block all IPv6", for which
+// the runtime has no separate mode, so it maps to IPv6ModeBlock. Unknown values
+// fall back to blocking — the safe default that prevents IPv6 leaks.
+func ParseIPv6Config(mode string, blockWebRTC bool) IPv6Config {
+	cfg := IPv6Config{BlockWebRTC: blockWebRTC}
+
+	switch mode {
+	case "allow":
+		cfg.Mode = IPv6ModeAllow
+	case "auto":
+		cfg.Mode = IPv6ModeAuto
+	case "block", "disable":
+		cfg.Mode = IPv6ModeBlock
+	default: // unknown → safe default (no leak)
+		cfg.Mode = IPv6ModeBlock
+	}
+
+	return cfg
+}
+
 // SetConfig updates the IPv6 configuration.
 func (ip6 *IPv6Protection) SetConfig(config IPv6Config) {
 	ip6.mu.Lock()
