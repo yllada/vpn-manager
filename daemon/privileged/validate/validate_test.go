@@ -256,3 +256,28 @@ func TestHTTPURL(t *testing.T) {
 		})
 	}
 }
+
+func TestDNSMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"empty is off", "", false},
+		{"off", "off", false},
+		{"auto", "auto", false},
+		{"strict", "strict", false},
+		{"custom", "custom", false},
+		{"unknown rejected", "garbage", true},
+		{"ui vocabulary rejected", "cloudflare", true},
+		{"leading-dash rejected", "-x", true},
+		{"case-sensitive rejected", "Custom", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := DNSMode(tt.in); (err != nil) != tt.wantErr {
+				t.Errorf("DNSMode(%q) err=%v, wantErr=%v", tt.in, err, tt.wantErr)
+			}
+		})
+	}
+}

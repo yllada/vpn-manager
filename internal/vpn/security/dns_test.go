@@ -93,18 +93,118 @@ func TestDNSEnableModeOffIsNoOp(t *testing.T) {
 	}
 }
 
-// TestDNSEnableResolvConfBackendFailsClosed pins that the unprivileged GUI
-// never silently claims protection on the resolv.conf fallback backend: direct
-// /etc/resolv.conf modification requires the daemon, so Enable must fail and
-// stay disabled.
-func TestDNSEnableResolvConfBackendFailsClosed(t *testing.T) {
-	dp := newTestDNSProtection(t, "resolv.conf")
+// TestDNSEnableDelegatesToDaemon pins that Enable no longer runs
+// resolvectl/nmcli itself (the polkit-prompt culprit) but forwards the mode,
+// servers, and DoT/DoH flags to the root daemon, which does the privileged
+// resolver assignment. The fake daemon records the params so we can assert them
+// without a running vpn-managerd, without root, and without touching the
+// resolver.
+func TestDNSEnableDelegatesToDaemon(t *testing.T) {
+	fd := &fakeDaemon{available: true}
+	installFakeDaemon(t, fd)
 
-	if err := dp.Enable("tun0", []string{"10.8.0.1"}); err == nil {
-		t.Fatal("Enable() succeeded on resolv.conf backend without daemon")
+	dp := newTestDNSProtection(t, "systemd-resolved")
+	dp.SetConfig(DNSConfig{
+		Mode:              DNSProtectionCustom,
+		CustomServers:     []string{"1.1.1.1"},
+		BlockDNSOverHTTPS: true,
+		BlockDNSOverTLS:   true,
+	})
+
+	if err := dp.Enable("tun0", []string{"1.1.1.1", "1.0.0.1"}); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	if !dp.IsEnabled() {
+		t.Error("DNS protection not marked enabled after successful daemon call")
+	}
+	if len(fd.dnsEnableParams) != 1 {
+		t.Fatalf("daemon Enable called %d times, want 1", len(fd.dnsEnableParams))
+	}
+	p := fd.dnsEnableParams[0]
+	if p.VPNInterface != "tun0" {
+		t.Errorf("VPNInterface = %q, want tun0", p.VPNInterface)
+	}
+	if p.Mode != "custom" {
+		t.Errorf("Mode = %q, want custom", p.Mode)
+	}
+	if len(p.Servers) != 2 || p.Servers[0] != "1.1.1.1" {
+		t.Errorf("Servers = %v, want [1.1.1.1 1.0.0.1]", p.Servers)
+	}
+	if !p.BlockDoH || !p.BlockDoT {
+		t.Errorf("BlockDoH=%v BlockDoT=%v, want both true", p.BlockDoH, p.BlockDoT)
+	}
+	// Custom (non-strict) mode does not request firewall leak blocking.
+	if p.LeakBlocking {
+		t.Error("LeakBlocking = true for custom mode, want false (strict only)")
+	}
+}
+
+// TestDNSEnableStrictRequestsLeakBlocking pins that strict mode asks the daemon
+// to also enforce port-53 leak blocking via the firewall, and passes Mode so
+// the daemon installs the ~. routing domain.
+func TestDNSEnableStrictRequestsLeakBlocking(t *testing.T) {
+	fd := &fakeDaemon{available: true}
+	installFakeDaemon(t, fd)
+
+	dp := newTestDNSProtection(t, "systemd-resolved")
+	dp.SetConfig(DNSConfig{Mode: DNSProtectionStrict})
+
+	if err := dp.Enable("tun0", []string{"10.8.0.1"}); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	if len(fd.dnsEnableParams) != 1 {
+		t.Fatalf("daemon Enable called %d times, want 1", len(fd.dnsEnableParams))
+	}
+	p := fd.dnsEnableParams[0]
+	if p.Mode != "strict" {
+		t.Errorf("Mode = %q, want strict", p.Mode)
+	}
+	if !p.LeakBlocking {
+		t.Error("LeakBlocking = false for strict mode, want true")
+	}
+}
+
+// TestDNSEnableFailsClosedWithoutDaemon pins that the client never silently
+// claims protection when the daemon is unreachable: the privileged resolver
+// assignment requires the daemon, so Enable must fail and stay disabled.
+func TestDNSEnableFailsClosedWithoutDaemon(t *testing.T) {
+	fd := &fakeDaemon{available: false}
+	installFakeDaemon(t, fd)
+
+	dp := newTestDNSProtection(t, "systemd-resolved")
+	dp.SetConfig(DNSConfig{Mode: DNSProtectionCustom, CustomServers: []string{"1.1.1.1"}})
+
+	if err := dp.Enable("tun0", []string{"1.1.1.1"}); err == nil {
+		t.Fatal("Enable() succeeded without a daemon")
 	}
 	if dp.IsEnabled() {
-		t.Error("DNS protection marked enabled although resolv.conf was never modified")
+		t.Error("DNS protection marked enabled although the daemon was unreachable")
+	}
+	if len(fd.dnsEnableParams) != 0 {
+		t.Errorf("daemon Enable called %d times, want 0 (daemon unavailable)", len(fd.dnsEnableParams))
+	}
+}
+
+// TestDNSDisableDelegatesToDaemon pins that Disable forwards the restore to the
+// daemon (which reverts the resolver) and clears the enabled flag.
+func TestDNSDisableDelegatesToDaemon(t *testing.T) {
+	fd := &fakeDaemon{available: true}
+	installFakeDaemon(t, fd)
+
+	dp := newTestDNSProtection(t, "systemd-resolved")
+	dp.SetConfig(DNSConfig{Mode: DNSProtectionCustom, CustomServers: []string{"1.1.1.1"}})
+	if err := dp.Enable("tun0", []string{"1.1.1.1"}); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+
+	if err := dp.Disable(); err != nil {
+		t.Fatalf("Disable() error = %v", err)
+	}
+	if dp.IsEnabled() {
+		t.Error("DNS protection still enabled after Disable()")
+	}
+	if fd.dnsDisableCalls != 1 {
+		t.Errorf("daemon Disable called %d times, want 1", fd.dnsDisableCalls)
 	}
 }
 

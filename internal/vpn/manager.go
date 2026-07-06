@@ -12,6 +12,7 @@ import (
 
 	"github.com/yllada/vpn-manager/internal/errors"
 	"github.com/yllada/vpn-manager/internal/logger"
+	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/shutdown"
 	"github.com/yllada/vpn-manager/internal/vpn/health"
 	"github.com/yllada/vpn-manager/internal/vpn/network"
@@ -300,6 +301,60 @@ func (m *Manager) ApplyDNSConfig(mode string, customDNS []string, blockDoH, bloc
 		return
 	}
 	m.dnsProtection.SetConfig(security.ParseDNSConfig(mode, customDNS, blockDoH, blockDoT))
+
+	// Live re-apply: if a VPN is currently connected, re-apply DNS now so the
+	// change takes effect immediately instead of only on the next connect.
+	// Disable() reverts the previous resolver (this is what makes switching a
+	// resolver back to "System" actually revert); for non-off modes Enable()
+	// reassigns the new servers. Mirrors ApplyKillSwitchConfig's live behaviour.
+	conn, ok := m.activeConnection()
+	if !ok {
+		return
+	}
+	conn.mu.RLock()
+	tunIface := conn.tunIface
+	conn.mu.RUnlock()
+	if tunIface == "" {
+		return
+	}
+
+	off := m.dnsProtection.Mode() == security.DNSProtectionOff
+	servers := m.dnsProtection.ConfiguredServers()
+	reapplyDNSAsync(m.dnsProtection, tunIface, servers, off)
+}
+
+// activeConnection returns the first connection currently in the Connected
+// state, if any. Used by live-apply paths that need the running tun interface.
+func (m *Manager) activeConnection() (*Connection, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, conn := range m.connections {
+		conn.mu.RLock()
+		status := conn.Status
+		conn.mu.RUnlock()
+		if status == StatusConnected {
+			return conn, true
+		}
+	}
+	return nil, false
+}
+
+// reapplyDNSAsync re-applies DNS protection off the GTK main thread so a slow
+// daemon round-trip never blocks the UI. Declared as a package var so tests can
+// substitute a synchronous recorder and assert the trigger logic without a
+// running daemon or goroutine-timing flakiness.
+var reapplyDNSAsync = func(dp *security.DNSProtection, tunIface string, servers []string, off bool) {
+	resilience.SafeGoWithName("vpn-dns-reapply", func() {
+		if err := dp.Disable(); err != nil {
+			logger.LogWarn("dns", "live re-apply: disable failed: %v", err)
+		}
+		if off {
+			return
+		}
+		if err := dp.Enable(tunIface, servers); err != nil {
+			logger.LogWarn("dns", "live re-apply: enable failed: %v", err)
+		}
+	})
 }
 
 // ApplyIPv6Config applies persisted IPv6 protection settings to the runtime

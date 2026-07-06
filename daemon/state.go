@@ -52,7 +52,10 @@ type KillSwitchState struct {
 type DNSProtectionState struct {
 	Enabled      bool     `json:"enabled"`
 	Servers      []string `json:"servers,omitempty"`
-	BlockDoT     bool     `json:"block_dot"` // Block DNS-over-TLS
+	Mode         string   `json:"mode,omitempty"`    // "off"/"auto"/"strict"/"custom"
+	Backend      string   `json:"backend,omitempty"` // resolver backend actually used
+	BlockDoT     bool     `json:"block_dot"`         // Block DNS-over-TLS
+	BlockDoH     bool     `json:"block_doh"`         // Block DNS-over-HTTPS
 	LeakBlocking bool     `json:"leak_blocking"`
 }
 

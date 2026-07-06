@@ -34,6 +34,7 @@ var (
 	ErrInvalidCIDR        = errors.New("invalid CIDR notation")
 	ErrDefaultRoute       = errors.New("CIDR is a default route (0.0.0.0/0 or ::/0), which is not allowed here")
 	ErrInvalidIP          = errors.New("invalid IP address")
+	ErrInvalidDNSMode     = errors.New("invalid DNS protection mode")
 	ErrInvalidConfigPath  = errors.New("invalid config path")
 	ErrDangerousDirective = errors.New("config file contains a directive that can execute code")
 	ErrUnsafeArg          = errors.New("value contains whitespace or a control character")
@@ -88,6 +89,28 @@ func IP(s string) error {
 	}
 	if net.ParseIP(s) == nil {
 		return fmt.Errorf("%w: %q", ErrInvalidIP, s)
+	}
+	return nil
+}
+
+// dnsModes is the allow-list of runtime DNS protection modes the daemon
+// accepts. Any value outside this set is rejected at the boundary: the mode
+// steers which resolver actions the daemon takes (set servers, install the "~."
+// routing domain), so an unrecognised value must never fall through to a
+// default with side effects. Empty is allowed and treated as "off".
+var dnsModes = map[string]bool{
+	"":       true, // treated as "off"
+	"off":    true,
+	"auto":   true,
+	"strict": true,
+	"custom": true,
+}
+
+// DNSMode validates the DNS protection mode string against the allow-list. It
+// is fail-closed: unknown modes are rejected rather than silently ignored.
+func DNSMode(mode string) error {
+	if !dnsModes[mode] {
+		return fmt.Errorf("%w: %q", ErrInvalidDNSMode, mode)
 	}
 	return nil
 }

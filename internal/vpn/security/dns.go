@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,7 +183,19 @@ func (dp *DNSProtection) ConfiguredServers() []string {
 	return servers
 }
 
-// Enable activates DNS leak protection for the VPN interface.
+// Mode returns the configured DNS protection mode.
+func (dp *DNSProtection) Mode() DNSProtectionMode {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	return dp.config.Mode
+}
+
+// Enable activates DNS leak protection for the VPN interface by delegating the
+// privileged resolver assignment (resolvectl / nmcli / resolv.conf) to the root
+// daemon. The daemon runs those commands as root, so no polkit password prompt
+// ever appears — unlike the old client-side path, which prompted up to 3× per
+// connect on systemd-resolved. This method no longer touches the resolver
+// directly; it only carries the mode, servers, and DoT/DoH flags to the daemon.
 func (dp *DNSProtection) Enable(vpnInterface string, vpnDNS []string) error {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
@@ -198,37 +209,40 @@ func (dp *DNSProtection) Enable(vpnInterface string, vpnDNS []string) error {
 		vpnDNS = []string{DefaultVPNGatewayDNS} // VPN gateway typically provides DNS
 	}
 
+	// Privileged resolver assignment MUST go through the daemon.
+	if !daemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
+	}
+
 	dp.vpnDNS = vpnDNS
+	dp.vpnInterface = vpnInterface
 
-	var err error
-	switch dp.resolvedBackend {
-	case "systemd-resolved":
-		err = dp.enableSystemdResolved(vpnInterface, vpnDNS)
-	case "networkmanager":
-		err = dp.enableNetworkManager(vpnInterface, vpnDNS)
-	default:
-		err = dp.enableResolvConf(vpnDNS)
-	}
+	// Strict mode additionally enforces port-53 leak blocking via the firewall;
+	// other modes assign resolver servers only.
+	leakBlocking := dp.config.Mode == DNSProtectionStrict
 
-	if err != nil {
-		return err
-	}
-
-	// Block alternative DNS methods if configured
-	if dp.config.BlockDNSOverHTTPS || dp.config.BlockDNSOverTLS {
-		if blockErr := dp.blockAlternativeDNS(); blockErr != nil {
-			log.Printf("DNSProtection: Warning: failed to block alternative DNS: %v", blockErr)
-		}
+	if err := dnsFirewallEnable(daemon.DNSEnableParams{
+		VPNInterface: vpnInterface,
+		Servers:      vpnDNS,
+		Mode:         string(dp.config.Mode),
+		BlockDoT:     dp.config.BlockDNSOverTLS,
+		BlockDoH:     dp.config.BlockDNSOverHTTPS,
+		LeakBlocking: leakBlocking,
+	}); err != nil {
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
 	dp.enabled = true
-	log.Printf("DNSProtection: Enabled for interface %s with DNS %v (backend: %s)",
-		vpnInterface, vpnDNS, dp.resolvedBackend)
+	log.Printf("DNSProtection: Enabled via daemon for interface %s with DNS %v (mode: %s)",
+		vpnInterface, vpnDNS, dp.config.Mode)
 
 	return nil
 }
 
-// Disable deactivates DNS leak protection and restores original settings.
+// Disable deactivates DNS leak protection and restores the original resolver
+// configuration by delegating the restore to the root daemon. The daemon
+// reverts the DNS servers it assigned on the link (e.g. resolvectl revert), so
+// switching a resolver back to "System" truly reverts.
 func (dp *DNSProtection) Disable() error {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
@@ -237,29 +251,22 @@ func (dp *DNSProtection) Disable() error {
 		return nil
 	}
 
-	var err error
-	switch dp.resolvedBackend {
-	case "systemd-resolved":
-		err = dp.disableSystemdResolved()
-	case "networkmanager":
-		err = dp.disableNetworkManager()
-	default:
-		err = dp.disableResolvConf()
+	if !daemonAvailable() {
+		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	// Unblock alternative DNS
-	if blkErr := dp.unblockAlternativeDNS(); blkErr != nil {
-		log.Printf("DNSProtection: Warning: failed to unblock alternative DNS: %v", blkErr)
-	}
+	err := dnsFirewallDisable()
 
 	dp.enabled = false
 	dp.vpnDNS = nil
+	dp.vpnInterface = ""
 
-	if err == nil {
-		log.Printf("DNSProtection: Disabled, original DNS restored")
+	if err != nil {
+		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
-	return err
+	log.Printf("DNSProtection: Disabled via daemon, original DNS restored")
+	return nil
 }
 
 // IsEnabled returns whether DNS protection is active.
@@ -270,142 +277,15 @@ func (dp *DNSProtection) IsEnabled() bool {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SYSTEMD-RESOLVED BACKEND
+// RESOLV.CONF BACKEND (backup/restore helpers used by strict-mode fallback)
+//
+// The privileged resolver assignment for ALL backends (systemd-resolved,
+// NetworkManager, resolv.conf) now lives in the root daemon
+// (daemon/privileged/dns). The client no longer runs resolvectl/nmcli or
+// rewrites resolv.conf directly — that is what removed the polkit prompts. The
+// backup/restore helpers below remain only for the strict-mode/leak-test code
+// paths that still read the local resolver state.
 // ═══════════════════════════════════════════════════════════════════════════
-
-func (dp *DNSProtection) enableSystemdResolved(vpnInterface string, dnsServers []string) error {
-	// Set DNS servers for VPN interface
-	args := []string{"dns", vpnInterface}
-	args = append(args, dnsServers...)
-
-	cmd := exec.Command("resolvectl", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("resolvectl dns failed: %w: %s", err, output)
-	}
-
-	// Set this interface as default route for DNS
-	cmd = exec.Command("resolvectl", "default-route", vpnInterface, "true")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("DNSProtection: Warning: failed to set default-route: %s", output)
-	}
-
-	// Set DNSSEC mode to opportunistic
-	cmd = exec.Command("resolvectl", "dnssec", vpnInterface, "allow-downgrade")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("DNSProtection: Warning: failed to set DNSSEC: %s", output)
-	}
-
-	// Flush DNS cache
-	_ = exec.Command("resolvectl", "flush-caches").Run()
-
-	return nil
-}
-
-func (dp *DNSProtection) disableSystemdResolved() error {
-	// Flushing caches and resetting will allow normal DNS resolution
-	_ = exec.Command("resolvectl", "flush-caches").Run()
-	_ = exec.Command("resolvectl", "reset-statistics").Run()
-	return nil
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// NETWORKMANAGER BACKEND
-// ═══════════════════════════════════════════════════════════════════════════
-
-// nmDNSConfPath is the drop-in config file used to enforce VPN DNS via NM.
-const nmDNSConfPath = "/etc/NetworkManager/conf.d/vpn-manager-dns.conf"
-
-func (dp *DNSProtection) enableNetworkManager(_ string, dnsServers []string) error {
-	if len(dnsServers) == 0 {
-		return nil
-	}
-
-	// Validate each DNS server IP before writing to the config file.
-	for _, srv := range dnsServers {
-		if net.ParseIP(srv) == nil {
-			return fmt.Errorf("invalid DNS server address: %q", srv)
-		}
-	}
-
-	content := "[global-dns-domain-*]\nservers=" + strings.Join(dnsServers, ",") + "\n"
-
-	// Atomic write: randomized temp file + fsync + rename.
-	// os.CreateTemp gives a collision-safe name so concurrent callers cannot
-	// race on the same temp path.
-	tmpFile, err := os.CreateTemp(filepath.Dir(nmDNSConfPath), "vpn-manager-dns-*.conf")
-	if err != nil {
-		return fmt.Errorf("create temp NM DNS config: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := tmpFile.Chmod(0640); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("set NM DNS config permissions: %w", err)
-	}
-	if _, err := tmpFile.WriteString(content); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("write NM DNS config: %w", err)
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("sync NM DNS config: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close NM DNS config: %w", err)
-	}
-	if err := os.Rename(tmpPath, nmDNSConfPath); err != nil {
-		return fmt.Errorf("install NM DNS config: %w", err)
-	}
-
-	if out, err := exec.Command("nmcli", "general", "reload").CombinedOutput(); err != nil {
-		_ = os.Remove(nmDNSConfPath)
-		return fmt.Errorf("nmcli reload: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-
-	return nil
-}
-
-func (dp *DNSProtection) disableNetworkManager() error {
-	if _, err := os.Stat(nmDNSConfPath); os.IsNotExist(err) {
-		return nil
-	}
-
-	if err := os.Remove(nmDNSConfPath); err != nil {
-		return fmt.Errorf("remove NM DNS config: %w", err)
-	}
-
-	if out, err := exec.Command("nmcli", "general", "reload").CombinedOutput(); err != nil {
-		return fmt.Errorf("nmcli reload: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-
-	return nil
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// RESOLV.CONF BACKEND (Fallback)
-// ═══════════════════════════════════════════════════════════════════════════
-
-func (dp *DNSProtection) enableResolvConf(dnsServers []string) error {
-	resolvPath := paths.ResolvConfPath
-
-	// Backup current resolv.conf
-	if err := dp.backupResolvConf(resolvPath); err != nil {
-		return fmt.Errorf("failed to backup resolv.conf: %w", err)
-	}
-
-	// Create new resolv.conf with VPN DNS
-	content := fmt.Sprintf("# Generated by VPN Manager - %s\n", time.Now().Format(time.RFC3339))
-	content += "# Original backed up to: " + dp.backupPath + "\n\n"
-
-	for _, dns := range dnsServers {
-		content += fmt.Sprintf("nameserver %s\n", dns)
-	}
-
-	// Direct modification of /etc/resolv.conf requires root privileges.
-	// This operation should be done via the daemon.
-	return fmt.Errorf("resolv.conf modification requires vpn-managerd daemon (use systemd-resolved instead)")
-}
 
 func (dp *DNSProtection) disableResolvConf() error {
 	if _, err := os.Stat(dp.backupPath); os.IsNotExist(err) {
@@ -444,34 +324,6 @@ func (dp *DNSProtection) backupResolvConf(path string) error {
 	// Write backup 0600: it may contain the original nameservers, and there is no
 	// reason for it to be world-readable.
 	return os.WriteFile(dp.backupPath, content, 0600)
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ALTERNATIVE DNS BLOCKING
-// ═══════════════════════════════════════════════════════════════════════════
-
-func (dp *DNSProtection) blockAlternativeDNS() error {
-	// Blocking DNS-over-TLS (port 853) requires daemon for privileged operations
-	if dp.config.BlockDNSOverTLS {
-		if !daemonAvailable() {
-			log.Printf("DNSProtection: Warning: cannot block DoT without daemon")
-		}
-		// DoT blocking is handled by daemon when DNS protection is enabled
-	}
-
-	// Block DoH requires blocking HTTPS to specific hosts
-	// This is complex and might break things, so we just log a warning
-	if dp.config.BlockDNSOverHTTPS {
-		log.Printf("DNSProtection: To fully prevent DoH leaks, consider using browser-level DoH disabling")
-	}
-
-	return nil
-}
-
-func (dp *DNSProtection) unblockAlternativeDNS() error {
-	// Unblocking DoT is handled by daemon when DNS protection is disabled
-	// Nothing to do here - daemon manages the firewall rules
-	return nil
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -99,7 +99,9 @@ type DNSProtectionClient struct{}
 type DNSEnableParams struct {
 	VPNInterface string   `json:"vpn_interface"`
 	Servers      []string `json:"servers"`
+	Mode         string   `json:"mode,omitempty"` // "off"/"auto"/"strict"/"custom"
 	BlockDoT     bool     `json:"block_dot"`
+	BlockDoH     bool     `json:"block_doh"`
 	LeakBlocking bool     `json:"leak_blocking"`
 }
 

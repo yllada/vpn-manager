@@ -10,6 +10,7 @@ import (
 
 	"github.com/yllada/vpn-manager/daemon"
 	"github.com/yllada/vpn-manager/daemon/privileged/apptunnel"
+	dnsresolver "github.com/yllada/vpn-manager/daemon/privileged/dns"
 	"github.com/yllada/vpn-manager/daemon/privileged/firewall"
 	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 	"github.com/yllada/vpn-manager/daemon/privileged/vpn"
@@ -25,7 +26,21 @@ var (
 	appTunnelManager *apptunnel.Manager
 	vpnManagersOnce  sync.Once
 	appTunnelOnce    sync.Once
+
+	dnsResolver     *dnsresolver.Resolver
+	dnsResolverOnce sync.Once
 )
+
+// GetDNSResolver returns the privileged DNS resolver singleton. It assigns and
+// restores the actual DNS servers on the VPN link as root, so no polkit prompt
+// is triggered. Held for the daemon's lifetime so its restore backup survives
+// across an enable/disable pair.
+func GetDNSResolver() *dnsresolver.Resolver {
+	dnsResolverOnce.Do(func() {
+		dnsResolver = dnsresolver.NewResolver()
+	})
+	return dnsResolver
+}
 
 // initVPNManagers initializes the VPN managers as singletons.
 func initVPNManagers(logger *log.Logger) {
@@ -175,7 +190,9 @@ func KillSwitchBlockAllHandler(state *daemon.State) daemon.HandlerFunc {
 type DNSEnableParams struct {
 	VPNInterface string   `json:"vpn_interface"`
 	Servers      []string `json:"servers"`
+	Mode         string   `json:"mode,omitempty"` // "off"/"auto"/"strict"/"custom"
 	BlockDoT     bool     `json:"block_dot"`
+	BlockDoH     bool     `json:"block_doh"`
 	LeakBlocking bool     `json:"leak_blocking"`
 }
 
@@ -201,8 +218,14 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 				return nil, fmt.Errorf("dns server %q: %w", server, err)
 			}
 		}
+		// Mode steers which resolver actions we take, so reject any value outside
+		// the allow-list rather than letting it fall through to a default.
+		if err := validate.DNSMode(params.Mode); err != nil {
+			return nil, fmt.Errorf("mode: %w", err)
+		}
 
-		ctx.Logger.Printf("Enabling DNS protection for interface %s with servers: %v", params.VPNInterface, params.Servers)
+		ctx.Logger.Printf("Enabling DNS protection for interface %s (mode: %q) with servers: %v",
+			params.VPNInterface, params.Mode, params.Servers)
 
 		// Enable DNS firewall enforcement if leak blocking requested
 		if params.LeakBlocking && params.VPNInterface != "" {
@@ -218,11 +241,22 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 			}
 		}
 
+		// Assign the actual DNS servers on the VPN link as root (was the polkit
+		// prompt culprit when the GUI ran resolvectl/nmcli itself). No-op for
+		// modes that assign nothing (off, or auto/custom with no servers).
+		resolver := GetDNSResolver()
+		if err := resolver.Apply(params.VPNInterface, params.Servers, params.Mode); err != nil {
+			return nil, fmt.Errorf("resolver apply: %w", err)
+		}
+
 		// Update state
 		state.SetDNSProtection(daemon.DNSProtectionState{
 			Enabled:      true,
 			Servers:      params.Servers,
+			Mode:         params.Mode,
+			Backend:      string(resolver.Backend()),
 			BlockDoT:     params.BlockDoT,
+			BlockDoH:     params.BlockDoH,
 			LeakBlocking: params.LeakBlocking,
 		})
 
@@ -245,6 +279,12 @@ func DNSDisableHandler(state *daemon.State) daemon.HandlerFunc {
 			ctx.Logger.Printf("Warning: DoT unblock had errors: %v", err)
 		}
 
+		// Restore the resolver to its pre-VPN configuration (reverts the DNS
+		// servers assigned on the link). No-op if nothing was applied.
+		if err := GetDNSResolver().Restore(); err != nil {
+			ctx.Logger.Printf("Warning: DNS resolver restore had errors: %v", err)
+		}
+
 		// Update state
 		state.SetDNSProtectionEnabled(false)
 
@@ -263,7 +303,10 @@ func DNSStatusHandler(state *daemon.State) daemon.HandlerFunc {
 		return map[string]any{
 			"enabled":       dnsState.Enabled,
 			"servers":       dnsState.Servers,
+			"mode":          dnsState.Mode,
+			"backend":       dnsState.Backend,
 			"block_dot":     dnsState.BlockDoT,
+			"block_doh":     dnsState.BlockDoH,
 			"leak_blocking": dnsState.LeakBlocking,
 			"rules_active":  rulesActive,
 		}, nil

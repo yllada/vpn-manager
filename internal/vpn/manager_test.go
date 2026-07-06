@@ -67,6 +67,73 @@ func TestApplyDNSConfig(t *testing.T) {
 	(&Manager{}).ApplyDNSConfig("cloudflare", nil, true, true)
 }
 
+// TestApplyDNSConfigLiveReapply guards Part 2: when a VPN is connected, changing
+// the DNS mode in Preferences must re-apply immediately (revert the old
+// resolver, then enable the new one for non-off modes) instead of waiting for
+// the next connect. The reapply hook is swapped for a synchronous recorder so
+// the trigger logic is asserted without a running daemon.
+func TestApplyDNSConfigLiveReapply(t *testing.T) {
+	type call struct {
+		tunIface string
+		servers  []string
+		off      bool
+	}
+	var got []call
+	orig := reapplyDNSAsync
+	reapplyDNSAsync = func(_ *security.DNSProtection, tunIface string, servers []string, off bool) {
+		got = append(got, call{tunIface, servers, off})
+	}
+	t.Cleanup(func() { reapplyDNSAsync = orig })
+
+	conn := &Connection{Status: StatusConnected, tunIface: "tun0"}
+	m := &Manager{
+		dnsProtection: security.NewDNSProtection(),
+		connections:   map[string]*Connection{"p": conn},
+	}
+
+	// Switching to a resolver (cloudflare → custom mode) re-applies with servers.
+	m.ApplyDNSConfig("cloudflare", nil, true, false)
+	if len(got) != 1 {
+		t.Fatalf("re-apply called %d times, want 1", len(got))
+	}
+	if got[0].tunIface != "tun0" || got[0].off {
+		t.Errorf("re-apply = %+v, want tunIface=tun0 off=false", got[0])
+	}
+	if len(got[0].servers) != 2 || got[0].servers[0] != "1.1.1.1" {
+		t.Errorf("re-apply servers = %v, want [1.1.1.1 1.0.0.1]", got[0].servers)
+	}
+
+	// Switching to System (off) re-applies with off=true so it only reverts.
+	got = nil
+	m.ApplyDNSConfig("system", nil, true, true)
+	if len(got) != 1 || !got[0].off {
+		t.Errorf("re-apply after system = %+v, want one call with off=true", got)
+	}
+}
+
+// TestApplyDNSConfigNoReapplyWhenDisconnected pins that with no active
+// connection the DNS change is stored but nothing is re-applied live.
+func TestApplyDNSConfigNoReapplyWhenDisconnected(t *testing.T) {
+	called := false
+	orig := reapplyDNSAsync
+	reapplyDNSAsync = func(_ *security.DNSProtection, _ string, _ []string, _ bool) {
+		called = true
+	}
+	t.Cleanup(func() { reapplyDNSAsync = orig })
+
+	// A connection that never reached Connected must not trigger re-apply.
+	conn := &Connection{Status: StatusConnecting, tunIface: "tun0"}
+	m := &Manager{
+		dnsProtection: security.NewDNSProtection(),
+		connections:   map[string]*Connection{"p": conn},
+	}
+
+	m.ApplyDNSConfig("cloudflare", nil, true, false)
+	if called {
+		t.Error("re-apply triggered with no connected VPN")
+	}
+}
+
 // TestApplyIPv6Config guards the fix for IPv6 protection being a dead setting:
 // the mode chosen in Preferences was written to config but never reflected onto
 // the runtime IPv6Protection object. ApplyIPv6Config bridges config → runtime.
