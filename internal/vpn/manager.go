@@ -7,6 +7,7 @@ import (
 	"context"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/yllada/vpn-manager/internal/errors"
@@ -64,6 +65,10 @@ type Connection struct {
 	stopChan     chan struct{}
 	logHandler   func(string)
 	onAuthFailed func(profile *profile.Profile, needsOTP bool)
+	// userDisconnect marks a disconnect the user requested, so the connection
+	// monitor can tell it apart from an unexpected tunnel drop: only the latter
+	// engages the Auto-mode network lock.
+	userDisconnect atomic.Bool
 }
 
 // Manager orchestrates VPN connections.

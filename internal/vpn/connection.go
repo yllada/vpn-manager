@@ -103,6 +103,12 @@ func (m *Manager) Disconnect(profileID string) error {
 	}
 	conn.mu.Unlock()
 
+	// Mark this as a user-requested disconnect BEFORE signalling stop, so the
+	// monitor never mistakes it for an unexpected drop and engages the network
+	// lock. Set before close() so the flag is visible by the time the daemon is
+	// told to stop and the status turns "disconnected".
+	conn.userDisconnect.Store(true)
+
 	// Signal the connection to stop (this triggers monitorDaemonConnection to disconnect)
 	select {
 	case <-conn.stopChan:
@@ -194,10 +200,23 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	tunIface := m.detectTunInterface()
 	vpnServerIP := m.getVPNServerIP(conn.Profile)
 
-	// Kill Switch
-	if m.killSwitch != nil && m.killSwitch.GetMode() != security.KillSwitchOff {
-		if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
-			logger.LogWarn("killswitch", "failed to enable: %v", err)
+	// Kill Switch.
+	//   Always (lockdown): block all non-VPN traffic for the whole session —
+	//     only traffic through the tunnel is ever allowed.
+	//   Auto (network lock): do NOT block while the tunnel is healthy, so split
+	//     tunnels keep working; the lock is engaged only if the tunnel drops
+	//     unexpectedly (see monitorDaemonConnection). On (re)connect, clear any
+	//     lock left over from a previous drop.
+	if m.killSwitch != nil {
+		switch m.killSwitch.GetMode() {
+		case security.KillSwitchAlways:
+			if err := m.killSwitch.Enable(tunIface, vpnServerIP); err != nil {
+				logger.LogWarn("killswitch", "failed to enable: %v", err)
+			}
+		case security.KillSwitchAuto:
+			if err := m.killSwitch.Disable(); err != nil {
+				logger.LogDebug("killswitch", "no prior network lock to clear: %v", err)
+			}
 		}
 	}
 
@@ -410,6 +429,20 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 						conn.Status = StatusError
 					}
 					conn.mu.Unlock()
+
+					// Network lock: an established tunnel dropped without the user
+					// asking to disconnect. In Auto mode the kill switch stays out
+					// of the way while connected, so engage the block now to stop
+					// traffic leaking in the clear until the VPN comes back. Always
+					// mode is already blocking; Off does nothing.
+					if wasConnected && !conn.userDisconnect.Load() &&
+						m.killSwitch != nil && m.killSwitch.GetMode() == security.KillSwitchAuto {
+						if err := m.killSwitch.EnableBlockAll(); err != nil {
+							logger.LogWarn("killswitch", "failed to engage network lock after drop: %v", err)
+						} else {
+							logger.LogWarn("killswitch", "VPN tunnel dropped — network locked until reconnect (Auto kill switch)")
+						}
+					}
 
 					// Emit disconnection event
 					eventbus.Emit(eventbus.EventConnectionClosed, "Manager", eventbus.ConnectionEventData{
