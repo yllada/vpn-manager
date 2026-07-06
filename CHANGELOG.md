@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Kill switch actually engages now** — Setting a kill switch mode in Preferences wrote `kill_switch_mode` to the config, but nothing ever applied it to the runtime kill switch, which stayed `off` — so no firewall rules were ever installed on connect and the feature silently did nothing regardless of the UI. The config vocabulary (`off`/`on-disconnect`/`always-on`) also never matched the runtime modes (`off`/`auto`/`always`). The configured mode and LAN setting are now applied to the runtime at startup and whenever Preferences are saved. Verified on a real system: connecting a VPN now installs a fail-closed ruleset (default-drop, only the tunnel/server/loopback accepted) with no DNS leak.
 - **Audit log no longer floods with read-only polls** — The daemon's audit trail recorded every privileged call, including the read-only `.status`/`.list` queries the GUI polls every ~2 seconds. That buried the entries that matter (connect, enable, disconnect) under a stream of `openvpn.status` lines. Only state-mutating calls are audited now; read-only queries are still access-controlled but not logged.
 
 ## [2.3.1] - 2026-07-06
