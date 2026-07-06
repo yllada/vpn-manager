@@ -151,6 +151,15 @@ func restoreIPv6Sysctl(original map[string]string) error {
 	var lastErr error
 
 	for key, value := range original {
+		// The interface may already be gone by the time we restore — e.g. tun0 is
+		// torn down when the VPN disconnects, before IPv6 protection is disabled.
+		// Its /proc/sys entry then no longer exists and there is nothing to
+		// restore, so skip it silently instead of logging a spurious warning on
+		// every disconnect.
+		path := "/proc/sys/" + strings.ReplaceAll(key, ".", "/")
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
 		if err := setSysctl(key, value); err != nil {
 			log.Printf("[firewall] Warning: failed to restore %s: %v", key, err)
 			lastErr = err
