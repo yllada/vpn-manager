@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Audit log no longer floods with read-only polls** — The daemon's audit trail recorded every privileged call, including the read-only `.status`/`.list` queries the GUI polls every ~2 seconds. That buried the entries that matter (connect, enable, disconnect) under a stream of `openvpn.status` lines. Only state-mutating calls are audited now; read-only queries are still access-controlled but not logged.
+
 ## [2.3.1] - 2026-07-06
 
 ### Fixed
