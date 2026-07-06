@@ -149,8 +149,12 @@ func ParseDNSConfig(mode string, customDNS []string, blockDoH, blockDoT bool) DN
 	case "custom":
 		cfg.Mode = DNSProtectionCustom
 		cfg.CustomServers = customDNS
-	default: // "system" and any unknown value → auto, VPN-provided DNS
-		cfg.Mode = DNSProtectionAuto
+	default: // "system" and any unknown value → passthrough: use whatever DNS the
+		// VPN/system already configures instead of overriding it. Forcing all DNS
+		// through the tunnel gateway breaks name resolution on split-tunnel VPNs
+		// (which route only some traffic through the tunnel). The explicit resolver
+		// modes above are the ones that enforce.
+		cfg.Mode = DNSProtectionOff
 		cfg.CustomServers = nil
 	}
 

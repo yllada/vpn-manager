@@ -37,12 +37,12 @@ func TestParseDNSConfig(t *testing.T) {
 		wantMode    DNSProtectionMode
 		wantServers []string
 	}{
-		{"system maps to auto with no servers", "system", nil, DNSProtectionAuto, nil},
+		{"system is passthrough (off) so split-tunnel DNS isn't overridden", "system", nil, DNSProtectionOff, nil},
 		{"cloudflare maps to custom with 1.1.1.1", "cloudflare", nil, DNSProtectionCustom, []string{"1.1.1.1", "1.0.0.1"}},
 		{"google maps to custom with 8.8.8.8", "google", nil, DNSProtectionCustom, []string{"8.8.8.8", "8.8.4.4"}},
 		{"custom passes through user servers", "custom", []string{"9.9.9.9"}, DNSProtectionCustom, []string{"9.9.9.9"}},
-		{"empty falls back to auto (never off)", "", nil, DNSProtectionAuto, nil},
-		{"unknown falls back to auto (never off)", "garbage", nil, DNSProtectionAuto, nil},
+		{"empty falls back to passthrough (off)", "", nil, DNSProtectionOff, nil},
+		{"unknown falls back to passthrough (off)", "garbage", nil, DNSProtectionOff, nil},
 	}
 
 	for _, tt := range tests {
@@ -50,9 +50,6 @@ func TestParseDNSConfig(t *testing.T) {
 			cfg := ParseDNSConfig(tt.mode, tt.customDNS, true, false)
 			if cfg.Mode != tt.wantMode {
 				t.Errorf("Mode = %q, want %q", cfg.Mode, tt.wantMode)
-			}
-			if cfg.Mode == DNSProtectionOff {
-				t.Error("ParseDNSConfig must never return Mode=Off (UI has no off)")
 			}
 			if len(cfg.CustomServers) != len(tt.wantServers) {
 				t.Fatalf("CustomServers = %v, want %v", cfg.CustomServers, tt.wantServers)
