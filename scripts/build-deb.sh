@@ -182,17 +182,25 @@ if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
     usermod -aG vpn-manager "$TARGET_USER" 2>/dev/null || true
 fi
 
-# Reload systemd
-systemctl daemon-reload 2>/dev/null || true
-
-# Enable and start the daemon
-if systemctl is-system-running --quiet 2>/dev/null; then
+# Enable and start the daemon. Guard on /run/systemd/system (present only when
+# booted under systemd — false in a build chroot/container) rather than on
+# `systemctl is-system-running`: that returns non-zero whenever the system is
+# "degraded" (any single failed unit, very common), which previously skipped
+# BOTH enable and start, leaving the daemon disabled so it never came up after
+# a reboot. `enable` only needs the unit installed, not a running system.
+DAEMON_STARTED=0
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload 2>/dev/null || true
     systemctl enable vpn-managerd 2>/dev/null || true
-    systemctl start vpn-managerd 2>/dev/null || true
+    systemctl start vpn-managerd 2>/dev/null && DAEMON_STARTED=1 || true
 fi
 
 echo "✅ VPN Manager installed successfully"
-echo "   The vpn-managerd daemon has been enabled and started."
+if [ "$DAEMON_STARTED" = "1" ]; then
+    echo "   The vpn-managerd daemon has been enabled and started."
+else
+    echo "   Enable and start the daemon: sudo systemctl enable --now vpn-managerd"
+fi
 if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
     echo "   User '$TARGET_USER' was added to the 'vpn-manager' group."
     echo "   ⚠  Log out and back in for VPN Manager to reach the daemon."
