@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **DNS protection no longer misreports its state on a daemon failure** — If the daemon failed to revert DNS on disconnect, the client cleared its enabled flag anyway, so it reported protection was off while the VPN's DNS override could still be active — with no retry or warning. It now changes state only after the daemon confirms: a failed disable keeps protection marked on (and returns an error to retry), and a failed enable stays off without recording a stale interface.
 - **DNS revert survives a daemon restart** — The root daemon kept the pre-VPN DNS backup (which interface it configured, and the original `/etc/resolv.conf` on that backend) only in memory. If the daemon restarted while a VPN was connected — a crash, an update, or the machine coming back from sleep — that backup was lost, so disconnecting could no longer revert and the VPN's resolver stayed pinned. The resolver now persists its restore backup to the state directory on apply and clears it on restore, so a restarted daemon can still put DNS back the way it was.
 
 ### Removed

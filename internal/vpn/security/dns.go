@@ -194,9 +194,6 @@ func (dp *DNSProtection) Enable(vpnInterface string, vpnDNS []string) error {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	dp.vpnDNS = vpnDNS
-	dp.vpnInterface = vpnInterface
-
 	// Strict mode additionally enforces port-53 leak blocking via the firewall;
 	// other modes assign resolver servers only.
 	leakBlocking := dp.config.Mode == DNSProtectionStrict
@@ -209,9 +206,13 @@ func (dp *DNSProtection) Enable(vpnInterface string, vpnDNS []string) error {
 		BlockDoH:     dp.config.BlockDNSOverHTTPS,
 		LeakBlocking: leakBlocking,
 	}); err != nil {
+		// Nothing was applied — leave state untouched so IsEnabled stays false and
+		// no stale interface/servers are recorded.
 		return fmt.Errorf("daemon call failed: %w", err)
 	}
 
+	dp.vpnDNS = vpnDNS
+	dp.vpnInterface = vpnInterface
 	dp.enabled = true
 	log.Printf("DNSProtection: Enabled via daemon for interface %s with DNS %v (mode: %s)",
 		vpnInterface, vpnDNS, dp.config.Mode)
@@ -235,16 +236,16 @@ func (dp *DNSProtection) Disable() error {
 		return fmt.Errorf("vpn-managerd daemon is not running")
 	}
 
-	err := dnsFirewallDisable()
+	if err := dnsFirewallDisable(); err != nil {
+		// The daemon failed to revert, so the DNS override may still be active.
+		// Keep enabled=true — IsEnabled must not report protection off while it
+		// isn't — and let the caller retry rather than silently claiming success.
+		return fmt.Errorf("daemon call failed: %w", err)
+	}
 
 	dp.enabled = false
 	dp.vpnDNS = nil
 	dp.vpnInterface = ""
-
-	if err != nil {
-		return fmt.Errorf("daemon call failed: %w", err)
-	}
-
 	log.Printf("DNSProtection: Disabled via daemon, original DNS restored")
 	return nil
 }

@@ -5,6 +5,7 @@
 package security
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -202,6 +203,50 @@ func TestDNSDisableDelegatesToDaemon(t *testing.T) {
 	}
 	if fd.dnsDisableCalls != 1 {
 		t.Errorf("daemon Disable called %d times, want 1", fd.dnsDisableCalls)
+	}
+}
+
+// TestDNSEnableFailsClosedOnDaemonError pins that when the daemon is reachable
+// but the enable call itself fails, the client does not claim protection: it
+// stays disabled and records no stale interface/servers.
+func TestDNSEnableFailsClosedOnDaemonError(t *testing.T) {
+	fd := &fakeDaemon{available: true, enableErr: fmt.Errorf("resolvectl failed")}
+	installFakeDaemon(t, fd)
+
+	dp := newTestDNSProtection(t, "systemd-resolved")
+	dp.SetConfig(DNSConfig{Mode: DNSProtectionCustom, CustomServers: []string{"1.1.1.1"}})
+
+	if err := dp.Enable("tun0", []string{"1.1.1.1"}); err == nil {
+		t.Fatal("Enable() succeeded despite a daemon enable error")
+	}
+	if dp.IsEnabled() {
+		t.Error("DNS protection marked enabled after the daemon enable call failed")
+	}
+	if dp.vpnInterface != "" || dp.vpnDNS != nil {
+		t.Errorf("stale state recorded after failed enable: iface=%q dns=%v", dp.vpnInterface, dp.vpnDNS)
+	}
+}
+
+// TestDNSDisableStaysEnabledOnDaemonError pins the fail-closed disconnect
+// contract: if the daemon cannot revert, the DNS override may still be active,
+// so IsEnabled must keep reporting true (not silently claim protection is off)
+// and the caller gets an error to retry on.
+func TestDNSDisableStaysEnabledOnDaemonError(t *testing.T) {
+	fd := &fakeDaemon{available: true}
+	installFakeDaemon(t, fd)
+
+	dp := newTestDNSProtection(t, "systemd-resolved")
+	dp.SetConfig(DNSConfig{Mode: DNSProtectionCustom, CustomServers: []string{"1.1.1.1"}})
+	if err := dp.Enable("tun0", []string{"1.1.1.1"}); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+
+	fd.disableErr = fmt.Errorf("resolvectl revert failed")
+	if err := dp.Disable(); err == nil {
+		t.Fatal("Disable() reported success despite a daemon revert failure")
+	}
+	if !dp.IsEnabled() {
+		t.Error("DNS protection reported disabled although the daemon failed to revert")
 	}
 }
 
