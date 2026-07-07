@@ -250,9 +250,16 @@ func (m *Manager) adoptConnections(active []daemon.OpenVPNStatusResult) {
 			m.mu.Unlock()
 			continue
 		}
+		// Reflect the daemon's actual status: a record can be "connecting" (handshake
+		// not yet complete, IP still empty). Registering it as Connected would flash
+		// a bogus "connected, no IP" state until the monitor's first poll corrects it.
+		status := StatusConnected
+		if st.Status == "connecting" {
+			status = StatusConnecting
+		}
 		conn := &Connection{
 			Profile:   prof,
-			Status:    StatusConnected,
+			Status:    status,
 			IPAddress: st.IPAddress,
 			StartTime: time.Now(), // best effort; the original start time is not tracked across restarts
 			stopChan:  make(chan struct{}),
@@ -267,6 +274,16 @@ func (m *Manager) adoptConnections(active []daemon.OpenVPNStatusResult) {
 		// tunIface/serverIP for the drop-lock) and emits the established event.
 		monitorStarter(m, conn)
 	}
+}
+
+// shouldEngageNetworkLock reports whether an unexpected tunnel drop should trip
+// the Auto-mode network lock. Only an established tunnel (wasConnected) that
+// dropped WITHOUT the user asking to disconnect, while the kill switch is in Auto
+// mode, engages it: Always mode is already blocking, Off does nothing, a
+// user-requested disconnect must never lock the network, and a connect that never
+// established (wasConnected=false) has nothing to protect.
+func shouldEngageNetworkLock(wasConnected, userRequested bool, mode security.KillSwitchMode) bool {
+	return wasConnected && !userRequested && mode == security.KillSwitchAuto
 }
 
 // monitorStarter launches the per-connection daemon monitor. It is a package var
@@ -550,8 +567,8 @@ func (m *Manager) monitorDaemonConnection(conn *Connection) {
 					// — NOT block-all — so the server the VPN must reconnect to stays
 					// reachable; otherwise the lock would strand the user. Always
 					// mode is already blocking; Off does nothing.
-					if wasConnected && !conn.userDisconnect.Load() &&
-						m.killSwitch != nil && m.killSwitch.GetMode() == security.KillSwitchAuto {
+					if m.killSwitch != nil &&
+						shouldEngageNetworkLock(wasConnected, conn.userDisconnect.Load(), m.killSwitch.GetMode()) {
 						if err := m.killSwitch.Enable(lockIface, lockServer); err != nil {
 							logger.LogWarn("killswitch", "failed to engage network lock after drop: %v", err)
 						} else {

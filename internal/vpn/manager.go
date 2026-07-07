@@ -584,12 +584,20 @@ func (m *Manager) ListConnectionsForHealth() []*health.ConnectionInfo {
 
 	result := make([]*health.ConnectionInfo, 0, len(m.connections))
 	for _, conn := range m.connections {
+		conn.mu.RLock()
+		serverIP := conn.serverIP
+		conn.mu.RUnlock()
 		result = append(result, &health.ConnectionInfo{
 			ProfileID:   conn.Profile.ID,
 			ProfileName: conn.Profile.Name,
 			Status:      health.ConnectionStatus(conn.Status),
 			Profile:     conn.Profile,
-			ServerIP:    m.getVPNServerIP(conn.Profile),
+			// Reuse the IP captured (and firewall-allow-listed) at connect time.
+			// Re-resolving here would (a) do a blocking net.LookupIP under m.mu —
+			// which the kill switch's DNS block can hang for 15-30s, freezing
+			// Disconnect — and (b) risk returning a different IP than the one the
+			// firewall permits for multi-address endpoints, causing false failures.
+			ServerIP: serverIP,
 		})
 	}
 	return result
@@ -606,11 +614,16 @@ func (m *Manager) GetConnectionForHealth(profileID string) (*health.ConnectionIn
 		return nil, false
 	}
 
+	conn.mu.RLock()
+	serverIP := conn.serverIP
+	conn.mu.RUnlock()
 	return &health.ConnectionInfo{
 		ProfileID:   conn.Profile.ID,
 		ProfileName: conn.Profile.Name,
 		Status:      health.ConnectionStatus(conn.Status),
 		Profile:     conn.Profile,
-		ServerIP:    m.getVPNServerIP(conn.Profile),
+		// Reuse the connect-time IP; see ListConnectionsForHealth for why we must
+		// not re-resolve here (blocking lookup under m.mu + false-failure risk).
+		ServerIP: serverIP,
 	}, true
 }

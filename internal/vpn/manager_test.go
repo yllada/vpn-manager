@@ -39,6 +39,36 @@ func TestAdoptConnectionsSkipsUnknownAndInactive(t *testing.T) {
 	}
 }
 
+// TestShouldEngageNetworkLock pins the Auto-mode network-lock decision: it fires
+// only for an established tunnel that dropped unexpectedly (not a user disconnect)
+// while the kill switch is in Auto mode. This is the security contract "the VPN
+// server stays reachable after an unexpected drop, and a user disconnect never
+// locks the network".
+func TestShouldEngageNetworkLock(t *testing.T) {
+	cases := []struct {
+		name          string
+		wasConnected  bool
+		userRequested bool
+		mode          security.KillSwitchMode
+		want          bool
+	}{
+		{"auto + unexpected drop of established tunnel → lock", true, false, security.KillSwitchAlways, false},
+		{"auto + unexpected drop → lock", true, false, security.KillSwitchAuto, true},
+		{"auto + user disconnect → no lock", true, true, security.KillSwitchAuto, false},
+		{"auto + never established → no lock", false, false, security.KillSwitchAuto, false},
+		{"always mode → no auto-lock (already blocking)", true, false, security.KillSwitchAlways, false},
+		{"off mode → never", true, false, security.KillSwitchOff, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := shouldEngageNetworkLock(c.wasConnected, c.userRequested, c.mode); got != c.want {
+				t.Errorf("shouldEngageNetworkLock(%v,%v,%q) = %v, want %v",
+					c.wasConnected, c.userRequested, c.mode, got, c.want)
+			}
+		})
+	}
+}
+
 // TestApplyKillSwitchConfig guards the fix for the kill switch being a dead
 // feature: the mode chosen in Preferences was written to config but never
 // applied to the runtime KillSwitch (which starts Off), so it never armed on
