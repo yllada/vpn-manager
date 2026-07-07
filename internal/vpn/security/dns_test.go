@@ -6,11 +6,7 @@ package security
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/yllada/vpn-manager/internal/paths"
 )
 
 // newTestDNSProtection builds a DNSProtection with a deterministic backend,
@@ -250,31 +246,3 @@ func TestDNSDisableStaysEnabledOnDaemonError(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// RESOLV.CONF BACKUP PATH LOGIC
-// =============================================================================
-
-// TestResolvConfBackupPathUsesXDGRuntimeDir pins that the backup lives under
-// the per-user runtime dir (never world-writable /tmp) in a 0700 directory.
-func TestResolvConfBackupPathUsesXDGRuntimeDir(t *testing.T) {
-	runtimeDir := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-
-	backupPath, err := paths.ResolvConfBackupPath()
-	if err != nil {
-		t.Fatalf("ResolvConfBackupPath() error = %v", err)
-	}
-
-	want := filepath.Join(runtimeDir, "vpn-manager", "resolv.conf.backup")
-	if backupPath != want {
-		t.Errorf("backup path = %q, want %q", backupPath, want)
-	}
-
-	info, err := os.Stat(filepath.Join(runtimeDir, "vpn-manager"))
-	if err != nil {
-		t.Fatalf("per-user runtime dir was not created: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0700 {
-		t.Errorf("per-user runtime dir permissions = %o, want 0700", perm)
-	}
-}

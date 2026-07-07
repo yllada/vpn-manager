@@ -27,12 +27,6 @@ var PrivateNetworkRanges = []string{
 	"172.16.0.0/12",  // Private network (Class B)
 }
 
-// LocalhostAddresses are addresses considered local for DNS leak testing.
-var LocalhostAddresses = []string{
-	"127.0.0.53", // systemd-resolved stub
-	"127.0.0.1",  // standard localhost
-}
-
 // =============================================================================
 // PORT NUMBERS
 // =============================================================================
@@ -84,9 +78,6 @@ const (
 	// NftablesTableName is the nftables table name for VPN rules.
 	NftablesTableName = "vpn_killswitch"
 
-	// DNSFirewallChainName is the iptables chain name for DNS strict mode rules.
-	DNSFirewallChainName = "VPN_DNS_PROTECT"
-
 	// DNSNftablesTableName is the nftables table name for DNS strict mode rules.
 	DNSNftablesTableName = "vpn_dns_protect"
 )
@@ -98,9 +89,6 @@ const (
 const (
 	// KillSwitchStateFile is the filename for kill switch state persistence.
 	KillSwitchStateFile = "killswitch.state"
-
-	// DNSStateFile is the filename for DNS protection state persistence.
-	DNSStateFile = "dns.state"
 )
 
 // =============================================================================
