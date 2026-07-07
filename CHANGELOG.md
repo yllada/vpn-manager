@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **DNS revert survives a daemon restart** — The root daemon kept the pre-VPN DNS backup (which interface it configured, and the original `/etc/resolv.conf` on that backend) only in memory. If the daemon restarted while a VPN was connected — a crash, an update, or the machine coming back from sleep — that backup was lost, so disconnecting could no longer revert and the VPN's resolver stayed pinned. The resolver now persists its restore backup to the state directory on apply and clears it on restore, so a restarted daemon can still put DNS back the way it was.
+
 ### Removed
 - **Taildrop auto-receive** — The daemon ran a background loop (`tailscale file get`) that pulled incoming Taildrop files to `~/Downloads/Taildrop`. Under the hardened systemd sandbox (`ProtectHome=read-only`) that write path was unavailable, so the feature was broken; even when it worked it wrote root-owned files into a location the desktop user couldn't easily reach. It has been removed, along with its config keys (`taildrop_auto_receive`, `taildrop_dir`) and the receive notification. **Sending files via Taildrop is unchanged** — right-click a peer → Send File still works. Existing configs that carry the old keys keep loading; the keys are now ignored.
 

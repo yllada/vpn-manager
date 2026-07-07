@@ -182,6 +182,88 @@ func TestResolvConfApplyRestoreRoundTrip(t *testing.T) {
 	}
 }
 
+// isolateState redirects the persisted resolver-state file to a temp path so a
+// test never touches the real /var/lib state and can simulate a daemon restart
+// by reading the same file from a fresh Resolver.
+func isolateState(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "dns-resolver.state")
+	orig := resolverStatePath
+	resolverStatePath = p
+	t.Cleanup(func() { resolverStatePath = orig })
+	return p
+}
+
+// TestResolverStateSurvivesRestartResolvConf: an apply persists the resolv.conf
+// backup; a fresh Resolver (daemon restart) adopts it and Restore replays the
+// original file. Without persistence the restart would lose the backup and the
+// VPN's DNS override would be stuck.
+func TestResolverStateSurvivesRestartResolvConf(t *testing.T) {
+	captureCmds(t)
+	statePath := isolateState(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "resolv.conf")
+	original := "nameserver 192.168.1.1\n"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatalf("seed resolv.conf: %v", err)
+	}
+	origPath := resolvConfPath
+	resolvConfPath = path
+	t.Cleanup(func() { resolvConfPath = origPath })
+
+	// First daemon instance applies the override.
+	r1 := &Resolver{backend: BackendResolvConf}
+	if err := r1.Apply("tun0", []string{"9.9.9.9"}, "custom"); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("apply did not persist resolver state: %v", err)
+	}
+
+	// Simulate a daemon restart: a brand-new Resolver adopts the on-disk backup.
+	r2 := &Resolver{backend: BackendResolvConf}
+	r2.loadState()
+	if !r2.applied {
+		t.Fatal("restarted resolver did not adopt applied state from disk")
+	}
+	if err := r2.Restore(); err != nil {
+		t.Fatalf("Restore() after restart error = %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != original {
+		t.Errorf("resolv.conf not restored after restart: got %q, want %q", got, original)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("resolver state not cleared after Restore (err=%v)", err)
+	}
+}
+
+// TestResolverStateSurvivesRestartSystemd: for systemd-resolved the restore only
+// needs the interface name; a fresh Resolver must still run `resolvectl revert`
+// on it after a restart.
+func TestResolverStateSurvivesRestartSystemd(t *testing.T) {
+	rec := captureCmds(t)
+	isolateState(t)
+
+	r1 := &Resolver{backend: BackendSystemdResolved}
+	if err := r1.Apply("tun0", []string{"1.1.1.1"}, "custom"); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	r2 := &Resolver{backend: BackendSystemdResolved}
+	r2.loadState()
+	if !r2.applied || r2.iface != "tun0" {
+		t.Fatalf("restarted resolver did not adopt iface (applied=%v iface=%q)", r2.applied, r2.iface)
+	}
+	if err := r2.Restore(); err != nil {
+		t.Fatalf("Restore() after restart error = %v", err)
+	}
+	if !hasCmd(*rec, []string{"resolvectl", "revert", "tun0"}) {
+		t.Errorf("restarted Restore did not run `resolvectl revert tun0`, got %v", *rec)
+	}
+}
+
 func hasCmd(recorded [][]string, want []string) bool {
 	for _, c := range recorded {
 		if reflect.DeepEqual(c, want) {

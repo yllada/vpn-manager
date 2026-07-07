@@ -17,6 +17,7 @@
 package dns
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -25,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yllada/vpn-manager/internal/paths"
 )
 
 // nmDNSConfPath is the NetworkManager drop-in that pins the VPN DNS servers.
@@ -33,6 +36,12 @@ const nmDNSConfPath = "/etc/NetworkManager/conf.d/vpn-manager-dns.conf"
 // resolvConfPath is the system resolver file for the fallback backend. It is a
 // var (not a const) so tests can redirect it to a temp file.
 var resolvConfPath = "/etc/resolv.conf"
+
+// resolverStatePath persists the resolver's restore backup so a Restore still
+// works after the daemon restarts mid-connection. Without it, a restart drops
+// the in-memory backup and the VPN's DNS override would be stuck until the next
+// connect. It is a var so tests redirect it to a temp file.
+var resolverStatePath = paths.StateDir + "/dns-resolver.state"
 
 // Command seams. Declared as vars so tests substitute recorders and assert the
 // exact resolvectl/nmcli invocations without touching the real resolver.
@@ -115,9 +124,89 @@ type Resolver struct {
 	hadResolvBackup bool
 }
 
-// NewResolver detects the active backend and returns a ready Resolver.
+// persistedResolverState is the on-disk form of the restore backup. It captures
+// exactly what Restore needs to revert an apply: which backend/interface was
+// configured and, for the resolv.conf backend, the original file bytes.
+type persistedResolverState struct {
+	Applied         bool    `json:"applied"`
+	Backend         Backend `json:"backend"`
+	Iface           string  `json:"iface"`
+	ResolvBackup    []byte  `json:"resolv_backup,omitempty"`
+	HadResolvBackup bool    `json:"had_resolv_backup"`
+}
+
+// NewResolver detects the active backend and returns a ready Resolver. If a
+// prior daemon instance left an applied resolver state on disk (e.g. it was
+// restarted while a VPN was connected), that state is adopted so a later Restore
+// can still revert the DNS override the previous instance installed.
 func NewResolver() *Resolver {
-	return &Resolver{backend: detectBackend()}
+	r := &Resolver{backend: detectBackend()}
+	r.loadState()
+	return r
+}
+
+// loadState adopts a persisted restore backup left by a previous daemon
+// instance. Best-effort: a missing or unreadable state file just leaves the
+// resolver clean (nothing to restore).
+func (r *Resolver) loadState() {
+	data, err := os.ReadFile(resolverStatePath)
+	if err != nil {
+		return
+	}
+	var st persistedResolverState
+	if err := json.Unmarshal(data, &st); err != nil {
+		log.Printf("[dns] warning: ignoring unreadable resolver state %s: %v", resolverStatePath, err)
+		return
+	}
+	if !st.Applied {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.applied = true
+	// Restore must use the backend that Apply used, not whatever is detected now.
+	if st.Backend != "" {
+		r.backend = st.Backend
+	}
+	r.iface = st.Iface
+	r.resolvBackup = st.ResolvBackup
+	r.hadResolvBackup = st.HadResolvBackup
+	log.Printf("[dns] adopted resolver restore state from disk (backend: %s, iface: %s)", r.backend, r.iface)
+}
+
+// saveStateLocked persists the current restore backup. Best-effort: a failure to
+// persist must never fail the resolver assignment itself, so it only logs. The
+// caller must hold r.mu.
+func (r *Resolver) saveStateLocked() {
+	if err := os.MkdirAll(filepath.Dir(resolverStatePath), 0700); err != nil {
+		log.Printf("[dns] warning: cannot ensure state dir for resolver backup: %v", err)
+		return
+	}
+	st := persistedResolverState{
+		Applied:         r.applied,
+		Backend:         r.backend,
+		Iface:           r.iface,
+		ResolvBackup:    r.resolvBackup,
+		HadResolvBackup: r.hadResolvBackup,
+	}
+	data, err := json.Marshal(st)
+	if err != nil {
+		log.Printf("[dns] warning: cannot marshal resolver state: %v", err)
+		return
+	}
+	// 0600: the backup may contain the prior resolv.conf contents; root-only.
+	if err := writeFileAtomic(resolverStatePath, data, 0600); err != nil {
+		log.Printf("[dns] warning: cannot persist resolver state: %v", err)
+	}
+}
+
+// clearStateLocked removes the persisted restore backup after a Restore, so a
+// later daemon restart does not try to revert an already-reverted link. The
+// caller must hold r.mu.
+func (r *Resolver) clearStateLocked() {
+	if err := os.Remove(resolverStatePath); err != nil && !os.IsNotExist(err) {
+		log.Printf("[dns] warning: cannot clear resolver state: %v", err)
+	}
 }
 
 // detectBackend determines which DNS management system is active. Mirrors the
@@ -157,22 +246,29 @@ func (r *Resolver) Apply(vpnInterface string, servers []string, mode string) err
 		return nil
 	}
 
+	var err error
 	switch r.backend {
 	case BackendSystemdResolved:
-		return r.applySystemdResolvedLocked(vpnInterface, servers, p)
+		err = r.applySystemdResolvedLocked(vpnInterface, servers, p)
 	case BackendNetworkManager:
 		// NetworkManager has no per-link ~. equivalent; strict enforcement on NM
 		// relies on the firewall. Only the server assignment is meaningful here.
 		if !p.setServers {
 			return nil
 		}
-		return r.applyNetworkManagerLocked(servers, vpnInterface)
+		err = r.applyNetworkManagerLocked(servers, vpnInterface)
 	default:
 		if !p.setServers {
 			return nil
 		}
-		return r.applyResolvConfLocked(servers, vpnInterface)
+		err = r.applyResolvConfLocked(servers, vpnInterface)
 	}
+	// Persist the restore backup so a daemon restart mid-connection can still
+	// revert. Only after a successful apply that actually recorded state.
+	if err == nil && r.applied {
+		r.saveStateLocked()
+	}
+	return err
 }
 
 // Restore reverts whatever Apply installed, returning the resolver to its
@@ -209,6 +305,9 @@ func (r *Resolver) Restore() error {
 	r.iface = ""
 	r.resolvBackup = nil
 	r.hadResolvBackup = false
+	// The override is gone; drop the persisted backup so a later restart does not
+	// try to revert an already-reverted link.
+	r.clearStateLocked()
 	return err
 }
 
