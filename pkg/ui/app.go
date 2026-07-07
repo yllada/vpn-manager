@@ -103,7 +103,15 @@ func (a *Application) onActivate() {
 	// Load custom CSS styles
 	theme.LoadStyles()
 
-	// Check for orphaned VPN on startup (before showing window)
+	// Adopt any VPN the daemon is already running (the daemon outlives the GUI,
+	// so after a restart the connection is live but our registry is empty). This
+	// makes the UI show it connected and Disconnect work, instead of a failed
+	// "already connected" on the next Connect.
+	a.vpnManager.AdoptRunningConnections()
+
+	// Check for orphaned VPN on startup (a tunnel the daemon is NOT managing —
+	// e.g. openvpn started outside the app). Adoption above handles the managed
+	// case; this only warns about the truly external one.
 	if detected, info := a.vpnManager.DetectOrphanedVPN(); detected {
 		logger.LogWarn("app", "Orphaned VPN detected on startup: interface=%s, ip=%s", info.Interface, info.IPAddress)
 	}

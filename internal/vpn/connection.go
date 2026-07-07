@@ -207,6 +207,76 @@ func (m *Manager) DisconnectAll() error {
 	return errors.Combined()
 }
 
+// AdoptRunningConnections reconciles the GUI's connection registry with VPNs the
+// daemon is already running. The daemon outlives the GUI, so after the GUI is
+// restarted (or crashes) while a VPN stays up, the daemon still reports the
+// profile connected but the fresh GUI's registry is empty — the connection shows
+// as disconnected and clicking Connect fails with "already connected". Adopting
+// registers each live daemon connection so the UI reflects it, Disconnect works,
+// and the connection monitor re-applies the security features (kill switch, DNS,
+// IPv6) and arms the drop-lock. Call once at startup.
+func (m *Manager) AdoptRunningConnections() {
+	if !daemon.IsDaemonAvailable() {
+		return
+	}
+	client := &daemon.OpenVPNClient{}
+	active, err := client.List()
+	if err != nil {
+		logger.LogDebug("vpn", "Could not list daemon connections to adopt: %v", err)
+		return
+	}
+	m.adoptConnections(active)
+}
+
+// adoptConnections registers the daemon's active OpenVPN connections into the
+// local registry. Split out from AdoptRunningConnections so it can be tested
+// without a running daemon.
+func (m *Manager) adoptConnections(active []daemon.OpenVPNStatusResult) {
+	for _, st := range active {
+		if st.Status != "connected" && st.Status != "connecting" {
+			continue
+		}
+
+		prof, err := m.profileManager.Get(st.ProfileID)
+		if err != nil {
+			// The daemon is running a profile this GUI doesn't know about. Don't
+			// fabricate one; leave it for DetectOrphanedVPN to surface.
+			logger.LogWarn("vpn", "Daemon is running unknown profile %s; not adopting", st.ProfileID)
+			continue
+		}
+
+		m.mu.Lock()
+		if _, exists := m.connections[st.ProfileID]; exists {
+			m.mu.Unlock()
+			continue
+		}
+		conn := &Connection{
+			Profile:   prof,
+			Status:    StatusConnected,
+			IPAddress: st.IPAddress,
+			StartTime: time.Now(), // best effort; the original start time is not tracked across restarts
+			stopChan:  make(chan struct{}),
+		}
+		m.connections[st.ProfileID] = conn
+		m.mu.Unlock()
+
+		logger.LogInfo("vpn", "Adopted running VPN connection for profile %s (ip: %s)", prof.Name, st.IPAddress)
+
+		// The monitor's first poll sees "connected" and runs
+		// enablePostConnectionFeatures (re-applies kill switch/DNS/IPv6, captures
+		// tunIface/serverIP for the drop-lock) and emits the established event.
+		monitorStarter(m, conn)
+	}
+}
+
+// monitorStarter launches the per-connection daemon monitor. It is a package var
+// so tests can substitute it and avoid spinning a real daemon-polling goroutine.
+var monitorStarter = func(m *Manager, conn *Connection) {
+	resilience.SafeGoWithName("vpn-adopt-monitor", func() {
+		m.monitorDaemonConnection(conn)
+	})
+}
+
 // enablePostConnectionFeatures enables kill switch, split tunneling, and stats
 // after a successful VPN connection. Used by both direct OpenVPN and NetworkManager paths.
 func (m *Manager) enablePostConnectionFeatures(conn *Connection) {

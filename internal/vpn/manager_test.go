@@ -4,10 +4,40 @@ import (
 	"context"
 	"testing"
 
+	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/internal/vpn/security"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
+
+// TestAdoptConnectionsSkipsUnknownAndInactive guards the adoption logic: only
+// connections the daemon reports active AND whose profile this GUI knows are
+// adopted. An unknown profile or a non-connected status must be skipped — not
+// fabricated into the registry — so we never show or try to manage a ghost.
+func TestAdoptConnectionsSkipsUnknownAndInactive(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate profile storage from the real config
+	m, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	var started []*Connection
+	orig := monitorStarter
+	monitorStarter = func(_ *Manager, c *Connection) { started = append(started, c) }
+	t.Cleanup(func() { monitorStarter = orig })
+
+	m.adoptConnections([]daemon.OpenVPNStatusResult{
+		{ProfileID: "does-not-exist", Status: "connected"}, // unknown profile → skip
+		{ProfileID: "irrelevant", Status: "disconnected"},  // not active → skip
+	})
+
+	if len(m.connections) != 0 {
+		t.Errorf("adopted %d connections, want 0 (unknown/inactive must be skipped)", len(m.connections))
+	}
+	if len(started) != 0 {
+		t.Errorf("started %d monitors, want 0", len(started))
+	}
+}
 
 // TestApplyKillSwitchConfig guards the fix for the kill switch being a dead
 // feature: the mode chosen in Preferences was written to config but never

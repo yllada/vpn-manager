@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The GUI adopts a VPN the daemon is already running** — Because the daemon outlives the GUI, restarting the app (or a crash) while a VPN stayed connected left the GUI showing nothing connected, and clicking Connect failed with "already connected". On startup the GUI now reconciles with the daemon's active connections: it registers each live one so the UI shows it connected, Disconnect works, and the connection monitor re-applies the security features and arms the drop-lock.
+
 ## [2.3.2] - 2026-07-06
 
 ### Fixed
