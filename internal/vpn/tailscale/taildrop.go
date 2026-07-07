@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"strings"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -31,24 +30,6 @@ func (p *Provider) SendFiles(ctx context.Context, filePaths []string, targetHost
 	}
 
 	return p.client.SendFiles(ctx, filePaths, targetHost)
-}
-
-// ReceiveFiles waits for and receives incoming files to the specified directory.
-func (p *Provider) ReceiveFiles(ctx context.Context, outputDir string) error {
-	if p.client == nil {
-		return fmt.Errorf("tailscale client not initialized")
-	}
-
-	return p.client.ReceiveFiles(ctx, outputDir)
-}
-
-// PendingFiles returns a list of files waiting to be received.
-func (p *Provider) PendingFiles(ctx context.Context) ([]string, error) {
-	if p.client == nil {
-		return nil, fmt.Errorf("tailscale client not initialized")
-	}
-
-	return p.client.PendingFiles(ctx)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -140,38 +121,4 @@ func (c *Client) SendFiles(ctx context.Context, filePaths []string, target strin
 	}
 
 	return nil
-}
-
-// ReceiveFiles waits for and receives incoming files.
-// Downloads to the specified directory.
-func (c *Client) ReceiveFiles(ctx context.Context, outputDir string) error {
-	args := []string{"file", "get", outputDir}
-
-	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("taildrop receive failed: %w: %s", err, string(output))
-	}
-
-	return nil
-}
-
-// PendingFiles lists files waiting to be received.
-func (c *Client) PendingFiles(ctx context.Context) ([]string, error) {
-	args := []string{"file", "get", "--wait=false", "/dev/null"}
-
-	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
-	output, _ := cmd.CombinedOutput()
-
-	// Parse output for pending files
-	lines := strings.Split(string(output), "\n")
-	var files []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.Contains(line, "no files") {
-			files = append(files, line)
-		}
-	}
-
-	return files, nil
 }

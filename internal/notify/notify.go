@@ -199,17 +199,3 @@ func ShowWithActions(n Notification, ssid string) {
 		log.Printf("User chose to decide later for network: %s", ssid)
 	}
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// TAILDROP NOTIFICATIONS
-// ════════════════════════════════════════════════════════════════════════════
-
-// FileReceived shows a notification when a file is received via Taildrop.
-func FileReceived(filename, sender string) {
-	Show(Notification{
-		Title:   "File Received via Taildrop",
-		Message: filename + " from " + sender,
-		Type:    Success,
-		Icon:    "document-save-symbolic",
-	})
-}

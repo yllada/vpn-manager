@@ -106,8 +106,6 @@ Features:
 ### Tailscale Features
 
 - **Taildrop** — Send files to any online Tailscale device with one click
-  - Auto-receive to `~/Downloads/Taildrop` with desktop notifications
-  - Configure via `TaildropDir` and `TaildropAutoReceive` in `config.yaml`
 - **Advanced Options** — Accessible via Preferences → VPN Providers → Tailscale
   - **Advertise Exit Node**: Share your machine as VPN exit for other devices
   - **Shields Up**: Block all incoming Tailscale connections

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Taildrop auto-receive** — The daemon ran a background loop (`tailscale file get`) that pulled incoming Taildrop files to `~/Downloads/Taildrop`. Under the hardened systemd sandbox (`ProtectHome=read-only`) that write path was unavailable, so the feature was broken; even when it worked it wrote root-owned files into a location the desktop user couldn't easily reach. It has been removed, along with its config keys (`taildrop_auto_receive`, `taildrop_dir`) and the receive notification. **Sending files via Taildrop is unchanged** — right-click a peer → Send File still works. Existing configs that carry the old keys keep loading; the keys are now ignored.
+
 ### Fixed
 - **The GUI adopts a VPN the daemon is already running** — Because the daemon outlives the GUI, restarting the app (or a crash) while a VPN stayed connected left the GUI showing nothing connected, and clicking Connect failed with "already connected". On startup the GUI now reconciles with the daemon's active connections: it registers each live one so the UI shows it connected, Disconnect works, and the connection monitor re-applies the security features and arms the drop-lock.
 

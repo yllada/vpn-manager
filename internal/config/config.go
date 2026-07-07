@@ -67,10 +67,12 @@ type TailscaleConfig struct {
 	// Taildrop enables file sharing between Tailscale devices.
 	// See: https://tailscale.com/kb/1106/taildrop
 	Taildrop bool `yaml:"taildrop"`
-	// TaildropDir is where received files are saved.
-	TaildropDir string `yaml:"taildrop_dir,omitempty"`
-	// TaildropAutoReceive enables background file receive loop.
-	TaildropAutoReceive bool `yaml:"taildrop_auto_receive"`
+	// Deprecated: the background auto-receive loop was removed (only file
+	// sending remains). These fields are retained as ignored no-ops so that
+	// config files written by older versions still load under the strict
+	// (KnownFields) decoder instead of failing on an unknown key.
+	TaildropDir         string `yaml:"taildrop_dir,omitempty"`
+	TaildropAutoReceive bool   `yaml:"taildrop_auto_receive,omitempty"`
 	// SSH enables Tailscale SSH (ssh via Tailscale without keys).
 	// See: https://tailscale.com/kb/1193/tailscale-ssh
 	SSH bool `yaml:"ssh"`
@@ -137,9 +139,6 @@ type Config struct {
 // DefaultConfig returns the default configuration.
 // These are sensible defaults for most users.
 func DefaultConfig() *Config {
-	homeDir, _ := os.UserHomeDir()
-	taildropDir := filepath.Join(homeDir, "Downloads", "Taildrop")
-
 	return &Config{
 		AutoStart:         false,
 		MinimizeToTray:    true,
@@ -158,8 +157,6 @@ func DefaultConfig() *Config {
 			ExitNodeAllowLANAccess: false,
 			ShieldsUp:              false,
 			Taildrop:               true,
-			TaildropDir:            taildropDir,
-			TaildropAutoReceive:    true,
 			SSH:                    false,
 			Mullvad:                false,
 			Hostname:               "",
@@ -235,10 +232,6 @@ func (c *Config) validate() error {
 	// Validate Tailscale config
 	if c.Tailscale.ControlServer == "" {
 		c.Tailscale.ControlServer = "cloud"
-	}
-	if c.Tailscale.TaildropDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		c.Tailscale.TaildropDir = filepath.Join(homeDir, "Downloads", "Taildrop")
 	}
 
 	return nil
