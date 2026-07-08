@@ -954,13 +954,21 @@ func (mw *MainWindow) GetConfig() *config.Config {
 	return mw.app.config
 }
 
-// UpdateTrayStatus updates the system tray icon status.
-func (mw *MainWindow) UpdateTrayStatus(connected bool, profileName string) {
-	if tray := mw.app.GetTray(); tray != nil {
-		if connected {
-			tray.SetConnected(profileName)
-		} else {
-			tray.SetDisconnected()
-		}
+// UpdateTrayStatus updates the system tray icon status based on the connection
+// lifecycle state.
+func (mw *MainWindow) UpdateTrayStatus(state ports.TrayState, profileName string) {
+	tray := mw.app.GetTray()
+	if tray == nil {
+		return
+	}
+	switch state {
+	case ports.TrayConnecting:
+		tray.SetConnecting(profileName)
+	case ports.TrayConnected:
+		tray.SetConnected(profileName)
+	case ports.TrayError:
+		tray.SetError(profileName)
+	default: // ports.TrayDisconnected
+		tray.SetDisconnected()
 	}
 }

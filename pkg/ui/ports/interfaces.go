@@ -47,6 +47,20 @@ type VPNController interface {
 	StopStatsCollection() *stats.SessionSummary
 }
 
+// TrayState enumerates the connection states the system tray icon can reflect.
+type TrayState int
+
+const (
+	// TrayDisconnected indicates no active VPN connection.
+	TrayDisconnected TrayState = iota
+	// TrayConnecting indicates a connection attempt is in progress.
+	TrayConnecting
+	// TrayConnected indicates an active VPN connection.
+	TrayConnected
+	// TrayError indicates the last connection attempt failed.
+	TrayError
+)
+
 // PanelHost defines the interface that panels use to communicate with the host window.
 // All methods are thread-safe and can be called from goroutines.
 type PanelHost interface {
@@ -100,7 +114,7 @@ type PanelHost interface {
 	GetConfig() *config.Config
 
 	// UpdateTrayStatus updates the system tray icon status.
-	// connected indicates if there's an active VPN connection.
-	// profileName is the name of the connected profile (empty if disconnected).
-	UpdateTrayStatus(connected bool, profileName string)
+	// state is the connection lifecycle state to reflect.
+	// profileName is the name of the relevant profile (empty if disconnected).
+	UpdateTrayStatus(state TrayState, profileName string)
 }

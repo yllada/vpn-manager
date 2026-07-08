@@ -73,10 +73,17 @@ func NewProfileList(host ports.PanelHost, panel *OpenVPNPanel) *ProfileList {
 		stopMonitor: make(chan struct{}),
 	}
 
-	// Set up status change callback that updates both panel and tray
+	// Set up status change callback that updates both panel and tray.
+	// This bridge only covers the steady connected/disconnected states; the
+	// transient connecting and error states are reported at their lifecycle
+	// points in connectWithCredentials/startConnection/monitorConnection.
 	pl.onStatusChange = func(connected bool, profileName string) {
 		panel.UpdateStatus(connected, profileName)
-		host.UpdateTrayStatus(connected, profileName)
+		trayState := ports.TrayDisconnected
+		if connected {
+			trayState = ports.TrayConnected
+		}
+		host.UpdateTrayStatus(trayState, profileName)
 	}
 
 	// List styling - use boxed-list for AdwExpanderRow compatibility
@@ -120,9 +127,9 @@ func (pl *ProfileList) RefreshAllStatuses() {
 	if anyConnected != pl.lastAnyConnected {
 		pl.lastAnyConnected = anyConnected
 		if anyConnected {
-			pl.host.UpdateTrayStatus(true, connectedProfile)
+			pl.host.UpdateTrayStatus(ports.TrayConnected, connectedProfile)
 		} else {
-			pl.host.UpdateTrayStatus(false, "")
+			pl.host.UpdateTrayStatus(ports.TrayDisconnected, "")
 		}
 	}
 }
@@ -495,6 +502,7 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, username, password string) {
 	pl.UpdateRowStatus(profile.ID, vpn.StatusConnecting)
 	pl.host.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
+	pl.host.UpdateTrayStatus(ports.TrayConnecting, profile.Name)
 
 	resilience.SafeGoWithName("openvpn-ensure-exclusive", func() {
 		// Disconnect any other active protocol first (synchronous, off the GTK
@@ -514,6 +522,7 @@ func (pl *ProfileList) startConnection(profile *profilepkg.Profile, username, pa
 		title, body := components.ExplainError("Connection error", err)
 		pl.host.ShowError(title, body)
 		pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
+		pl.host.UpdateTrayStatus(ports.TrayError, profile.Name)
 		return
 	}
 
@@ -610,7 +619,16 @@ func (pl *ProfileList) monitorConnection(profileID string) {
 				})
 			}
 			// Keep monitoring - wait for disconnect
-		case vpn.StatusError, vpn.StatusDisconnected:
+		case vpn.StatusError:
+			// Failed connection: clear the panel header but flag the tray as an
+			// error rather than a clean disconnect.
+			profileName := conn.Profile.Name
+			glib.IdleAdd(func() {
+				pl.panel.UpdateStatus(false, "")
+				pl.host.UpdateTrayStatus(ports.TrayError, profileName)
+			})
+			return
+		case vpn.StatusDisconnected:
 			glib.IdleAdd(func() {
 				pl.onStatusChange(false, "")
 			})

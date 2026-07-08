@@ -28,17 +28,17 @@ func (f *fakeHost) ShowError(title, message string) {
 	f.errorTitle = title
 	f.errorBody = message
 }
-func (f *fakeHost) ShowInfo(title, message string)                      {}
-func (f *fakeHost) IsDaemonAvailable() bool                             { return true }
-func (f *fakeHost) RefreshDaemonStatus()                                {}
-func (f *fakeHost) RefreshAllPanels()                                   {}
-func (f *fakeHost) EnsureExclusive(exceptProtocol string)               {}
-func (f *fakeHost) GetWindow() gtk.Widgetter                            { return nil }
-func (f *fakeHost) GetGtkWindow() *gtk.Window                           { return nil }
-func (f *fakeHost) GetClipboard() *gdk.Clipboard                        { return nil }
-func (f *fakeHost) VPNManager() ports.VPNController                     { return nil }
-func (f *fakeHost) GetConfig() *config.Config                           { return f.cfg }
-func (f *fakeHost) UpdateTrayStatus(connected bool, profileName string) {}
+func (f *fakeHost) ShowInfo(title, message string)                             {}
+func (f *fakeHost) IsDaemonAvailable() bool                                    { return true }
+func (f *fakeHost) RefreshDaemonStatus()                                       {}
+func (f *fakeHost) RefreshAllPanels()                                          {}
+func (f *fakeHost) EnsureExclusive(exceptProtocol string)                      {}
+func (f *fakeHost) GetWindow() gtk.Widgetter                                   { return nil }
+func (f *fakeHost) GetGtkWindow() *gtk.Window                                  { return nil }
+func (f *fakeHost) GetClipboard() *gdk.Clipboard                               { return nil }
+func (f *fakeHost) VPNManager() ports.VPNController                            { return nil }
+func (f *fakeHost) GetConfig() *config.Config                                  { return f.cfg }
+func (f *fakeHost) UpdateTrayStatus(state ports.TrayState, profileName string) {}
 
 // TestShowError_SurfacesDialogWithNotificationsOff is the regression test for
 // the silent-error bug: failures must reach the UI even when desktop

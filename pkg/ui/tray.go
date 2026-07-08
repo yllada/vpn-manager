@@ -35,8 +35,12 @@ import (
 var (
 	iconConnected        []byte
 	iconDisconnected     []byte
+	iconConnecting       []byte
+	iconError            []byte
 	iconConnectedOnce    sync.Once
 	iconDisconnectedOnce sync.Once
+	iconConnectingOnce   sync.Once
+	iconErrorOnce        sync.Once
 )
 
 // getConnectedIcon returns the connected icon, initializing it on first use.
@@ -53,6 +57,22 @@ func getDisconnectedIcon() []byte {
 		iconDisconnected = trayicons.GenerateDisconnectedIcon()
 	})
 	return iconDisconnected
+}
+
+// getConnectingIcon returns the connecting icon, initializing it on first use.
+func getConnectingIcon() []byte {
+	iconConnectingOnce.Do(func() {
+		iconConnecting = trayicons.GenerateConnectingIcon()
+	})
+	return iconConnecting
+}
+
+// getErrorIcon returns the error icon, initializing it on first use.
+func getErrorIcon() []byte {
+	iconErrorOnce.Do(func() {
+		iconError = trayicons.GenerateErrorIcon()
+	})
+	return iconError
 }
 
 // TrayIndicator manages the system tray icon and menu.
@@ -345,12 +365,42 @@ func (t *TrayIndicator) SetDisconnected() {
 	}
 }
 
-// SetConnecting updates the tray to show connecting state.
+// SetConnecting updates the tray to show connecting (pending) state.
 func (t *TrayIndicator) SetConnecting(profileName string) {
+	// Systray calls are thread-safe (fyne.io/systray uses channels internally).
+	systray.SetIcon(getConnectingIcon())
 	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connecting to %s...", profileName))
 
 	if t.statusItem != nil {
 		t.statusItem.SetTitle(fmt.Sprintf("◌ Connecting: %s...", profileName))
+	}
+}
+
+// SetError updates the tray to show an error (alert) state. The connection did
+// not succeed, so the connected-only UI (uptime, disconnect) is cleared, but
+// the icon and status text signal the failure rather than a clean disconnect.
+func (t *TrayIndicator) SetError(profileName string) {
+	// Clear any connected state while holding the lock to prevent races.
+	t.stateMu.Lock()
+	t.connectedProfile = ""
+	t.connectedID = ""
+	t.stateMu.Unlock()
+
+	// Systray calls are thread-safe (fyne.io/systray uses channels internally).
+	systray.SetIcon(getErrorIcon())
+	systray.SetTooltip(fmt.Sprintf("⚠ VPN error: %s", profileName))
+
+	if t.statusItem != nil {
+		t.statusItem.SetTitle(fmt.Sprintf("⚠ VPN error: %s", profileName))
+	}
+
+	if t.uptimeItem != nil {
+		t.uptimeItem.Hide()
+		t.stopUptimeCounter()
+	}
+
+	if t.disconnectItem != nil {
+		t.disconnectItem.Hide()
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 )
 
 // createProfileCard creates the main profile card using AdwExpanderRow.
@@ -174,6 +175,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 			})
 		} else {
 			// Connect
+			glib.IdleAdd(func() {
+				tp.host.UpdateTrayStatus(ports.TrayConnecting, "Tailscale")
+			})
 			// Mutual exclusion: drop any other active protocol first (synchronous,
 			// off the GTK main thread) so the connect below does not race it.
 			tp.host.EnsureExclusive(vpntypes.ProtocolTailscale)
@@ -182,6 +186,7 @@ func (tp *TailscalePanel) onConnectClicked() {
 					tp.connectBtn.SetSensitive(true)
 					title, body := components.ExplainError("Connect Error", err)
 					tp.host.ShowError(title, body)
+					tp.host.UpdateTrayStatus(ports.TrayError, "Tailscale")
 				})
 				return
 			}
@@ -201,7 +206,7 @@ func (tp *TailscalePanel) onConnectClicked() {
 					Iface:    "tailscale0",
 				})
 				// Update tray indicator
-				tp.host.UpdateTrayStatus(true, "Tailscale")
+				tp.host.UpdateTrayStatus(ports.TrayConnected, "Tailscale")
 				// Start stats collection for Tailscale
 				// Tailscale interface is "tailscale0", get server info from status
 				tp.startStatsCollection()
@@ -342,7 +347,7 @@ func (tp *TailscalePanel) updateTrayIfNoOtherConnections() {
 	}
 
 	// No other connections active, set tray to disconnected
-	tp.host.UpdateTrayStatus(false, "")
+	tp.host.UpdateTrayStatus(ports.TrayDisconnected, "")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

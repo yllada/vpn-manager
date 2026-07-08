@@ -13,6 +13,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 )
 
 // onImportProfile handles importing a WireGuard config file.
@@ -73,6 +74,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 					if ctrl := wp.host.VPNManager(); ctrl != nil {
 						ctrl.UnregisterConnection(row.profile.ID())
 					}
+					wp.host.UpdateTrayStatus(ports.TrayDisconnected, "")
 				}
 				wp.updateRowStatus(row)
 			})
@@ -81,6 +83,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 		// Connect
 		row.connBtn.SetSensitive(false)
 		wp.host.SetStatus(fmt.Sprintf("Connecting to %s...", name))
+		wp.host.UpdateTrayStatus(ports.TrayConnecting, name)
 		resilience.SafeGoWithName("wireguard-connect", func() {
 			// Mutual exclusion: drop any other active protocol first (synchronous,
 			// off the GTK main thread) so the connect below does not race it.
@@ -92,6 +95,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 					logger.LogError("WireGuard: Connect error: %v", err)
 					wp.showError("Connection Failed", err)
 					wp.host.SetStatus(fmt.Sprintf("Failed to connect to %s", name))
+					wp.host.UpdateTrayStatus(ports.TrayError, name)
 				} else {
 					wp.host.SetStatus(fmt.Sprintf("Connected to %s", name))
 					if ctrl := wp.host.VPNManager(); ctrl != nil {
@@ -102,6 +106,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 							Status:   vpntypes.StatusConnected,
 						})
 					}
+					wp.host.UpdateTrayStatus(ports.TrayConnected, name)
 				}
 				wp.updateRowStatus(row)
 			})

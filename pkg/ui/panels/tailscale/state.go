@@ -12,6 +12,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -184,7 +185,7 @@ func (tp *TailscalePanel) renderStatus(
 
 		// Update tray if state changed (handles external connects like CLI)
 		if connectionStateChanged {
-			tp.host.UpdateTrayStatus(true, "Tailscale")
+			tp.host.UpdateTrayStatus(ports.TrayConnected, "Tailscale")
 		}
 	} else {
 		switch status.BackendState {
