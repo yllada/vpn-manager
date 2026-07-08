@@ -42,6 +42,26 @@ func GetDNSResolver() *dnsresolver.Resolver {
 	return dnsResolver
 }
 
+// dnsResolverOps is the subset of the resolver the DNS handlers depend on. It
+// lets tests inject a resolver whose Apply/Restore can fail without touching the
+// real system.
+type dnsResolverOps interface {
+	Apply(vpnInterface string, servers []string, mode string) error
+	Restore() error
+	Backend() dnsresolver.Backend
+}
+
+// Seams for the DNS handlers. Production values call the real resolver singleton
+// and firewall functions; tests substitute them to assert the handler's
+// enable-rollback and fail-closed-disable orchestration without root or iptables.
+var (
+	getDNSResolver = func() dnsResolverOps { return GetDNSResolver() }
+	fwEnableDNS    = firewall.EnableDNSFirewall
+	fwDisableDNS   = firewall.DisableDNSFirewall
+	fwBlockDoT     = firewall.BlockDNSOverTLS
+	fwUnblockDoT   = firewall.UnblockDNSOverTLS
+)
+
 // initVPNManagers initializes the VPN managers as singletons.
 func initVPNManagers(logger *log.Logger) {
 	vpnManagersOnce.Do(func() {
@@ -229,14 +249,14 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 
 		// Enable DNS firewall enforcement if leak blocking requested
 		if params.LeakBlocking && params.VPNInterface != "" {
-			if err := firewall.EnableDNSFirewall(params.VPNInterface); err != nil {
+			if err := fwEnableDNS(params.VPNInterface); err != nil {
 				return nil, err
 			}
 		}
 
 		// Block DNS-over-TLS if requested
 		if params.BlockDoT {
-			if err := firewall.BlockDNSOverTLS(); err != nil {
+			if err := fwBlockDoT(); err != nil {
 				ctx.Logger.Printf("Warning: failed to block DoT: %v", err)
 			}
 		}
@@ -244,16 +264,16 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 		// Assign the actual DNS servers on the VPN link as root (was the polkit
 		// prompt culprit when the GUI ran resolvectl/nmcli itself). No-op for
 		// modes that assign nothing (off, or auto/custom with no servers).
-		resolver := GetDNSResolver()
+		resolver := getDNSResolver()
 		if err := resolver.Apply(params.VPNInterface, params.Servers, params.Mode); err != nil {
 			// Roll back the firewall rules installed above so a resolver failure
 			// does not leave orphaned leak-block / DoT-block rules behind: the
 			// client stays disabled, so no later Disable would clean them up, and
 			// they can otherwise force DNS through a tunnel that never came up.
 			// Both calls are idempotent no-ops when their rules are absent.
-			_ = firewall.DisableDNSFirewall()
+			_ = fwDisableDNS()
 			if params.BlockDoT {
-				_ = firewall.UnblockDNSOverTLS()
+				_ = fwUnblockDoT()
 			}
 			return nil, fmt.Errorf("resolver apply: %w", err)
 		}
@@ -279,12 +299,12 @@ func DNSDisableHandler(state *daemon.State) daemon.HandlerFunc {
 		ctx.Logger.Printf("Disabling DNS protection")
 
 		// Disable DNS firewall
-		if err := firewall.DisableDNSFirewall(); err != nil {
+		if err := fwDisableDNS(); err != nil {
 			ctx.Logger.Printf("Warning: DNS firewall disable had errors: %v", err)
 		}
 
 		// Unblock DoT
-		if err := firewall.UnblockDNSOverTLS(); err != nil {
+		if err := fwUnblockDoT(); err != nil {
 			ctx.Logger.Printf("Warning: DoT unblock had errors: %v", err)
 		}
 
@@ -294,7 +314,7 @@ func DNSDisableHandler(state *daemon.State) daemon.HandlerFunc {
 		// of reporting success: the resolver keeps its state for retry, the
 		// daemon leaves protection marked enabled, and the client (which only
 		// clears its flag on a successful disable) does not falsely report "off".
-		if err := GetDNSResolver().Restore(); err != nil {
+		if err := getDNSResolver().Restore(); err != nil {
 			return nil, fmt.Errorf("resolver restore: %w", err)
 		}
 
