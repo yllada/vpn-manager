@@ -297,16 +297,6 @@ func (p *Provider) SupportsFeature(feature vpntypes.ProviderFeature) bool {
 	}
 }
 
-// GetTailscaleStatus returns the full Tailscale status with peers.
-// This provides more detail than the app.ProviderStatus.
-func (p *Provider) GetTailscaleStatus(ctx context.Context) (*Status, error) {
-	if p.client == nil {
-		return nil, fmt.Errorf("tailscale client not initialized")
-	}
-
-	return p.client.Status(ctx)
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // SETTINGS & CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════

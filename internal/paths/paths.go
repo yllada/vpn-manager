@@ -109,9 +109,10 @@ func EnsureStateDir() error {
 		return fmt.Errorf("state path exists but is not a directory: %s", StateDir)
 	}
 
-	// Create directory with 0755 permissions (root-owned, world-readable)
-	// Note: This operation requires root privileges
-	if err := os.MkdirAll(StateDir, 0755); err != nil {
+	// Create directory 0700 (root-only): the state files here (kill switch, DNS
+	// resolver backup) are written and read exclusively by the root daemon, so no
+	// other user needs to list or read them. Requires root privileges.
+	if err := os.MkdirAll(StateDir, 0700); err != nil {
 		return fmt.Errorf("failed to create state directory %s: %w (may require root privileges)", StateDir, err)
 	}
 

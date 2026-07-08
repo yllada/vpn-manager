@@ -26,6 +26,9 @@ ProtectSystem=full
 # BEFORE ExecStart — listing it under ReadWritePaths instead fails namespace
 # setup with 226/NAMESPACE when the dir does not exist yet.
 StateDirectory=vpn-manager
+# 0700: the state files (kill switch, DNS resolver backup) are root-only; no
+# other user needs to list or read them.
+StateDirectoryMode=0700
 # Leading "-" makes each path optional: a system without NetworkManager (or with
 # resolv.conf absent) must not fail sandbox setup. Missing paths are skipped.
 ReadWritePaths=-/etc/systemd/system -/etc/NetworkManager -/etc/resolv.conf

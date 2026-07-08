@@ -126,6 +126,43 @@ type UpOptions struct {
 }
 
 // Up connects to Tailscale.
+// writeAuthKeyFile writes an auth key to a private 0600 temp file and returns a
+// "--auth-key=file:<path>" argument plus a cleanup func, so the key never lands
+// on the process command line (/proc/<pid>/cmdline is readable by other local
+// users). An empty key yields no argument. os.CreateTemp uses O_EXCL with a
+// random name, so there is no predictable-name/symlink race.
+func writeAuthKeyFile(key string) (arg string, cleanup func(), err error) {
+	cleanup = func() {}
+	if key == "" {
+		return "", cleanup, nil
+	}
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		dir = os.TempDir()
+	}
+	f, err := os.CreateTemp(dir, "ts-authkey-*")
+	if err != nil {
+		return "", cleanup, fmt.Errorf("create auth key file: %w", err)
+	}
+	name := f.Name()
+	cleanup = func() { _ = os.Remove(name) }
+	if err := f.Chmod(0600); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("chmod auth key file: %w", err)
+	}
+	if _, err := f.WriteString(key); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("write auth key file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("close auth key file: %w", err)
+	}
+	return "--auth-key=file:" + name, cleanup, nil
+}
+
 func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 	args := []string{"up"}
 
@@ -149,8 +186,13 @@ func (c *Client) Up(ctx context.Context, opts UpOptions) error {
 		args = append(args, "--shields-up")
 	}
 
-	if opts.AuthKey != "" {
-		args = append(args, "--auth-key="+opts.AuthKey)
+	keyArg, cleanupKey, keyErr := writeAuthKeyFile(opts.AuthKey)
+	if keyErr != nil {
+		return keyErr
+	}
+	defer cleanupKey()
+	if keyArg != "" {
+		args = append(args, keyArg)
 	}
 
 	if opts.LoginServer != "" {

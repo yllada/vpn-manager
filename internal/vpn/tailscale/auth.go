@@ -72,8 +72,13 @@ func (p *Provider) ConnectWithServer(ctx context.Context, serverURL string, opts
 func (c *Client) Login(ctx context.Context, authKey string) (string, error) {
 	args := []string{"login"}
 
-	if authKey != "" {
-		args = append(args, "--auth-key="+authKey)
+	keyArg, cleanupKey, keyErr := writeAuthKeyFile(authKey)
+	if keyErr != nil {
+		return "", keyErr
+	}
+	defer cleanupKey()
+	if keyArg != "" {
+		args = append(args, keyArg)
 	}
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
@@ -160,8 +165,13 @@ func (c *Client) LoginWithServer(ctx context.Context, serverURL, authKey string)
 		args = append(args, "--login-server="+serverURL)
 	}
 
-	if authKey != "" {
-		args = append(args, "--auth-key="+authKey)
+	keyArg, cleanupKey, keyErr := writeAuthKeyFile(authKey)
+	if keyErr != nil {
+		return "", keyErr
+	}
+	defer cleanupKey()
+	if keyArg != "" {
+		args = append(args, keyArg)
 	}
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
