@@ -554,15 +554,16 @@ func (mw *MainWindow) ConnectExclusive(proto, id, name string, connect func() er
 	start := func() {
 		mw.connectInFlight = true // claimed on the main thread → serializes clicks
 		resilience.SafeGoWithName("connect-exclusive", func() {
-			if err := mw.disconnectOthers(others, proto); err != nil {
+			// Clear the guard on EVERY exit — including a panic inside
+			// disconnectOthers/connect, which SafeGoWithName recovers — so a crash
+			// can never wedge the flag true and silently reject all future connects.
+			// glib.IdleAdd only enqueues, so it is safe to call during unwind.
+			defer glib.IdleAdd(func() { mw.connectInFlight = false })
+			if err := mw.gatedConnect(others, proto, connect); err != nil {
 				glib.IdleAdd(func() {
-					mw.connectInFlight = false
 					mw.ShowError("VPN switch failed", fmt.Sprintf("Could not disconnect the active VPN, so %s was not connected: %v", protocolDisplayName(proto), err))
 				})
-				return
 			}
-			cerr := connect()
-			glib.IdleAdd(func() { mw.connectInFlight = false; _ = cerr })
 		})
 	}
 	if len(others) == 0 {
@@ -579,6 +580,21 @@ func (mw *MainWindow) ConnectExclusive(proto, id, name string, connect func() er
 		ActionLabel: "Switch",
 		Style:       components.DialogSuggested,
 	}, start) // ShowConfirmDialog is modal (adw.AlertDialog) so no concurrent click during it; on cancel nothing happens and connectInFlight is never claimed
+}
+
+// gatedConnect is the core mutual-exclusion rule, extracted so it is unit
+// testable without the GTK dialog/goroutine around it: disconnect every other
+// protocol and invoke connect ONLY if all disconnects succeeded. If any
+// disconnect fails it returns that error and does NOT call connect, so two VPNs
+// can never end up active. Runs off the GTK main thread.
+func (mw *MainWindow) gatedConnect(others []vpntypes.ActiveConnection, proto string, connect func() error) error {
+	if err := mw.disconnectOthers(others, proto); err != nil {
+		return err
+	}
+	// connect reports its own success/failure through the panel's UI; its error
+	// is not a mutual-exclusion concern.
+	_ = connect()
+	return nil
 }
 
 // otherActiveConnected returns the currently-Connected connections whose protocol != exceptProto.

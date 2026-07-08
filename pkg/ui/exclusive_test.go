@@ -78,6 +78,42 @@ func TestDisconnectOthers_EmptyReturnsNil(t *testing.T) {
 	}
 }
 
+// TestGatedConnect_SkipsConnectWhenDisconnectFails is the end-to-end "recipe"
+// test: it composes the exact failure the feature must prevent — another
+// protocol active whose disconnect FAILS — through gatedConnect (the gate
+// ConnectExclusive runs), and asserts connect is NOT called (no second VPN) and
+// the disconnect error is returned.
+func TestGatedConnect_SkipsConnectWhenDisconnectFails(t *testing.T) {
+	mw, _ := newTestWindow()
+	others := []vpntypes.ActiveConnection{{
+		ID: "ovpn-corp", Protocol: vpntypes.ProtocolOpenVPN, Name: "Corp", Status: vpntypes.StatusConnected,
+	}}
+	called := false
+	err := mw.gatedConnect(others, vpntypes.ProtocolWireGuard, func() error {
+		called = true
+		return nil
+	})
+	if err == nil {
+		t.Fatal("gatedConnect returned nil when the disconnect failed")
+	}
+	if called {
+		t.Fatal("gatedConnect called connect despite a failed disconnect — two VPNs could coexist")
+	}
+}
+
+// TestGatedConnect_RunsConnectWhenNoOthers pins that with nothing to disconnect,
+// gatedConnect proceeds to connect.
+func TestGatedConnect_RunsConnectWhenNoOthers(t *testing.T) {
+	mw, _ := newTestWindow()
+	called := false
+	if err := mw.gatedConnect(nil, vpntypes.ProtocolOpenVPN, func() error { called = true; return nil }); err != nil {
+		t.Fatalf("gatedConnect(nil) = %v, want nil", err)
+	}
+	if !called {
+		t.Fatal("gatedConnect did not call connect when there was nothing to disconnect")
+	}
+}
+
 // TestConnectExclusive_RejectsOverlappingConnect pins the race guard: when a
 // connect is already in flight (connectInFlight claimed on the main thread), a
 // second ConnectExclusive call must NOT run its connect callback. This is what

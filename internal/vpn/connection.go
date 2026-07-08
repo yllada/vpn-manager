@@ -133,8 +133,18 @@ func (m *Manager) Disconnect(profileID string) error {
 	if daemon.IsDaemonAvailable() {
 		client := &daemon.OpenVPNClient{}
 		if err := client.Disconnect(profileID); err != nil {
-			logger.LogWarn("vpn", "Daemon disconnect failed: %v", err)
-			daemonErr = fmt.Errorf("daemon disconnect failed for %s: %w", profileID, err)
+			// "no connection found" means the daemon already reaped the process
+			// (e.g. an external drop the process-monitor caught first). The tunnel
+			// is gone, so that is success from our side — do NOT surface it as a
+			// disconnect failure (it would show a spurious error on the disconnect
+			// button and make the mutual-exclusion gate think teardown failed). Only
+			// a genuine failure propagates.
+			if strings.Contains(err.Error(), "no connection found") {
+				logger.LogDebug("vpn", "daemon had no connection for %s (already gone)", profileID)
+			} else {
+				logger.LogWarn("vpn", "Daemon disconnect failed: %v", err)
+				daemonErr = fmt.Errorf("daemon disconnect failed for %s: %w", profileID, err)
+			}
 		}
 	}
 
