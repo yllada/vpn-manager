@@ -424,21 +424,19 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 		return fmt.Errorf("systemd-resolved resolver requires a VPN interface")
 	}
 
-	// The resolvectl sequence mutates the link in several steps; a later step can
-	// fail after an earlier one already took. Undo what we applied to THIS
-	// interface right here on failure — reverting locally rather than mutating the
-	// resolver's shared state up front — so a failed (re)apply never disturbs a
-	// still-live override recorded for another interface or the persisted backup.
-	// applied/iface/ifindex are recorded only on full success below.
-	fail := func(err error) error {
-		_ = runCmd("resolvectl", "revert", iface) // best-effort: drop the partial
-		return err
-	}
-
+	// applied/iface/ifindex are recorded only on FULL success (below). On a
+	// mid-sequence failure we return the error without recording or clearing
+	// shared state, so a re-apply over an existing override leaves that override
+	// and its bookkeeping intact (no desync), and a failed FIRST apply leaves at
+	// most a partial per-link configuration on the tunnel interface — which
+	// systemd-resolved drops automatically when the interface is torn down on
+	// disconnect, so it does not persist as a leak. (NetworkManager rolls its own
+	// drop-in back on failure; the resolv.conf backend writes atomically — so
+	// neither of those leaves a partial either.)
 	if p.setServers {
 		args := append([]string{"dns", iface}, servers...)
 		if err := runCmd("resolvectl", args...); err != nil {
-			return fail(fmt.Errorf("resolvectl dns: %w", err))
+			return fmt.Errorf("resolvectl dns: %w", err)
 		}
 		if err := runCmd("resolvectl", "dnssec", iface, "allow-downgrade"); err != nil {
 			log.Printf("[dns] warning: resolvectl dnssec: %v", err)
@@ -448,7 +446,7 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 	if p.routingDomain {
 		// "~." routes ALL DNS queries through this link (strict mode).
 		if err := runCmd("resolvectl", "domain", iface, "~."); err != nil {
-			return fail(fmt.Errorf("resolvectl domain: %w", err))
+			return fmt.Errorf("resolvectl domain: %w", err)
 		}
 	}
 

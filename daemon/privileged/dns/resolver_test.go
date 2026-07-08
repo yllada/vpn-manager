@@ -600,17 +600,16 @@ func TestRestoreNetworkManagerRetriesReloadAfterFailure(t *testing.T) {
 	}
 }
 
-// TestApplySystemdRollsBackPartialFailure pins that a resolvectl command failing
-// mid-sequence (after an earlier command already mutated the link) rolls the
-// partial override back instead of orphaning it with no restore state.
-func TestApplySystemdRollsBackPartialFailure(t *testing.T) {
+// TestApplySystemdPartialFailureDoesNotRecordApplied pins that a mid-sequence
+// resolvectl failure on a FRESH apply records nothing (applied stays false, no
+// persisted state), so the resolver never claims an override it did not fully
+// install. The partial per-link config left on the tunnel is dropped by
+// systemd-resolved when the interface is torn down on disconnect.
+func TestApplySystemdPartialFailureDoesNotRecordApplied(t *testing.T) {
 	isolateState(t)
 	stubIfaceIndex(t, 1, true)
-	var recorded [][]string
 	orig := runCmd
 	runCmd = func(name string, args ...string) error {
-		recorded = append(recorded, append([]string{name}, args...))
-		// Strict mode: succeed `resolvectl dns`, then fail the routing-domain step.
 		if name == "resolvectl" && len(args) >= 1 && args[0] == "domain" {
 			return fmt.Errorf("domain boom")
 		}
@@ -622,14 +621,51 @@ func TestApplySystemdRollsBackPartialFailure(t *testing.T) {
 	if err := r.Apply("tun0", []string{"1.1.1.1"}, "strict"); err == nil {
 		t.Fatal("Apply should return the partial-failure error")
 	}
-	if r.applied {
-		t.Error("resolver still marked applied after a failed apply — override orphaned")
-	}
-	if !hasCmd(recorded, []string{"resolvectl", "revert", "tun0"}) {
-		t.Errorf("partial apply was not rolled back via resolvectl revert; cmds=%v", recorded)
+	if r.applied || r.iface != "" {
+		t.Errorf("resolver recorded state for a failed apply: applied=%v iface=%q", r.applied, r.iface)
 	}
 	if _, err := os.Stat(resolverStatePath); !os.IsNotExist(err) {
 		t.Error("state persisted despite a failed apply")
+	}
+}
+
+// TestApplySameInterfaceModeSwitchFailureKeepsOverride pins that a failed live
+// mode switch on the ALREADY-applied interface leaves the existing override and
+// its bookkeeping intact (no desync): the switch errors, but protection stays on
+// in its prior mode rather than being silently torn down while state claims it.
+func TestApplySameInterfaceModeSwitchFailureKeepsOverride(t *testing.T) {
+	isolateState(t)
+	stubIfaceIndex(t, 1, true)
+	failDomain := false
+	revertCalls := 0
+	orig := runCmd
+	runCmd = func(name string, args ...string) error {
+		if name == "resolvectl" && len(args) >= 1 && args[0] == "revert" {
+			revertCalls++
+		}
+		if failDomain && name == "resolvectl" && len(args) >= 1 && args[0] == "domain" {
+			return fmt.Errorf("domain boom")
+		}
+		return nil
+	}
+	t.Cleanup(func() { runCmd = orig })
+
+	r := &Resolver{backend: BackendSystemdResolved}
+	if err := r.Apply("tun0", []string{"1.1.1.1"}, "custom"); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	failDomain = true
+	if err := r.Apply("tun0", []string{"1.1.1.1"}, "strict"); err == nil {
+		t.Fatal("mode switch should have failed")
+	}
+	if !r.applied || r.iface != "tun0" {
+		t.Errorf("existing override dropped by a failed mode switch: applied=%v iface=%q", r.applied, r.iface)
+	}
+	if revertCalls != 0 {
+		t.Errorf("a failed mode switch reverted the live override (revert calls=%d)", revertCalls)
+	}
+	if _, err := os.Stat(resolverStatePath); err != nil {
+		t.Errorf("persisted state for the live override was lost on a failed mode switch: %v", err)
 	}
 }
 
