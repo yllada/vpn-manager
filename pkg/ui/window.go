@@ -17,7 +17,6 @@ import (
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
-	"github.com/yllada/vpn-manager/internal/vpn"
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
@@ -884,8 +883,10 @@ func (mw *MainWindow) GetClipboard() *gdk.Clipboard {
 	return mw.window.Clipboard()
 }
 
-// VPNManager returns the VPN manager for connection operations.
-func (mw *MainWindow) VPNManager() *vpn.Manager {
+// VPNManager returns the narrow VPN controller for connection operations. The
+// concrete *vpn.Manager satisfies ports.VPNController, but callers only see the
+// narrow surface.
+func (mw *MainWindow) VPNManager() ports.VPNController {
 	return mw.app.vpnManager
 }
 

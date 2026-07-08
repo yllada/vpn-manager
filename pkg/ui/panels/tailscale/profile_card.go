@@ -14,7 +14,6 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
-	"github.com/yllada/vpn-manager/internal/vpn"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
@@ -166,7 +165,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 				if tp.host.GetConfig().ShowNotifications {
 					notify.Disconnected("Tailscale")
 				}
-				// Update tray indicator only if no other VPNs active
+				// Drop our entry from the cross-protocol registry, then update the
+				// tray only if no other VPN is still active.
+				tp.host.VPNManager().UnregisterConnection(vpntypes.ProtocolTailscale)
 				tp.updateTrayIfNoOtherConnections()
 				tp.UpdateStatus()
 			})
@@ -186,6 +187,15 @@ func (tp *TailscalePanel) onConnectClicked() {
 				if tp.host.GetConfig().ShowNotifications {
 					notify.Connected("Tailscale")
 				}
+				// Record in the cross-protocol registry so other panels' mutual
+				// exclusion / global indicator can see Tailscale is up.
+				tp.host.VPNManager().RegisterConnection(vpntypes.ActiveConnection{
+					ID:       vpntypes.ProtocolTailscale,
+					Protocol: vpntypes.ProtocolTailscale,
+					Name:     "Tailscale",
+					Status:   vpntypes.StatusConnected,
+					Iface:    "tailscale0",
+				})
 				// Update tray indicator
 				tp.host.UpdateTrayStatus(true, "Tailscale")
 				// Start stats collection for Tailscale
@@ -281,11 +291,14 @@ func (tp *TailscalePanel) openURL(url string) error {
 // updateTrayIfNoOtherConnections sets tray to disconnected only if no other VPN is active.
 // This prevents showing "disconnected" when OpenVPN/WireGuard are still connected.
 func (tp *TailscalePanel) updateTrayIfNoOtherConnections() {
-	// Check if any OpenVPN/WireGuard connections are active
-	connections := tp.host.VPNManager().ListConnections()
-	for _, conn := range connections {
-		if conn.GetStatus() == vpn.StatusConnected {
-			// Another VPN is connected, don't change tray
+	// Use the cross-protocol view so this sees WireGuard too (ListConnections is
+	// OpenVPN-only). Ignore our own Tailscale entry.
+	for _, c := range tp.host.VPNManager().ActiveConnections() {
+		if c.Protocol == vpntypes.ProtocolTailscale {
+			continue
+		}
+		if c.Status == vpntypes.StatusConnected {
+			// Another VPN is connected — leave the tray as-is.
 			return
 		}
 	}

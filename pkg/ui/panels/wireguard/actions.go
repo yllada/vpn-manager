@@ -70,6 +70,9 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 					wp.host.SetStatus(fmt.Sprintf("Failed to disconnect from %s", name))
 				} else {
 					wp.host.SetStatus(fmt.Sprintf("Disconnected from %s", name))
+					if ctrl := wp.host.VPNManager(); ctrl != nil {
+						ctrl.UnregisterConnection(row.profile.ID())
+					}
 				}
 				wp.updateRowStatus(row)
 			})
@@ -88,6 +91,14 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 					wp.host.SetStatus(fmt.Sprintf("Failed to connect to %s", name))
 				} else {
 					wp.host.SetStatus(fmt.Sprintf("Connected to %s", name))
+					if ctrl := wp.host.VPNManager(); ctrl != nil {
+						ctrl.RegisterConnection(vpntypes.ActiveConnection{
+							ID:       row.profile.ID(),
+							Protocol: vpntypes.ProtocolWireGuard,
+							Name:     name,
+							Status:   vpntypes.StatusConnected,
+						})
+					}
 				}
 				wp.updateRowStatus(row)
 			})

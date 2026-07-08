@@ -8,7 +8,44 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/config"
 	"github.com/yllada/vpn-manager/internal/vpn"
+	"github.com/yllada/vpn-manager/internal/vpn/health"
+	"github.com/yllada/vpn-manager/internal/vpn/profile"
+	"github.com/yllada/vpn-manager/internal/vpn/stats"
+	"github.com/yllada/vpn-manager/internal/vpn/trust"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
+
+// VPNController is the narrow surface the UI uses to drive VPN connections and
+// read state — the ONLY manager capability panels/dialogs may touch. It replaces
+// handing panels the concrete *vpn.Manager (the God-object), so a panel can only
+// reach these methods and is trivially fakeable in tests. *vpn.Manager satisfies
+// this interface.
+type VPNController interface {
+	// Connection lifecycle (OpenVPN flows through here; WireGuard/Tailscale drive
+	// their own providers and only register their result — see the registry below).
+	Connect(profileID, username, password string) error
+	Disconnect(profileID string) error
+	GetConnection(profileID string) (*vpn.Connection, bool)
+	ListConnections() []*vpn.Connection
+
+	// Cross-protocol connection registry — the single source of truth for "what
+	// is connected" across OpenVPN/WireGuard/Tailscale (mutual exclusion, global
+	// indicator, tray state).
+	ActiveConnections() []vpn.ActiveConnection
+	RegisterConnection(conn vpn.ActiveConnection)
+	UnregisterConnection(id string)
+
+	// Profiles and ancillary services.
+	ProfileManager() *profile.ProfileManager
+	HealthChecker() *health.Checker
+	TrustManager() *trust.TrustManager
+	AvailableProviders() []vpntypes.VPNProvider
+	NetworkManagerAvailable() bool
+
+	// Traffic statistics (Tailscale panel).
+	StartStatsCollection(profileID string, providerType vpntypes.VPNProviderType, vpnIface, serverAddr string) string
+	StopStatsCollection() *stats.SessionSummary
+}
 
 // PanelHost defines the interface that panels use to communicate with the host window.
 // All methods are thread-safe and can be called from goroutines.
@@ -48,8 +85,9 @@ type PanelHost interface {
 	// GetClipboard returns the clipboard for copy operations.
 	GetClipboard() *gdk.Clipboard
 
-	// VPNManager returns the VPN manager for connection operations.
-	VPNManager() *vpn.Manager
+	// VPNManager returns the narrow VPN controller for connection operations.
+	// (Not the concrete *vpn.Manager — see VPNController.)
+	VPNManager() VPNController
 
 	// GetConfig returns the application configuration.
 	GetConfig() *config.Config

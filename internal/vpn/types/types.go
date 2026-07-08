@@ -42,6 +42,32 @@ func (s ConnectionStatus) String() string {
 }
 
 // =============================================================================
+// CROSS-PROTOCOL ACTIVE CONNECTION
+// =============================================================================
+
+// Protocol identifiers for ActiveConnection.
+const (
+	ProtocolOpenVPN   = "openvpn"
+	ProtocolWireGuard = "wireguard"
+	ProtocolTailscale = "tailscale"
+)
+
+// ActiveConnection is a protocol-agnostic snapshot of a live VPN connection —
+// the single cross-protocol view used for the global connection indicator and
+// mutual-exclusion decisions. OpenVPN, WireGuard and Tailscale all surface
+// through it. It lives here (not in internal/vpn) so panels and ports can use it
+// without depending on the concrete Manager.
+type ActiveConnection struct {
+	ID        string // profile ID (OpenVPN/WireGuard) or a stable key (Tailscale)
+	Protocol  string // ProtocolOpenVPN | ProtocolWireGuard | ProtocolTailscale
+	Name      string // display name
+	Status    ConnectionStatus
+	IPAddress string
+	Iface     string
+	StartTime time.Time
+}
+
+// =============================================================================
 // VPN PROVIDER TYPES
 // =============================================================================
 

@@ -7,7 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/config"
-	"github.com/yllada/vpn-manager/internal/vpn"
+	"github.com/yllada/vpn-manager/pkg/ui/ports"
 )
 
 // fakeHost is a minimal ports.PanelHost implementation for exercising
@@ -35,7 +35,7 @@ func (f *fakeHost) RefreshAllPanels()                                   {}
 func (f *fakeHost) GetWindow() gtk.Widgetter                            { return nil }
 func (f *fakeHost) GetGtkWindow() *gtk.Window                           { return nil }
 func (f *fakeHost) GetClipboard() *gdk.Clipboard                        { return nil }
-func (f *fakeHost) VPNManager() *vpn.Manager                            { return nil }
+func (f *fakeHost) VPNManager() ports.VPNController                     { return nil }
 func (f *fakeHost) GetConfig() *config.Config                           { return f.cfg }
 func (f *fakeHost) UpdateTrayStatus(connected bool, profileName string) {}
 

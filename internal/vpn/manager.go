@@ -84,7 +84,10 @@ type Connection struct {
 type Manager struct {
 	profileManager   *profile.ProfileManager
 	connections      map[string]*Connection
-	healthChecker    *health.Checker
+	// otherConns holds live WireGuard/Tailscale connections, which do not flow
+	// through Manager.Connect. Unified with connections by ActiveConnections().
+	otherConns    map[string]ActiveConnection
+	healthChecker *health.Checker
 	killSwitch       *security.KillSwitch
 	appTunnel        *tunnel.AppTunnel
 	providerRegistry *vpntypes.ProviderRegistry
@@ -114,6 +117,7 @@ func NewManager() (*Manager, error) {
 	m := &Manager{
 		profileManager:   pm,
 		connections:      make(map[string]*Connection),
+		otherConns:       make(map[string]ActiveConnection),
 		providerRegistry: vpntypes.NewProviderRegistry(),
 		killSwitch:       security.NewKillSwitch(),
 		appTunnel:        tunnel.NewAppTunnel(),
