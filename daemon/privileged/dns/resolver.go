@@ -308,9 +308,28 @@ func (r *Resolver) Apply(vpnInterface string, servers []string, mode string) err
 		}
 		err = r.applyResolvConfLocked(servers, vpnInterface)
 	}
+	if err != nil {
+		// A backend apply can fail after partially mutating the link (the
+		// multi-step systemd path records applied up front). Undo the partial so a
+		// failed enable never leaves an orphaned override with no restore state.
+		if r.applied {
+			r.appliedBackend = r.backend
+			r.adopted = false
+			_ = r.revertLocked()
+			r.applied = false
+			r.iface = ""
+			r.ifindex = 0
+			r.resolvBackup = nil
+			r.hadResolvBackup = false
+			r.appliedBackend = ""
+			r.clearStateLocked()
+		}
+		return err
+	}
+
 	// Persist the restore backup so a daemon restart mid-connection can still
 	// revert. Only after a successful apply that actually recorded state.
-	if err == nil && r.applied {
+	if r.applied {
 		// This instance now owns the override: it was installed via the currently
 		// detected backend and is no longer adopted-and-unvalidated.
 		r.appliedBackend = r.backend
@@ -422,6 +441,17 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 		return fmt.Errorf("systemd-resolved resolver requires a VPN interface")
 	}
 
+	// Record applied state BEFORE issuing the multi-step resolvectl sequence: any
+	// one command can mutate the link, and a later command in the sequence can
+	// still fail. `resolvectl revert` undoes them all at once (and is a harmless
+	// no-op if none took), so marking applied up front lets Apply roll back — or
+	// Restore revert — a partial apply instead of orphaning a live override.
+	r.applied = true
+	r.iface = iface
+	if idx, ok := ifaceIndex(iface); ok {
+		r.ifindex = idx
+	}
+
 	if p.setServers {
 		args := append([]string{"dns", iface}, servers...)
 		if err := runCmd("resolvectl", args...); err != nil {
@@ -446,14 +476,6 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 
 	_ = runCmd("resolvectl", "flush-caches")
 
-	r.applied = true
-	r.iface = iface
-	// Record the interface's kernel index so Restore can tell this exact device
-	// apart from a later namesake. Best-effort: 0 means "unknown", which disables
-	// the identity check (the existence check still applies).
-	if idx, ok := ifaceIndex(iface); ok {
-		r.ifindex = idx
-	}
 	log.Printf("[dns] resolver applied via systemd-resolved (iface: %s, servers: %v, routing-domain: %v)",
 		iface, servers, p.routingDomain)
 	return nil
@@ -482,11 +504,18 @@ func (r *Resolver) applyNetworkManagerLocked(servers []string, iface string) err
 }
 
 func restoreNetworkManagerLocked() error {
-	if _, err := os.Stat(nmDNSConfPath); os.IsNotExist(err) {
-		return nil
-	}
-	if err := os.Remove(nmDNSConfPath); err != nil {
-		return fmt.Errorf("remove NM DNS config: %w", err)
+	// Remove our drop-in if present, then ALWAYS reload. The reload is what makes
+	// NetworkManager actually drop the override from its running config, and it is
+	// a separate step from the file removal. If a first attempt removed the file
+	// but the reload failed, a retry must still re-run the reload — so we do not
+	// short-circuit on "file already gone". Reloading with no drop-in present is a
+	// harmless no-op for us.
+	if _, err := os.Stat(nmDNSConfPath); err == nil {
+		if err := os.Remove(nmDNSConfPath); err != nil {
+			return fmt.Errorf("remove NM DNS config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat NM DNS config: %w", err)
 	}
 	if err := runCmd("nmcli", "general", "reload"); err != nil {
 		return fmt.Errorf("nmcli reload: %w", err)
@@ -499,22 +528,30 @@ func restoreNetworkManagerLocked() error {
 // resolv.conf backend (fallback)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// resolvConfTarget returns the path writes should target. When resolvConfPath is
+// a symlink (e.g. -> /run/resolvconf/resolv.conf), we write THROUGH it to its
+// target so the symlink — and the dynamic resolver management it represents — is
+// preserved rather than replaced by a static file. Falls back to resolvConfPath
+// for a plain file or a dangling link.
+func resolvConfTarget() string {
+	if info, err := os.Lstat(resolvConfPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		if real, e := filepath.EvalSymlinks(resolvConfPath); e == nil {
+			return real
+		}
+	}
+	return resolvConfPath
+}
+
 func (r *Resolver) applyResolvConfLocked(servers []string, iface string) error {
+	target := resolvConfTarget()
+
 	// Capture the ORIGINAL file only on the transition into applied state. A
 	// re-apply (mode switch, or a reconnect after adopting prior state) must keep
 	// the first backup — re-capturing now would grab our own generated file (or a
 	// still-VPN-modified one) and destroy the true pre-VPN configuration, so
 	// Restore would "revert" to the VPN's DNS instead of the system's.
 	if !r.applied {
-		// If the path is a symlink (e.g. to a stub), resolve it and back up the
-		// real target's bytes.
-		backupSrc := resolvConfPath
-		if info, err := os.Lstat(resolvConfPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			if real, e := filepath.EvalSymlinks(resolvConfPath); e == nil {
-				backupSrc = real
-			}
-		}
-		if content, err := os.ReadFile(backupSrc); err == nil {
+		if content, err := os.ReadFile(target); err == nil {
 			r.resolvBackup = content
 			r.hadResolvBackup = true
 		} else {
@@ -530,7 +567,7 @@ func (r *Resolver) applyResolvConfLocked(servers []string, iface string) error {
 		fmt.Fprintf(&b, "nameserver %s\n", s)
 	}
 
-	if err := writeFileAtomic(resolvConfPath, []byte(b.String()), 0644); err != nil {
+	if err := writeFileAtomic(target, []byte(b.String()), 0644); err != nil {
 		return fmt.Errorf("write resolv.conf: %w", err)
 	}
 
@@ -541,14 +578,15 @@ func (r *Resolver) applyResolvConfLocked(servers []string, iface string) error {
 }
 
 func (r *Resolver) restoreResolvConfLocked() error {
+	target := resolvConfTarget()
 	if !r.hadResolvBackup {
 		// We created the file where none existed; remove it to fully revert.
-		if err := os.Remove(resolvConfPath); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove resolv.conf: %w", err)
 		}
 		return nil
 	}
-	if err := writeFileAtomic(resolvConfPath, r.resolvBackup, 0644); err != nil {
+	if err := writeFileAtomic(target, r.resolvBackup, 0644); err != nil {
 		return fmt.Errorf("restore resolv.conf: %w", err)
 	}
 	log.Printf("[dns] resolver restored via resolv.conf (original contents replayed)")

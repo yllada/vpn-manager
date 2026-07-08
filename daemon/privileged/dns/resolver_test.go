@@ -546,6 +546,134 @@ func TestApplySucceedsWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+// TestRestoreNetworkManagerRetriesReloadAfterFailure pins that when the NM
+// drop-in was removed but `nmcli general reload` failed, a retry RE-RUNS the
+// reload (it is not a silent no-op just because the file is already gone).
+func TestRestoreNetworkManagerRetriesReloadAfterFailure(t *testing.T) {
+	isolateState(t)
+	stubIfaceIndex(t, 1, true)
+	dropIn := filepath.Join(t.TempDir(), "vpn-manager-dns.conf")
+	if err := os.WriteFile(dropIn, []byte("[global-dns-domain-*]\nservers=1.1.1.1\n"), 0640); err != nil {
+		t.Fatalf("seed drop-in: %v", err)
+	}
+	origPath := nmDNSConfPath
+	nmDNSConfPath = dropIn
+	t.Cleanup(func() { nmDNSConfPath = origPath })
+
+	reloadCalls := 0
+	failReload := true
+	orig := runCmd
+	runCmd = func(name string, args ...string) error {
+		if name == "nmcli" && len(args) >= 2 && args[0] == "general" && args[1] == "reload" {
+			reloadCalls++
+			if failReload {
+				return fmt.Errorf("reload boom")
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { runCmd = orig })
+
+	r := &Resolver{
+		backend: BackendNetworkManager, appliedBackend: BackendNetworkManager,
+		applied: true, iface: "tun0",
+	}
+	if err := r.Restore(); err == nil {
+		t.Fatal("expected reload failure on first Restore")
+	}
+	if !r.applied {
+		t.Error("state cleared despite reload failure — retry would be impossible")
+	}
+	if _, err := os.Stat(dropIn); !os.IsNotExist(err) {
+		t.Error("drop-in should have been removed on the first attempt")
+	}
+
+	failReload = false
+	if err := r.Restore(); err != nil {
+		t.Fatalf("retry Restore: %v", err)
+	}
+	if reloadCalls < 2 {
+		t.Errorf("reload not re-run on retry (calls=%d) — retry was a silent no-op", reloadCalls)
+	}
+	if r.applied {
+		t.Error("state not cleared after successful retry")
+	}
+}
+
+// TestApplySystemdRollsBackPartialFailure pins that a resolvectl command failing
+// mid-sequence (after an earlier command already mutated the link) rolls the
+// partial override back instead of orphaning it with no restore state.
+func TestApplySystemdRollsBackPartialFailure(t *testing.T) {
+	isolateState(t)
+	stubIfaceIndex(t, 1, true)
+	var recorded [][]string
+	orig := runCmd
+	runCmd = func(name string, args ...string) error {
+		recorded = append(recorded, append([]string{name}, args...))
+		// Strict mode: succeed `resolvectl dns`, then fail the routing-domain step.
+		if name == "resolvectl" && len(args) >= 1 && args[0] == "domain" {
+			return fmt.Errorf("domain boom")
+		}
+		return nil
+	}
+	t.Cleanup(func() { runCmd = orig })
+
+	r := &Resolver{backend: BackendSystemdResolved}
+	if err := r.Apply("tun0", []string{"1.1.1.1"}, "strict"); err == nil {
+		t.Fatal("Apply should return the partial-failure error")
+	}
+	if r.applied {
+		t.Error("resolver still marked applied after a failed apply — override orphaned")
+	}
+	if !hasCmd(recorded, []string{"resolvectl", "revert", "tun0"}) {
+		t.Errorf("partial apply was not rolled back via resolvectl revert; cmds=%v", recorded)
+	}
+	if _, err := os.Stat(resolverStatePath); !os.IsNotExist(err) {
+		t.Error("state persisted despite a failed apply")
+	}
+}
+
+// TestApplyResolvConfPreservesSymlink pins that the resolv.conf backend writes
+// THROUGH a symlinked /etc/resolv.conf rather than replacing the symlink with a
+// static file (which would break dynamic resolver management).
+func TestApplyResolvConfPreservesSymlink(t *testing.T) {
+	captureCmds(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real-resolv.conf")
+	link := filepath.Join(dir, "resolv.conf")
+	original := "nameserver 192.168.1.1\n"
+	if err := os.WriteFile(target, []byte(original), 0644); err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	origPath := resolvConfPath
+	resolvConfPath = link
+	t.Cleanup(func() { resolvConfPath = origPath })
+
+	r := &Resolver{backend: BackendResolvConf}
+	if err := r.Apply("tun0", []string{"9.9.9.9"}, "custom"); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("resolv.conf symlink was replaced by a regular file (mode=%v err=%v)", fi.Mode(), err)
+	}
+	if got, _ := os.ReadFile(target); !strings.Contains(string(got), "nameserver 9.9.9.9") {
+		t.Errorf("VPN servers not written through the symlink: target=%q", got)
+	}
+
+	if err := r.Restore(); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("symlink not preserved after restore (mode=%v err=%v)", fi.Mode(), err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != original {
+		t.Errorf("original not restored through symlink: target=%q want %q", got, original)
+	}
+}
+
 func hasCmd(recorded [][]string, want []string) bool {
 	for _, c := range recorded {
 		if reflect.DeepEqual(c, want) {

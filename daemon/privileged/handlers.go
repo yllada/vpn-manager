@@ -246,6 +246,15 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 		// modes that assign nothing (off, or auto/custom with no servers).
 		resolver := GetDNSResolver()
 		if err := resolver.Apply(params.VPNInterface, params.Servers, params.Mode); err != nil {
+			// Roll back the firewall rules installed above so a resolver failure
+			// does not leave orphaned leak-block / DoT-block rules behind: the
+			// client stays disabled, so no later Disable would clean them up, and
+			// they can otherwise force DNS through a tunnel that never came up.
+			// Both calls are idempotent no-ops when their rules are absent.
+			_ = firewall.DisableDNSFirewall()
+			if params.BlockDoT {
+				_ = firewall.UnblockDNSOverTLS()
+			}
 			return nil, fmt.Errorf("resolver apply: %w", err)
 		}
 
