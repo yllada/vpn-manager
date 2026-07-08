@@ -185,14 +185,42 @@ func (p *Provider) Status(ctx context.Context) (*vpntypes.ProviderStatus, error)
 
 	status, err := p.client.Status(ctx)
 	if err != nil {
-		return &vpntypes.ProviderStatus{
-			Provider:     vpntypes.ProviderTailscale,
-			Connected:    false,
-			BackendState: "Unknown",
-			Error:        err.Error(),
-		}, nil
+		return statusError(err), nil
 	}
+	return providerStatusFromRaw(status), nil
+}
 
+// StatusBundle fetches the Tailscale status ONCE and returns both the shaped
+// ProviderStatus and the raw status. Callers that need both (the panel's
+// periodic refresh) must use this instead of calling Status + GetTailscaleStatus,
+// which would fork `tailscale status --json` twice per refresh. On error it
+// mirrors Status: the returned ProviderStatus carries the error, raw is nil, and
+// the error is also returned for callers that branch on it.
+func (p *Provider) StatusBundle(ctx context.Context) (*vpntypes.ProviderStatus, *Status, error) {
+	if p.client == nil {
+		return nil, nil, fmt.Errorf("tailscale client not initialized")
+	}
+	status, err := p.client.Status(ctx)
+	if err != nil {
+		return statusError(err), nil, err
+	}
+	return providerStatusFromRaw(status), status, nil
+}
+
+// statusError builds the "unknown/disconnected" ProviderStatus used when the
+// status fetch fails.
+func statusError(err error) *vpntypes.ProviderStatus {
+	return &vpntypes.ProviderStatus{
+		Provider:     vpntypes.ProviderTailscale,
+		Connected:    false,
+		BackendState: "Unknown",
+		Error:        err.Error(),
+	}
+}
+
+// providerStatusFromRaw shapes a raw Tailscale status into the generic
+// ProviderStatus. Extracted so a single fetch can feed both shapes (StatusBundle).
+func providerStatusFromRaw(status *Status) *vpntypes.ProviderStatus {
 	providerStatus := &vpntypes.ProviderStatus{
 		Provider:     vpntypes.ProviderTailscale,
 		BackendState: status.BackendState,
@@ -216,7 +244,7 @@ func (p *Provider) Status(ctx context.Context) (*vpntypes.ProviderStatus, error)
 		}
 	}
 
-	return providerStatus, nil
+	return providerStatus
 }
 
 // GetProfiles returns the Tailscale profile.

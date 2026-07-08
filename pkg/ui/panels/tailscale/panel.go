@@ -79,6 +79,11 @@ type TailscalePanel struct {
 	statusRunning bool
 	statusPending bool
 
+	// cachedVersion memoizes `tailscale version` (it only changes on a package
+	// upgrade), so the periodic status refresh does not fork it every tick. Only
+	// touched inside the single coalesced status-fetch goroutine, so no lock needed.
+	cachedVersion string
+
 	// availabilityChecking coalesces concurrent checkAvailability calls: the
 	// availability probe shells out (tailscale version + status, up to 5s), so it
 	// runs off the GTK main thread; this guards against overlapping probes from

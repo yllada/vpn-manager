@@ -124,11 +124,19 @@ func (tp *TailscalePanel) UpdateStatus() {
 	resilience.SafeGoWithName("tailscale-status-fetch", func() {
 		for {
 			ctx := context.Background()
-			version, _ := tp.provider.Version()
-			status, statusErr := tp.provider.Status(ctx)
-			tsStatus, tsErr := tp.provider.GetTailscaleStatus(ctx)
+			// Version only changes on a package upgrade — fetch it once and reuse,
+			// instead of forking `tailscale version` every tick.
+			if tp.cachedVersion == "" {
+				tp.cachedVersion, _ = tp.provider.Version()
+			}
+			version := tp.cachedVersion
+			// One `tailscale status --json` fetch feeds both shapes (previously
+			// Status + GetTailscaleStatus forked it twice). Status embeds its error
+			// and reports nil statusErr, matching the prior contract; the raw fetch
+			// error flows through as tsErr.
+			status, tsStatus, tsErr := tp.provider.StatusBundle(ctx)
 			glib.IdleAdd(func() {
-				tp.renderStatus(version, status, statusErr, tsStatus, tsErr)
+				tp.renderStatus(version, status, nil, tsStatus, tsErr)
 			})
 
 			// If a refresh arrived mid-fetch, drain it and re-run once more;
