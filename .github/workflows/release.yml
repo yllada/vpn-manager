@@ -135,7 +135,8 @@ jobs:
   build:
     name: Build Release
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 30m: gotk4 CGO bindings take 5-8m on cold cache, plus tarball/DEB/RPM packaging
+    timeout-minutes: 30
     needs: validate
     outputs:
       version: ${{ needs.validate.outputs.version }}
