@@ -280,9 +280,13 @@ func DNSDisableHandler(state *daemon.State) daemon.HandlerFunc {
 		}
 
 		// Restore the resolver to its pre-VPN configuration (reverts the DNS
-		// servers assigned on the link). No-op if nothing was applied.
+		// servers assigned on the link). No-op if nothing was applied. If it
+		// fails the DNS override may still be live, so surface the error instead
+		// of reporting success: the resolver keeps its state for retry, the
+		// daemon leaves protection marked enabled, and the client (which only
+		// clears its flag on a successful disable) does not falsely report "off".
 		if err := GetDNSResolver().Restore(); err != nil {
-			ctx.Logger.Printf("Warning: DNS resolver restore had errors: %v", err)
+			return nil, fmt.Errorf("resolver restore: %w", err)
 		}
 
 		// Update state
