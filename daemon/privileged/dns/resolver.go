@@ -31,8 +31,9 @@ import (
 	"github.com/yllada/vpn-manager/internal/paths"
 )
 
-// nmDNSConfPath is the NetworkManager drop-in that pins the VPN DNS servers.
-const nmDNSConfPath = "/etc/NetworkManager/conf.d/vpn-manager-dns.conf"
+// nmDNSConfPath is the NetworkManager drop-in that pins the VPN DNS servers. It
+// is a var (not a const) so tests can redirect it to a temp file.
+var nmDNSConfPath = "/etc/NetworkManager/conf.d/vpn-manager-dns.conf"
 
 // resolvConfPath is the system resolver file for the fallback backend. It is a
 // var (not a const) so tests can redirect it to a temp file.
@@ -69,12 +70,17 @@ var (
 		return string(out), err
 	}
 
-	// ifaceExists reports whether a network interface with the given name is
-	// currently present. Used to skip reverting adopted state on an interface
-	// that no longer exists (e.g. the tunnel died with the previous daemon).
-	ifaceExists = func(name string) bool {
-		_, err := net.InterfaceByName(name)
-		return err == nil
+	// ifaceIndex returns the kernel index of the named interface and whether it
+	// exists. The index identifies the specific device: an interface with the
+	// same name but a different index (a name reused after the original tunnel
+	// died) is NOT the one we configured, so adopted state must not revert
+	// against it.
+	ifaceIndex = func(name string) (int, bool) {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			return 0, false
+		}
+		return iface.Index, true
 	}
 )
 
@@ -145,6 +151,10 @@ type Resolver struct {
 	adopted bool
 	// iface is the VPN link Apply configured, needed by Restore (resolvectl revert).
 	iface string
+	// ifindex is the kernel index of iface at apply time. Restore compares it
+	// against the live index so adopted state never reverts an interface whose
+	// name was reused by a different device after a crash.
+	ifindex int
 	// resolvBackup holds the /etc/resolv.conf bytes captured before an apply on
 	// the resolv.conf backend, replayed verbatim by Restore.
 	resolvBackup    []byte
@@ -155,9 +165,12 @@ type Resolver struct {
 // exactly what Restore needs to revert an apply: which backend/interface was
 // configured and, for the resolv.conf backend, the original file bytes.
 type persistedResolverState struct {
-	Applied         bool    `json:"applied"`
-	Backend         Backend `json:"backend"`
+	Applied bool `json:"applied"`
+	// AppliedBackend is the backend that installed the override (the JSON key
+	// stays "backend" for on-disk compatibility).
+	AppliedBackend  Backend `json:"backend"`
 	Iface           string  `json:"iface"`
+	Ifindex         int     `json:"ifindex,omitempty"`
 	ResolvBackup    []byte  `json:"resolv_backup,omitempty"`
 	HadResolvBackup bool    `json:"had_resolv_backup"`
 }
@@ -194,11 +207,12 @@ func (r *Resolver) loadState() {
 	r.adopted = true
 	// Restore must use the backend that Apply used, not whatever is detected now;
 	// keep the live-detected r.backend intact so a fresh Apply is unaffected.
-	r.appliedBackend = st.Backend
+	r.appliedBackend = st.AppliedBackend
 	if r.appliedBackend == "" {
 		r.appliedBackend = r.backend
 	}
 	r.iface = st.Iface
+	r.ifindex = st.Ifindex
 	r.resolvBackup = st.ResolvBackup
 	r.hadResolvBackup = st.HadResolvBackup
 	log.Printf("[dns] adopted resolver restore state from disk (backend: %s, iface: %s)", r.appliedBackend, r.iface)
@@ -214,8 +228,9 @@ func (r *Resolver) saveStateLocked() {
 	}
 	st := persistedResolverState{
 		Applied:         r.applied,
-		Backend:         r.appliedBackend,
+		AppliedBackend:  r.appliedBackend,
 		Iface:           r.iface,
+		Ifindex:         r.ifindex,
 		ResolvBackup:    r.resolvBackup,
 		HadResolvBackup: r.hadResolvBackup,
 	}
@@ -326,6 +341,7 @@ func (r *Resolver) Restore() error {
 	r.applied = false
 	r.adopted = false
 	r.iface = ""
+	r.ifindex = 0
 	r.resolvBackup = nil
 	r.hadResolvBackup = false
 	r.appliedBackend = ""
@@ -347,9 +363,21 @@ func (r *Resolver) revertLocked() error {
 		if r.iface == "" {
 			return nil
 		}
-		if r.adopted && !ifaceExists(r.iface) {
-			log.Printf("[dns] adopted revert skipped: interface %s no longer exists", r.iface)
-			return nil
+		if r.adopted {
+			// Adopted state may be stale after a crash: only revert if the exact
+			// device is still present. A missing interface (tunnel gone) or a
+			// namesake with a different kernel index (name reused by another
+			// device) means there is nothing of ours to revert.
+			idx, ok := ifaceIndex(r.iface)
+			if !ok {
+				log.Printf("[dns] adopted revert skipped: interface %s no longer exists", r.iface)
+				return nil
+			}
+			if r.ifindex != 0 && idx != r.ifindex {
+				log.Printf("[dns] adopted revert skipped: interface %s is a different device (index %d, expected %d)",
+					r.iface, idx, r.ifindex)
+				return nil
+			}
 		}
 		// `resolvectl revert <iface>` drops the per-link DNS/domain/default-route
 		// overrides and returns the link to its network-configured defaults. This
@@ -361,6 +389,9 @@ func (r *Resolver) revertLocked() error {
 		_ = runCmd("resolvectl", "flush-caches")
 		return nil
 	case BackendNetworkManager:
+		// No separate adopted-state guard is needed: the NM drop-in is a file only
+		// vpn-managerd ever writes, so restoreNetworkManagerLocked already no-ops
+		// when it is absent and otherwise removes exactly our own override.
 		return restoreNetworkManagerLocked()
 	default:
 		if r.adopted && !currentResolvConfIsOurs() {
@@ -417,6 +448,12 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 
 	r.applied = true
 	r.iface = iface
+	// Record the interface's kernel index so Restore can tell this exact device
+	// apart from a later namesake. Best-effort: 0 means "unknown", which disables
+	// the identity check (the existence check still applies).
+	if idx, ok := ifaceIndex(iface); ok {
+		r.ifindex = idx
+	}
 	log.Printf("[dns] resolver applied via systemd-resolved (iface: %s, servers: %v, routing-domain: %v)",
 		iface, servers, p.routingDomain)
 	return nil

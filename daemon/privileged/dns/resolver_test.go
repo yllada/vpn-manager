@@ -27,19 +27,19 @@ func captureCmds(t *testing.T) *[][]string {
 	}
 	t.Cleanup(func() { runCmd = orig })
 	// Keep every apply/restore test hermetic: redirect the persisted state file
-	// off the real /var/lib, and assume the configured interface exists (the
-	// common case) unless a test overrides it.
+	// off the real /var/lib, and make the configured interface resolve to a fixed
+	// index (the common "still present" case) unless a test overrides it.
 	isolateState(t)
-	stubIfaceExists(t, true)
+	stubIfaceIndex(t, 10, true)
 	return recorded
 }
 
-// stubIfaceExists forces the ifaceExists seam to a fixed result for the test.
-func stubIfaceExists(t *testing.T, exists bool) {
+// stubIfaceIndex forces the ifaceIndex seam to a fixed (index, exists) result.
+func stubIfaceIndex(t *testing.T, index int, exists bool) {
 	t.Helper()
-	orig := ifaceExists
-	ifaceExists = func(string) bool { return exists }
-	t.Cleanup(func() { ifaceExists = orig })
+	orig := ifaceIndex
+	ifaceIndex = func(string) (int, bool) { return index, exists }
+	t.Cleanup(func() { ifaceIndex = orig })
 }
 
 func TestPlanForMode(t *testing.T) {
@@ -317,7 +317,7 @@ func TestApplyResolvConfKeepsOriginalBackupOnModeSwitch(t *testing.T) {
 // revert), and that a subsequent retry actually reverts and then clears.
 func TestRestoreKeepsStateOnRevertFailure(t *testing.T) {
 	isolateState(t)
-	stubIfaceExists(t, true)
+	stubIfaceIndex(t, 1, true)
 	failRevert := true
 	orig := runCmd
 	runCmd = func(name string, args ...string) error {
@@ -395,11 +395,11 @@ func TestRestoreAdoptedSkipsExternallyChangedResolvConf(t *testing.T) {
 // with the previous daemon), so an unrelated reused interface is never touched.
 func TestRestoreAdoptedSkipsMissingInterface(t *testing.T) {
 	rec := captureCmds(t)
-	stubIfaceExists(t, false) // the adopted interface is gone
+	stubIfaceIndex(t, 0, false) // the adopted interface is gone
 
 	r := &Resolver{
 		backend: BackendSystemdResolved, appliedBackend: BackendSystemdResolved,
-		applied: true, adopted: true, iface: "tun0",
+		applied: true, adopted: true, iface: "tun0", ifindex: 7,
 	}
 	if err := r.Restore(); err != nil {
 		t.Fatalf("Restore returned error: %v", err)
@@ -409,6 +409,60 @@ func TestRestoreAdoptedSkipsMissingInterface(t *testing.T) {
 	}
 	if r.applied {
 		t.Error("stale adopted state not cleared")
+	}
+}
+
+// TestRestoreAdoptedSkipsReusedInterfaceName pins that adopted systemd-resolved
+// state is NOT reverted when an interface with the same name exists but is a
+// different device (different kernel index) — a name reused after the original
+// tunnel died must not have its DNS stripped.
+func TestRestoreAdoptedSkipsReusedInterfaceName(t *testing.T) {
+	rec := captureCmds(t)
+	stubIfaceIndex(t, 42, true) // same name, DIFFERENT device than the adopted one
+
+	r := &Resolver{
+		backend: BackendSystemdResolved, appliedBackend: BackendSystemdResolved,
+		applied: true, adopted: true, iface: "wg0", ifindex: 7, // configured on index 7
+	}
+	if err := r.Restore(); err != nil {
+		t.Fatalf("Restore returned error: %v", err)
+	}
+	if hasCmd(*rec, []string{"resolvectl", "revert", "wg0"}) {
+		t.Error("reverted a namesake interface that is a different device")
+	}
+	if r.applied {
+		t.Error("stale adopted state not cleared")
+	}
+}
+
+// TestRestoreNetworkManagerAdoptedRemovesOwnDropIn pins the NM restore path:
+// adopted state removes the vpn-managerd drop-in (our own file) and reloads NM;
+// when the drop-in is already gone it is a no-op.
+func TestRestoreNetworkManagerAdoptedRemovesOwnDropIn(t *testing.T) {
+	rec := captureCmds(t)
+	dropIn := filepath.Join(t.TempDir(), "vpn-manager-dns.conf")
+	if err := os.WriteFile(dropIn, []byte("[global-dns-domain-*]\nservers=1.1.1.1\n"), 0640); err != nil {
+		t.Fatalf("seed NM drop-in: %v", err)
+	}
+	origPath := nmDNSConfPath
+	nmDNSConfPath = dropIn
+	t.Cleanup(func() { nmDNSConfPath = origPath })
+
+	r := &Resolver{
+		backend: BackendNetworkManager, appliedBackend: BackendNetworkManager,
+		applied: true, adopted: true, iface: "tun0",
+	}
+	if err := r.Restore(); err != nil {
+		t.Fatalf("Restore returned error: %v", err)
+	}
+	if _, err := os.Stat(dropIn); !os.IsNotExist(err) {
+		t.Errorf("NM drop-in not removed on restore (err=%v)", err)
+	}
+	if !hasCmd(*rec, []string{"nmcli", "general", "reload"}) {
+		t.Errorf("NM reload not issued on restore, got %v", *rec)
+	}
+	if r.applied {
+		t.Error("state not cleared after NM restore")
 	}
 }
 
@@ -425,7 +479,7 @@ func TestNewResolverAdoptsPersistedStateOnRestart(t *testing.T) {
 	t.Cleanup(func() { lookPath = origLook })
 
 	st := persistedResolverState{
-		Applied: true, Backend: BackendResolvConf, Iface: "tun0",
+		Applied: true, AppliedBackend: BackendResolvConf, Iface: "tun0",
 		ResolvBackup: []byte("nameserver 192.168.1.1\n"), HadResolvBackup: true,
 	}
 	data, _ := json.Marshal(st)
@@ -442,6 +496,30 @@ func TestNewResolverAdoptsPersistedStateOnRestart(t *testing.T) {
 	}
 	if r.iface != "tun0" {
 		t.Errorf("iface = %q, want tun0", r.iface)
+	}
+}
+
+// TestLoadStateKeepsDetectedBackendSeparate pins that adopting persisted state
+// does NOT clobber the freshly detected backend: appliedBackend (for restoring
+// the old override) and backend (for a fresh Apply) can hold different values.
+func TestLoadStateKeepsDetectedBackendSeparate(t *testing.T) {
+	captureCmds(t)
+	isolateState(t)
+	// The previous instance ran NetworkManager...
+	st := persistedResolverState{Applied: true, AppliedBackend: BackendNetworkManager, Iface: "tun0"}
+	data, _ := json.Marshal(st)
+	if err := os.WriteFile(resolverStatePath, data, 0600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	// ...but this instance detects systemd-resolved.
+	r := &Resolver{backend: BackendSystemdResolved}
+	r.loadState()
+
+	if r.appliedBackend != BackendNetworkManager {
+		t.Errorf("appliedBackend = %q, want networkmanager (from disk)", r.appliedBackend)
+	}
+	if r.backend != BackendSystemdResolved {
+		t.Errorf("detected backend = %q, want systemd-resolved (must not be clobbered)", r.backend)
 	}
 }
 
