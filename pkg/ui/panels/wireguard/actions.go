@@ -16,6 +16,14 @@ import (
 	"github.com/yllada/vpn-manager/pkg/ui/ports"
 )
 
+// ImportProfile opens the WireGuard config import file dialog. It is the
+// exported entry point used by the main window's protocol chooser so the
+// header "+" can route to the WireGuard import flow. Must run on the GTK main
+// thread.
+func (wp *WireGuardPanel) ImportProfile() {
+	wp.onImportProfile()
+}
+
 // onImportProfile handles importing a WireGuard config file.
 func (wp *WireGuardPanel) onImportProfile() {
 	// Create FileDialog (GTK4 4.10+ async API)

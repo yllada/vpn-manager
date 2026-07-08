@@ -144,7 +144,7 @@ func (mw *MainWindow) createLayout() {
 	mw.headerBar = adw.NewHeaderBar()
 
 	// Add profile button (left side)
-	addBtn := components.NewIconButton("list-add-symbolic", "Add profile")
+	addBtn := components.NewIconButton("list-add-symbolic", "Add VPN connection")
 	addBtn.ConnectClicked(func() { mw.onAddProfile() })
 	mw.headerBar.PackStart(addBtn)
 
@@ -171,7 +171,7 @@ func (mw *MainWindow) createLayout() {
 	splitTunnelFactory := func(host ports.PanelHost, profile *profile.Profile) openvpn.SplitTunnelDialog {
 		return dialogs.NewSplitTunnelDialog(host, profile)
 	}
-	mw.openvpnPanel = openvpn.NewOpenVPNPanel(mw, mw.onAddProfile, splitTunnelFactory)
+	mw.openvpnPanel = openvpn.NewOpenVPNPanel(mw, mw.onAddOpenVPNProfile, splitTunnelFactory)
 	scrolledOpenVPN := gtk.NewScrolledWindow()
 	scrolledOpenVPN.SetVExpand(true)
 	scrolledOpenVPN.SetChild(mw.openvpnPanel.GetWidget())
@@ -626,7 +626,108 @@ func (mw *MainWindow) ShowToastWithAction(message, actionLabel, actionName strin
 
 // Event handlers
 
+// onAddProfile presents a small protocol chooser ("Add a VPN connection")
+// offering OpenVPN, WireGuard, and Tailscale, then routes to the matching add
+// flow. Wired to both the header "+" button and Ctrl+N. Must run on the GTK
+// main thread.
 func (mw *MainWindow) onAddProfile() {
+	mw.showAddConnectionChooser()
+}
+
+// showAddConnectionChooser builds and presents the protocol chooser dialog. It
+// uses an AdwDialog with a list of activatable AdwActionRows (title + subtitle
+// + icon), matching the app's existing dialog style. Each row routes to its
+// protocol's add flow. Panels that are unavailable (nil) fall back to an
+// informative toast instead of a broken action.
+func (mw *MainWindow) showAddConnectionChooser() {
+	dialog := adw.NewDialog()
+	dialog.SetTitle("Add a VPN connection")
+	dialog.SetContentWidth(420)
+
+	toolbarView := adw.NewToolbarView()
+
+	headerBar := adw.NewHeaderBar()
+	toolbarView.AddTopBar(headerBar)
+
+	prefsPage := adw.NewPreferencesPage()
+
+	group := adw.NewPreferencesGroup()
+	group.SetDescription("Choose the type of VPN connection to add")
+
+	// OpenVPN: import a .ovpn/.conf configuration file.
+	group.Add(mw.newProtocolRow(
+		"OpenVPN",
+		"Import an OpenVPN configuration file (.ovpn, .conf)",
+		"network-vpn-symbolic",
+		func() {
+			dialog.Close()
+			mw.onAddOpenVPNProfile()
+		},
+	))
+
+	// WireGuard: import a .conf configuration file via the WireGuard panel.
+	group.Add(mw.newProtocolRow(
+		"WireGuard",
+		"Import a WireGuard configuration file (.conf)",
+		"network-wired-symbolic",
+		func() {
+			dialog.Close()
+			if mw.wireguardPanel == nil {
+				mw.ShowToast("WireGuard is not available", 3)
+				return
+			}
+			mw.wireguardPanel.ImportProfile()
+		},
+	))
+
+	// Tailscale: login-based, no file to import — route the user to the tab.
+	group.Add(mw.newProtocolRow(
+		"Tailscale",
+		"Log in from the Tailscale tab (no file to import)",
+		"network-server-symbolic",
+		func() {
+			dialog.Close()
+			if mw.tailscalePanel == nil || mw.viewStack == nil {
+				mw.ShowToast("Tailscale is not available", 3)
+				return
+			}
+			mw.viewStack.SetVisibleChildName("tailscale")
+			mw.ShowToast("Set up Tailscale in the Tailscale tab", 4)
+		},
+	))
+
+	prefsPage.Add(group)
+	toolbarView.SetContent(prefsPage)
+	dialog.SetChild(toolbarView)
+	dialog.Present(mw.window)
+}
+
+// newProtocolRow builds a single activatable AdwActionRow for the protocol
+// chooser: a leading protocol icon, a title, a subtitle, and a trailing
+// navigation chevron. onActivate runs when the row is clicked or activated.
+func (mw *MainWindow) newProtocolRow(title, subtitle, iconName string, onActivate func()) *adw.ActionRow {
+	row := adw.NewActionRow()
+	row.SetTitle(title)
+	row.SetSubtitle(subtitle)
+	row.SetActivatable(true)
+
+	icon := gtk.NewImage()
+	icon.SetFromIconName(iconName)
+	row.AddPrefix(icon)
+
+	chevron := gtk.NewImage()
+	chevron.SetFromIconName("go-next-symbolic")
+	chevron.AddCSSClass("dim-label")
+	row.AddSuffix(chevron)
+
+	row.ConnectActivated(onActivate)
+	return row
+}
+
+// onAddOpenVPNProfile opens the OpenVPN configuration file chooser and adds the
+// selected profile. This is the original header "+" behavior, now reached via
+// the protocol chooser.
+func (mw *MainWindow) onAddOpenVPNProfile() {
 	// Create FileDialog (GTK4 4.10+ async API)
 	dialog := gtk.NewFileDialog()
 	dialog.SetTitle("Select VPN configuration file")
