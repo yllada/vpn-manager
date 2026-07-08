@@ -89,12 +89,15 @@ type PanelHost interface {
 	// RefreshAllPanels refreshes the status of all VPN panels.
 	RefreshAllPanels()
 
-	// EnsureExclusive enforces mutual exclusion between VPN protocols: any
-	// protocol other than exceptProtocol that is currently connected is
-	// disconnected (and the user told via a toast) before the caller connects.
-	// Must be called from a background goroutine — the per-protocol disconnects
-	// block on the daemon and must not run on the GTK main loop.
-	EnsureExclusive(exceptProtocol string)
+	// ConnectExclusive runs a connect under mutual exclusion. It MUST be called
+	// on the GTK main thread at click time. It rejects overlapping connects (a
+	// second click while one is in flight is a no-op with a toast), and if
+	// another protocol is currently connected it asks the user to confirm the
+	// switch via a modal dialog. On proceed it disconnects the other protocols on
+	// a background goroutine and only invokes connect if EVERY disconnect
+	// succeeded. connect runs OFF the main thread, must return its connect error,
+	// and must route its own widget updates through glib.IdleAdd.
+	ConnectExclusive(proto, id, name string, connect func() error)
 
 	// GetWindow returns the parent window for presenting dialogs.
 	// Returns a gtk.Widgetter that can be cast to *gtk.Window or *adw.ApplicationWindow.

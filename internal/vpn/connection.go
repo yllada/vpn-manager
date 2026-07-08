@@ -124,11 +124,17 @@ func (m *Manager) Disconnect(profileID string) error {
 		}
 	}
 
-	// Disconnect via daemon (the daemon manages the OpenVPN process)
+	// Disconnect via daemon (the daemon manages the OpenVPN process). Capture the
+	// error but keep tearing down local state (security features, registry) — then
+	// surface it at the end. A swallowed failure here would let callers (e.g. the
+	// mutual-exclusion path) believe the tunnel is gone when the OpenVPN process
+	// may still be running.
+	var daemonErr error
 	if daemon.IsDaemonAvailable() {
 		client := &daemon.OpenVPNClient{}
 		if err := client.Disconnect(profileID); err != nil {
 			logger.LogWarn("vpn", "Daemon disconnect failed: %v", err)
+			daemonErr = fmt.Errorf("daemon disconnect failed for %s: %w", profileID, err)
 		}
 	}
 
@@ -184,7 +190,7 @@ func (m *Manager) Disconnect(profileID string) error {
 		ProfileID: profileID,
 	})
 
-	return nil
+	return daemonErr
 }
 
 // DisconnectAll disconnects all active VPN connections.

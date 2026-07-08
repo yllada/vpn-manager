@@ -32,7 +32,9 @@ func (f *fakeHost) ShowInfo(title, message string)                             {
 func (f *fakeHost) IsDaemonAvailable() bool                                    { return true }
 func (f *fakeHost) RefreshDaemonStatus()                                       {}
 func (f *fakeHost) RefreshAllPanels()                                          {}
-func (f *fakeHost) EnsureExclusive(exceptProtocol string)                      {}
+func (f *fakeHost) ConnectExclusive(proto, id, name string, connect func() error) {
+	_ = connect()
+}
 func (f *fakeHost) GetWindow() gtk.Widgetter                                   { return nil }
 func (f *fakeHost) GetGtkWindow() *gtk.Window                                  { return nil }
 func (f *fakeHost) GetClipboard() *gdk.Clipboard                               { return nil }

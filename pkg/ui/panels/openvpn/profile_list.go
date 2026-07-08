@@ -495,35 +495,40 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 }
 
 // connectWithCredentials initiates VPN connection with specific credentials.
-// It first enforces mutual exclusion (disconnecting any other active protocol)
-// on a background goroutine so that step never blocks the GTK main loop, then
-// resumes the actual connect on the main thread. This ordering guarantees the
-// new connection cannot race the teardown of the protocol it replaces.
+// It routes the connect through the host's mutual-exclusion gate
+// (ConnectExclusive): the gate rejects overlapping connects, asks the user to
+// confirm switching away from any other active protocol, and only runs the
+// connect callback below once every other protocol has been disconnected
+// SUCCESSFULLY. Called on the GTK main thread; the callback runs OFF it (the
+// gate owns the goroutine), so its widget updates go through glib.IdleAdd.
 func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, username, password string) {
-	pl.UpdateRowStatus(profile.ID, vpn.StatusConnecting)
-	pl.host.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
-	pl.host.UpdateTrayStatus(ports.TrayConnecting, profile.Name)
-
-	resilience.SafeGoWithName("openvpn-ensure-exclusive", func() {
-		// Disconnect any other active protocol first (synchronous, off the GTK
-		// main thread), then resume the connect back on the main thread.
-		pl.host.EnsureExclusive(vpn.ProtocolOpenVPN)
+	pl.host.ConnectExclusive(vpn.ProtocolOpenVPN, profile.ID, profile.Name, func() error {
+		// Connecting state is shown only once the switch is confirmed and the
+		// previous protocol is actually down, so a cancelled switch leaves no stale
+		// "Connecting" row.
 		glib.IdleAdd(func() {
-			pl.startConnection(profile, username, password)
+			pl.UpdateRowStatus(profile.ID, vpn.StatusConnecting)
+			pl.host.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
+			pl.host.UpdateTrayStatus(ports.TrayConnecting, profile.Name)
 		})
+		return pl.startConnection(profile, username, password)
 	})
 }
 
 // startConnection performs the actual OpenVPN connect and wires up the auth
-// failure callback and status monitor. Runs on the GTK main thread.
-func (pl *ProfileList) startConnection(profile *profilepkg.Profile, username, password string) {
+// failure callback and status monitor. Runs OFF the GTK main thread (inside the
+// host's ConnectExclusive goroutine), so all widget updates are dispatched
+// through glib.IdleAdd. Returns the synchronous connect error, if any.
+func (pl *ProfileList) startConnection(profile *profilepkg.Profile, username, password string) error {
 	// Start connection
 	if err := pl.host.VPNManager().Connect(profile.ID, username, password); err != nil {
-		title, body := components.ExplainError("Connection error", err)
-		pl.host.ShowError(title, body)
-		pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
-		pl.host.UpdateTrayStatus(ports.TrayError, profile.Name)
-		return
+		glib.IdleAdd(func() {
+			title, body := components.ExplainError("Connection error", err)
+			pl.host.ShowError(title, body)
+			pl.UpdateRowStatus(profile.ID, vpn.StatusDisconnected)
+			pl.host.UpdateTrayStatus(ports.TrayError, profile.Name)
+		})
+		return err
 	}
 
 	// Get the connection and set up auth failure callback for OTP fallback
@@ -564,6 +569,7 @@ func (pl *ProfileList) startConnection(profile *profilepkg.Profile, username, pa
 	resilience.SafeGoWithName("openvpn-monitor-connection", func() {
 		pl.monitorConnection(profile.ID)
 	})
+	return nil
 }
 
 // monitorConnection monitors VPN connection status in the background.

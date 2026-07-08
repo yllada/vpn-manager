@@ -88,14 +88,17 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 			})
 		})
 	} else {
-		// Connect
-		row.connBtn.SetSensitive(false)
-		wp.host.SetStatus(fmt.Sprintf("Connecting to %s...", name))
-		wp.host.UpdateTrayStatus(ports.TrayConnecting, name)
-		resilience.SafeGoWithName("wireguard-connect", func() {
-			// Mutual exclusion: drop any other active protocol first (synchronous,
-			// off the GTK main thread) so the connect below does not race it.
-			wp.host.EnsureExclusive(vpntypes.ProtocolWireGuard)
+		// Connect — routed through the host's mutual-exclusion gate. Called on the
+		// GTK main thread at click time; ConnectExclusive owns the goroutine, so we
+		// no longer spawn one here. The callback runs OFF the main thread AFTER any
+		// other active protocol has been disconnected, does its own widget updates
+		// via glib.IdleAdd, and RETURNS the connect error so the host can gate.
+		wp.host.ConnectExclusive(vpntypes.ProtocolWireGuard, row.profile.ID(), name, func() error {
+			glib.IdleAdd(func() {
+				row.connBtn.SetSensitive(false)
+				wp.host.SetStatus(fmt.Sprintf("Connecting to %s...", name))
+				wp.host.UpdateTrayStatus(ports.TrayConnecting, name)
+			})
 			err := wp.provider.Connect(context.Background(), row.profile, vpntypes.AuthInfo{})
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
@@ -118,6 +121,7 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 				}
 				wp.updateRowStatus(row)
 			})
+			return err
 		})
 	}
 }
@@ -128,13 +132,19 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 // host's mutual-exclusion path. The provider disconnect blocks, so this MUST be
 // called off the GTK main thread; the row refresh is routed through
 // glib.IdleAdd.
-func (wp *WireGuardPanel) DisconnectActive() {
+//
+// It returns the provider disconnect error so the caller (the host's
+// ConnectExclusive gate) can refuse to bring up a new protocol when the old one
+// could not be torn down. On error the registry entries are intentionally left
+// in place — leaving the UI showing "connected" is the safe direction, since the
+// tunnel may still be up.
+func (wp *WireGuardPanel) DisconnectActive() error {
 	if wp.provider == nil {
-		return
+		return nil
 	}
 	ctrl := wp.host.VPNManager()
 	if ctrl == nil {
-		return
+		return nil
 	}
 
 	// Snapshot the WireGuard entries from the thread-safe registry rather than
@@ -146,18 +156,24 @@ func (wp *WireGuardPanel) DisconnectActive() {
 		}
 	}
 	if len(ids) == 0 {
-		return
+		return nil
 	}
 
 	// A nil profile disconnects all WireGuard tunnels managed by the provider.
 	if err := wp.provider.Disconnect(context.Background(), nil); err != nil {
 		logger.LogError("WireGuard: DisconnectActive error: %v", err)
-		return
+		return err
 	}
 	for _, id := range ids {
 		ctrl.UnregisterConnection(id)
 	}
-	glib.IdleAdd(wp.updateAllRows)
+	glib.IdleAdd(func() {
+		wp.updateAllRows()
+		// The tunnel is down and its registry entry is gone; reset the tray so it
+		// no longer reflects a WireGuard connection.
+		wp.host.UpdateTrayStatus(ports.TrayDisconnected, "")
+	})
+	return nil
 }
 
 // onDeleteProfile handles deleting a profile.

@@ -174,43 +174,62 @@ func (tp *TailscalePanel) onConnectClicked() {
 				tp.UpdateStatus()
 			})
 		} else {
-			// Connect
+			// Connect — hand off to the host's mutual-exclusion gate. We are on a
+			// background goroutine here (we just ran Status to decide connect vs
+			// disconnect), so hop back to the GTK main thread: ConnectExclusive must
+			// run there (it guards the main-thread connectInFlight flag and may show
+			// a modal confirm dialog). ConnectExclusive owns the connect goroutine;
+			// our callback runs off the main thread AFTER any other active protocol
+			// has been disconnected, and RETURNS the connect error so the host can
+			// refuse to leave Tailscale half-up if the switch failed.
 			glib.IdleAdd(func() {
-				tp.host.UpdateTrayStatus(ports.TrayConnecting, "Tailscale")
-			})
-			// Mutual exclusion: drop any other active protocol first (synchronous,
-			// off the GTK main thread) so the connect below does not race it.
-			tp.host.EnsureExclusive(vpntypes.ProtocolTailscale)
-			if err := tp.provider.Connect(ctx, nil, vpntypes.AuthInfo{Interactive: true}); err != nil {
-				glib.IdleAdd(func() {
-					tp.connectBtn.SetSensitive(true)
-					title, body := components.ExplainError("Connect Error", err)
-					tp.host.ShowError(title, body)
-					tp.host.UpdateTrayStatus(ports.TrayError, "Tailscale")
-				})
-				return
-			}
-			glib.IdleAdd(func() {
+				// Re-enable the button before handing off: ConnectExclusive may reject
+				// an in-flight connect or the user may cancel the switch dialog, and
+				// the callback re-manages sensitivity itself — so we must not leave it
+				// stuck disabled from the click-time SetSensitive(false).
 				tp.connectBtn.SetSensitive(true)
-				tp.host.SetStatus("Tailscale connected")
-				if tp.host.GetConfig().ShowNotifications {
-					notify.Connected("Tailscale")
-				}
-				// Record in the cross-protocol registry so other panels' mutual
-				// exclusion / global indicator can see Tailscale is up.
-				tp.host.VPNManager().RegisterConnection(vpntypes.ActiveConnection{
-					ID:       vpntypes.ProtocolTailscale,
-					Protocol: vpntypes.ProtocolTailscale,
-					Name:     "Tailscale",
-					Status:   vpntypes.StatusConnected,
-					Iface:    "tailscale0",
+				tp.host.ConnectExclusive(vpntypes.ProtocolTailscale, vpntypes.ProtocolTailscale, "Tailscale", func() error {
+					glib.IdleAdd(func() {
+						tp.connectBtn.SetSensitive(false)
+						tp.host.UpdateTrayStatus(ports.TrayConnecting, "Tailscale")
+					})
+					// Fresh context: the outer goroutine's ctx is cancelled once we
+					// return from this handler.
+					cctx, ccancel := context.WithTimeout(context.Background(), 60*time.Second)
+					defer ccancel()
+					if err := tp.provider.Connect(cctx, nil, vpntypes.AuthInfo{Interactive: true}); err != nil {
+						glib.IdleAdd(func() {
+							tp.connectBtn.SetSensitive(true)
+							title, body := components.ExplainError("Connect Error", err)
+							tp.host.ShowError(title, body)
+							tp.host.UpdateTrayStatus(ports.TrayError, "Tailscale")
+						})
+						return err
+					}
+					glib.IdleAdd(func() {
+						tp.connectBtn.SetSensitive(true)
+						tp.host.SetStatus("Tailscale connected")
+						if tp.host.GetConfig().ShowNotifications {
+							notify.Connected("Tailscale")
+						}
+						// Record in the cross-protocol registry so other panels' mutual
+						// exclusion / global indicator can see Tailscale is up.
+						tp.host.VPNManager().RegisterConnection(vpntypes.ActiveConnection{
+							ID:       vpntypes.ProtocolTailscale,
+							Protocol: vpntypes.ProtocolTailscale,
+							Name:     "Tailscale",
+							Status:   vpntypes.StatusConnected,
+							Iface:    "tailscale0",
+						})
+						// Update tray indicator
+						tp.host.UpdateTrayStatus(ports.TrayConnected, "Tailscale")
+						// Start stats collection for Tailscale
+						// Tailscale interface is "tailscale0", get server info from status
+						tp.startStatsCollection()
+						tp.UpdateStatus()
+					})
+					return nil
 				})
-				// Update tray indicator
-				tp.host.UpdateTrayStatus(ports.TrayConnected, "Tailscale")
-				// Start stats collection for Tailscale
-				// Tailscale interface is "tailscale0", get server info from status
-				tp.startStatsCollection()
-				tp.UpdateStatus()
 			})
 		}
 	})
@@ -221,23 +240,28 @@ func (tp *TailscalePanel) onConnectClicked() {
 // It is used by the host's mutual-exclusion path. The provider disconnect
 // blocks, so this MUST be called off the GTK main thread; the tray and status
 // refresh are routed through glib.IdleAdd.
-func (tp *TailscalePanel) DisconnectActive() {
+//
+// It returns the provider disconnect error so the caller (the host's
+// ConnectExclusive gate) can refuse to bring up a new protocol when Tailscale
+// could not be torn down. On error no teardown happens (stats stay collecting,
+// the registry entry stays) — the safe direction, since the tunnel may still be
+// up.
+func (tp *TailscalePanel) DisconnectActive() error {
 	if tp.provider == nil {
-		return
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Stop stats collection before tearing down the tunnel.
-	tp.host.VPNManager().StopStatsCollection()
-
 	if err := tp.provider.Disconnect(ctx, nil); err != nil {
 		logger.LogError("Tailscale: DisconnectActive error: %v", err)
-		return
+		return err
 	}
 
-	// Drop our entry from the cross-protocol registry.
+	// Success: stop stats collection and drop our entry from the cross-protocol
+	// registry.
+	tp.host.VPNManager().StopStatsCollection()
 	tp.host.VPNManager().UnregisterConnection(vpntypes.ProtocolTailscale)
 
 	glib.IdleAdd(func() {
@@ -248,6 +272,7 @@ func (tp *TailscalePanel) DisconnectActive() {
 		tp.updateTrayIfNoOtherConnections()
 		tp.UpdateStatus()
 	})
+	return nil
 }
 
 func (tp *TailscalePanel) onLoginClicked() {

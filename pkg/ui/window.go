@@ -55,6 +55,15 @@ type MainWindow struct {
 	// pollers are stopped. Toggled only on the GTK main thread (pause/resume).
 	updatesPaused bool
 
+	// connectInFlight serializes connect flows to kill the TOCTOU race where two
+	// fast clicks would each start a connect and leave two VPNs up. GTK dispatches
+	// clicks sequentially on the main thread, so claiming this flag synchronously
+	// at click time (before any goroutine is spawned) means a second click sees it
+	// set and is rejected. MAIN-THREAD-ONLY: read/written exclusively on the GTK
+	// main thread (click handlers and glib.IdleAdd callbacks), never from a
+	// background goroutine — so no mutex is needed.
+	connectInFlight bool
+
 	// noTrayWarnOnce ensures the "no system tray detected" notice fires at most
 	// once per session when the user closes the window with Minimize-to-Tray on
 	// but no tray is available.
@@ -530,47 +539,96 @@ func (mw *MainWindow) RefreshAllPanels() {
 	}
 }
 
-// EnsureExclusive enforces mutual exclusion between VPN protocols. Before a
-// connect on exceptProtocol proceeds, every OTHER protocol that is currently
-// connected is disconnected and the user is informed via a toast. Routing per
-// protocol: OpenVPN goes through the manager (its registry entry is derived
-// from live connections, so no explicit unregister is needed); WireGuard and
-// Tailscale delegate to their panels' DisconnectActive, which also drop their
-// entries from the cross-protocol registry.
-//
-// It MUST be called from a background goroutine: the per-protocol disconnects
-// block (they shell out through the daemon), so running them on the GTK main
-// loop would freeze the UI. The panels route their own widget updates through
-// glib.IdleAdd; the toast below is dispatched the same way.
-func (mw *MainWindow) EnsureExclusive(exceptProtocol string) {
-	ctrl := mw.VPNManager()
-	if ctrl == nil {
+// ConnectExclusive runs a connect under mutual exclusion. Called on the GTK main
+// thread at click time. It rejects overlapping connects, and if another protocol
+// is active asks the user to confirm the switch; on proceed it disconnects the
+// others in a goroutine and only calls `connect` if EVERY disconnect succeeded.
+// `connect` runs off the main thread, returns its error, and must do its own UI
+// via glib.IdleAdd (it is the panel's existing connect body).
+func (mw *MainWindow) ConnectExclusive(proto, id, name string, connect func() error) {
+	if mw.connectInFlight {
+		mw.ShowToast("A connection is already in progress — please wait.", 0)
 		return
 	}
-	for _, conn := range ctrl.ActiveConnections() {
-		if conn.Protocol == exceptProtocol || conn.Status != vpntypes.StatusConnected {
-			continue
+	others := mw.otherActiveConnected(proto)
+	start := func() {
+		mw.connectInFlight = true // claimed on the main thread → serializes clicks
+		resilience.SafeGoWithName("connect-exclusive", func() {
+			if err := mw.disconnectOthers(others, proto); err != nil {
+				glib.IdleAdd(func() {
+					mw.connectInFlight = false
+					mw.ShowError("VPN switch failed", fmt.Sprintf("Could not disconnect the active VPN, so %s was not connected: %v", protocolDisplayName(proto), err))
+				})
+				return
+			}
+			cerr := connect()
+			glib.IdleAdd(func() { mw.connectInFlight = false; _ = cerr })
+		})
+	}
+	if len(others) == 0 {
+		start()
+		return
+	}
+	names := make([]string, 0, len(others))
+	for _, o := range others {
+		names = append(names, o.Name)
+	}
+	components.ShowConfirmDialog(mw.GetWindow(), components.ConfirmDialogConfig{
+		Title:       "Switch VPN?",
+		Message:     fmt.Sprintf("%s is connected. Disconnect it and connect %s?", strings.Join(names, ", "), protocolDisplayName(proto)),
+		ActionLabel: "Switch",
+		Style:       components.DialogSuggested,
+	}, start) // ShowConfirmDialog is modal (adw.AlertDialog) so no concurrent click during it; on cancel nothing happens and connectInFlight is never claimed
+}
+
+// otherActiveConnected returns the currently-Connected connections whose protocol != exceptProto.
+func (mw *MainWindow) otherActiveConnected(exceptProto string) []vpntypes.ActiveConnection {
+	ctrl := mw.VPNManager()
+	if ctrl == nil {
+		return nil
+	}
+	var out []vpntypes.ActiveConnection
+	for _, c := range ctrl.ActiveConnections() {
+		if c.Protocol != exceptProto && c.Status == vpntypes.StatusConnected {
+			out = append(out, c)
 		}
-		name := conn.Name
-		switch conn.Protocol {
+	}
+	return out
+}
+
+// disconnectOthers disconnects each connection, routing by protocol. Returns the
+// first error; on a per-connection success it toasts. Runs off the main thread.
+func (mw *MainWindow) disconnectOthers(others []vpntypes.ActiveConnection, exceptProto string) error {
+	ctrl := mw.VPNManager()
+	var firstErr error
+	for _, c := range others {
+		var err error
+		switch c.Protocol {
 		case vpntypes.ProtocolOpenVPN:
-			if err := ctrl.Disconnect(conn.ID); err != nil {
-				logger.LogError("EnsureExclusive: OpenVPN disconnect failed: %v", err)
+			if ctrl != nil {
+				err = ctrl.Disconnect(c.ID)
 			}
 		case vpntypes.ProtocolWireGuard:
 			if mw.wireguardPanel != nil {
-				mw.wireguardPanel.DisconnectActive()
+				err = mw.wireguardPanel.DisconnectActive()
 			}
 		case vpntypes.ProtocolTailscale:
 			if mw.tailscalePanel != nil {
-				mw.tailscalePanel.DisconnectActive()
+				err = mw.tailscalePanel.DisconnectActive()
 			}
 		}
-		msg := fmt.Sprintf("Disconnected %s to connect %s", name, protocolDisplayName(exceptProtocol))
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		name := c.Name
 		glib.IdleAdd(func() {
-			mw.ShowToast(msg, 0)
+			mw.ShowToast(fmt.Sprintf("Disconnected %s to connect %s", name, protocolDisplayName(exceptProto)), 0)
 		})
 	}
+	return firstErr
 }
 
 // protocolDisplayName maps a protocol identifier to its human-readable name for
