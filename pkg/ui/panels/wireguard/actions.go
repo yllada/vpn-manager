@@ -82,6 +82,9 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 		row.connBtn.SetSensitive(false)
 		wp.host.SetStatus(fmt.Sprintf("Connecting to %s...", name))
 		resilience.SafeGoWithName("wireguard-connect", func() {
+			// Mutual exclusion: drop any other active protocol first (synchronous,
+			// off the GTK main thread) so the connect below does not race it.
+			wp.host.EnsureExclusive(vpntypes.ProtocolWireGuard)
 			err := wp.provider.Connect(context.Background(), row.profile, vpntypes.AuthInfo{})
 			glib.IdleAdd(func() {
 				row.connBtn.SetSensitive(true)
@@ -104,6 +107,44 @@ func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 			})
 		})
 	}
+}
+
+// DisconnectActive tears down every currently-connected WireGuard tunnel and
+// drops it from the cross-protocol registry. It mirrors the disconnect branch
+// of onConnectProfile but operates on all active tunnels at once, for the
+// host's mutual-exclusion path. The provider disconnect blocks, so this MUST be
+// called off the GTK main thread; the row refresh is routed through
+// glib.IdleAdd.
+func (wp *WireGuardPanel) DisconnectActive() {
+	if wp.provider == nil {
+		return
+	}
+	ctrl := wp.host.VPNManager()
+	if ctrl == nil {
+		return
+	}
+
+	// Snapshot the WireGuard entries from the thread-safe registry rather than
+	// walking the GTK-owned rows map off-thread.
+	var ids []string
+	for _, c := range ctrl.ActiveConnections() {
+		if c.Protocol == vpntypes.ProtocolWireGuard && c.Status == vpntypes.StatusConnected {
+			ids = append(ids, c.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	// A nil profile disconnects all WireGuard tunnels managed by the provider.
+	if err := wp.provider.Disconnect(context.Background(), nil); err != nil {
+		logger.LogError("WireGuard: DisconnectActive error: %v", err)
+		return
+	}
+	for _, id := range ids {
+		ctrl.UnregisterConnection(id)
+	}
+	glib.IdleAdd(wp.updateAllRows)
 }
 
 // onDeleteProfile handles deleting a profile.

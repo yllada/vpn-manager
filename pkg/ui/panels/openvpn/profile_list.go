@@ -488,11 +488,27 @@ func (pl *ProfileList) showPasswordDialog(profile *profilepkg.Profile) {
 }
 
 // connectWithCredentials initiates VPN connection with specific credentials.
-// It sets up an auth failure callback for intelligent OTP fallback.
+// It first enforces mutual exclusion (disconnecting any other active protocol)
+// on a background goroutine so that step never blocks the GTK main loop, then
+// resumes the actual connect on the main thread. This ordering guarantees the
+// new connection cannot race the teardown of the protocol it replaces.
 func (pl *ProfileList) connectWithCredentials(profile *profilepkg.Profile, username, password string) {
 	pl.UpdateRowStatus(profile.ID, vpn.StatusConnecting)
 	pl.host.SetStatus(fmt.Sprintf("Connecting to %s...", profile.Name))
 
+	resilience.SafeGoWithName("openvpn-ensure-exclusive", func() {
+		// Disconnect any other active protocol first (synchronous, off the GTK
+		// main thread), then resume the connect back on the main thread.
+		pl.host.EnsureExclusive(vpn.ProtocolOpenVPN)
+		glib.IdleAdd(func() {
+			pl.startConnection(profile, username, password)
+		})
+	})
+}
+
+// startConnection performs the actual OpenVPN connect and wires up the auth
+// failure callback and status monitor. Runs on the GTK main thread.
+func (pl *ProfileList) startConnection(profile *profilepkg.Profile, username, password string) {
 	// Start connection
 	if err := pl.host.VPNManager().Connect(profile.ID, username, password); err != nil {
 		title, body := components.ExplainError("Connection error", err)

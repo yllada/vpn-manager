@@ -19,6 +19,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/internal/vpn/tailscale"
+	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
@@ -526,6 +527,64 @@ func (mw *MainWindow) RefreshAllPanels() {
 	// Refresh Statistics panel
 	if mw.statsPanel != nil {
 		mw.statsPanel.Refresh()
+	}
+}
+
+// EnsureExclusive enforces mutual exclusion between VPN protocols. Before a
+// connect on exceptProtocol proceeds, every OTHER protocol that is currently
+// connected is disconnected and the user is informed via a toast. Routing per
+// protocol: OpenVPN goes through the manager (its registry entry is derived
+// from live connections, so no explicit unregister is needed); WireGuard and
+// Tailscale delegate to their panels' DisconnectActive, which also drop their
+// entries from the cross-protocol registry.
+//
+// It MUST be called from a background goroutine: the per-protocol disconnects
+// block (they shell out through the daemon), so running them on the GTK main
+// loop would freeze the UI. The panels route their own widget updates through
+// glib.IdleAdd; the toast below is dispatched the same way.
+func (mw *MainWindow) EnsureExclusive(exceptProtocol string) {
+	ctrl := mw.VPNManager()
+	if ctrl == nil {
+		return
+	}
+	for _, conn := range ctrl.ActiveConnections() {
+		if conn.Protocol == exceptProtocol || conn.Status != vpntypes.StatusConnected {
+			continue
+		}
+		name := conn.Name
+		switch conn.Protocol {
+		case vpntypes.ProtocolOpenVPN:
+			if err := ctrl.Disconnect(conn.ID); err != nil {
+				logger.LogError("EnsureExclusive: OpenVPN disconnect failed: %v", err)
+			}
+		case vpntypes.ProtocolWireGuard:
+			if mw.wireguardPanel != nil {
+				mw.wireguardPanel.DisconnectActive()
+			}
+		case vpntypes.ProtocolTailscale:
+			if mw.tailscalePanel != nil {
+				mw.tailscalePanel.DisconnectActive()
+			}
+		}
+		msg := fmt.Sprintf("Disconnected %s to connect %s", name, protocolDisplayName(exceptProtocol))
+		glib.IdleAdd(func() {
+			mw.ShowToast(msg, 0)
+		})
+	}
+}
+
+// protocolDisplayName maps a protocol identifier to its human-readable name for
+// user-facing messages.
+func protocolDisplayName(protocol string) string {
+	switch protocol {
+	case vpntypes.ProtocolOpenVPN:
+		return "OpenVPN"
+	case vpntypes.ProtocolWireGuard:
+		return "WireGuard"
+	case vpntypes.ProtocolTailscale:
+		return "Tailscale"
+	default:
+		return protocol
 	}
 }
 

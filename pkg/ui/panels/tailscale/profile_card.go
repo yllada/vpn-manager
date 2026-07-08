@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/notify"
 	"github.com/yllada/vpn-manager/internal/resilience"
 	tailscalevpn "github.com/yllada/vpn-manager/internal/vpn/tailscale"
@@ -173,6 +174,9 @@ func (tp *TailscalePanel) onConnectClicked() {
 			})
 		} else {
 			// Connect
+			// Mutual exclusion: drop any other active protocol first (synchronous,
+			// off the GTK main thread) so the connect below does not race it.
+			tp.host.EnsureExclusive(vpntypes.ProtocolTailscale)
 			if err := tp.provider.Connect(ctx, nil, vpntypes.AuthInfo{Interactive: true}); err != nil {
 				glib.IdleAdd(func() {
 					tp.connectBtn.SetSensitive(true)
@@ -204,6 +208,40 @@ func (tp *TailscalePanel) onConnectClicked() {
 				tp.UpdateStatus()
 			})
 		}
+	})
+}
+
+// DisconnectActive brings Tailscale down and drops its entry from the
+// cross-protocol registry, mirroring the disconnect branch of onConnectClicked.
+// It is used by the host's mutual-exclusion path. The provider disconnect
+// blocks, so this MUST be called off the GTK main thread; the tray and status
+// refresh are routed through glib.IdleAdd.
+func (tp *TailscalePanel) DisconnectActive() {
+	if tp.provider == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Stop stats collection before tearing down the tunnel.
+	tp.host.VPNManager().StopStatsCollection()
+
+	if err := tp.provider.Disconnect(ctx, nil); err != nil {
+		logger.LogError("Tailscale: DisconnectActive error: %v", err)
+		return
+	}
+
+	// Drop our entry from the cross-protocol registry.
+	tp.host.VPNManager().UnregisterConnection(vpntypes.ProtocolTailscale)
+
+	glib.IdleAdd(func() {
+		if tp.host.GetConfig().ShowNotifications {
+			notify.Disconnected("Tailscale")
+		}
+		// Update the tray only if no other VPN is still active.
+		tp.updateTrayIfNoOtherConnections()
+		tp.UpdateStatus()
 	})
 }
 
