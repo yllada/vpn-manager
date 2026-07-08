@@ -308,28 +308,11 @@ func (r *Resolver) Apply(vpnInterface string, servers []string, mode string) err
 		}
 		err = r.applyResolvConfLocked(servers, vpnInterface)
 	}
-	if err != nil {
-		// A backend apply can fail after partially mutating the link (the
-		// multi-step systemd path records applied up front). Undo the partial so a
-		// failed enable never leaves an orphaned override with no restore state.
-		if r.applied {
-			r.appliedBackend = r.backend
-			r.adopted = false
-			_ = r.revertLocked()
-			r.applied = false
-			r.iface = ""
-			r.ifindex = 0
-			r.resolvBackup = nil
-			r.hadResolvBackup = false
-			r.appliedBackend = ""
-			r.clearStateLocked()
-		}
-		return err
-	}
-
 	// Persist the restore backup so a daemon restart mid-connection can still
-	// revert. Only after a successful apply that actually recorded state.
-	if r.applied {
+	// revert. Only after a fully successful apply that recorded state; a failed
+	// apply is self-reverted by the backend method and leaves prior state (e.g.
+	// an adopted override for a different interface) untouched.
+	if err == nil && r.applied {
 		// This instance now owns the override: it was installed via the currently
 		// detected backend and is no longer adopted-and-unvalidated.
 		r.appliedBackend = r.backend
@@ -441,21 +424,21 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 		return fmt.Errorf("systemd-resolved resolver requires a VPN interface")
 	}
 
-	// Record applied state BEFORE issuing the multi-step resolvectl sequence: any
-	// one command can mutate the link, and a later command in the sequence can
-	// still fail. `resolvectl revert` undoes them all at once (and is a harmless
-	// no-op if none took), so marking applied up front lets Apply roll back — or
-	// Restore revert — a partial apply instead of orphaning a live override.
-	r.applied = true
-	r.iface = iface
-	if idx, ok := ifaceIndex(iface); ok {
-		r.ifindex = idx
+	// The resolvectl sequence mutates the link in several steps; a later step can
+	// fail after an earlier one already took. Undo what we applied to THIS
+	// interface right here on failure — reverting locally rather than mutating the
+	// resolver's shared state up front — so a failed (re)apply never disturbs a
+	// still-live override recorded for another interface or the persisted backup.
+	// applied/iface/ifindex are recorded only on full success below.
+	fail := func(err error) error {
+		_ = runCmd("resolvectl", "revert", iface) // best-effort: drop the partial
+		return err
 	}
 
 	if p.setServers {
 		args := append([]string{"dns", iface}, servers...)
 		if err := runCmd("resolvectl", args...); err != nil {
-			return fmt.Errorf("resolvectl dns: %w", err)
+			return fail(fmt.Errorf("resolvectl dns: %w", err))
 		}
 		if err := runCmd("resolvectl", "dnssec", iface, "allow-downgrade"); err != nil {
 			log.Printf("[dns] warning: resolvectl dnssec: %v", err)
@@ -465,7 +448,7 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 	if p.routingDomain {
 		// "~." routes ALL DNS queries through this link (strict mode).
 		if err := runCmd("resolvectl", "domain", iface, "~."); err != nil {
-			return fmt.Errorf("resolvectl domain: %w", err)
+			return fail(fmt.Errorf("resolvectl domain: %w", err))
 		}
 	}
 
@@ -476,6 +459,11 @@ func (r *Resolver) applySystemdResolvedLocked(iface string, servers []string, p 
 
 	_ = runCmd("resolvectl", "flush-caches")
 
+	r.applied = true
+	r.iface = iface
+	if idx, ok := ifaceIndex(iface); ok {
+		r.ifindex = idx
+	}
 	log.Printf("[dns] resolver applied via systemd-resolved (iface: %s, servers: %v, routing-domain: %v)",
 		iface, servers, p.routingDomain)
 	return nil

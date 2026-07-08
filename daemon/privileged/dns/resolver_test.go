@@ -633,6 +633,41 @@ func TestApplySystemdRollsBackPartialFailure(t *testing.T) {
 	}
 }
 
+// TestApplyFailureKeepsPreexistingAdoptedState pins that a re-apply which fails
+// mid-sequence does NOT drop a still-live override adopted from a previous daemon
+// instance (recorded for a different interface). The failed apply must revert
+// only its own partial and leave the adopted record + persisted state intact.
+func TestApplyFailureKeepsPreexistingAdoptedState(t *testing.T) {
+	isolateState(t)
+	stubIfaceIndex(t, 5, true)
+	orig := runCmd
+	runCmd = func(name string, args ...string) error {
+		if name == "resolvectl" && len(args) >= 1 && args[0] == "domain" {
+			return fmt.Errorf("domain boom") // fail the new apply mid-sequence
+		}
+		return nil
+	}
+	t.Cleanup(func() { runCmd = orig })
+
+	// Adopted, still-live override for tun0, persisted on disk (as after a restart).
+	r := &Resolver{
+		backend: BackendSystemdResolved, appliedBackend: BackendSystemdResolved,
+		applied: true, adopted: true, iface: "tun0", ifindex: 5,
+	}
+	r.saveStateLocked()
+
+	// A reconnect re-applies on a NEW device tun1 and fails part-way.
+	if err := r.Apply("tun1", []string{"1.1.1.1"}, "strict"); err == nil {
+		t.Fatal("expected the partial apply on tun1 to fail")
+	}
+	if !r.applied || r.iface != "tun0" {
+		t.Errorf("adopted tun0 override was dropped by a failed tun1 apply: applied=%v iface=%q", r.applied, r.iface)
+	}
+	if _, err := os.Stat(resolverStatePath); err != nil {
+		t.Errorf("persisted state for the live override was cleared on a failed apply: %v", err)
+	}
+}
+
 // TestApplyResolvConfPreservesSymlink pins that the resolv.conf backend writes
 // THROUGH a symlinked /etc/resolv.conf rather than replacing the symlink with a
 // static file (which would break dynamic resolver management).
