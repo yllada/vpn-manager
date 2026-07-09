@@ -599,12 +599,8 @@ func (mw *MainWindow) gatedConnect(others []vpntypes.ActiveConnection, proto str
 
 // otherActiveConnected returns the currently-Connected connections whose protocol != exceptProto.
 func (mw *MainWindow) otherActiveConnected(exceptProto string) []vpntypes.ActiveConnection {
-	ctrl := mw.VPNManager()
-	if ctrl == nil {
-		return nil
-	}
 	var out []vpntypes.ActiveConnection
-	for _, c := range ctrl.ActiveConnections() {
+	for _, c := range mw.VPNManager().ActiveConnections() {
 		if c.Protocol != exceptProto && c.Status == vpntypes.StatusConnected {
 			out = append(out, c)
 		}
@@ -615,15 +611,12 @@ func (mw *MainWindow) otherActiveConnected(exceptProto string) []vpntypes.Active
 // disconnectOthers disconnects each connection, routing by protocol. Returns the
 // first error; on a per-connection success it toasts. Runs off the main thread.
 func (mw *MainWindow) disconnectOthers(others []vpntypes.ActiveConnection, exceptProto string) error {
-	ctrl := mw.VPNManager()
 	var firstErr error
 	for _, c := range others {
 		var err error
 		switch c.Protocol {
 		case vpntypes.ProtocolOpenVPN:
-			if ctrl != nil {
-				err = ctrl.Disconnect(c.ID)
-			}
+			err = mw.VPNManager().Disconnect(c.ID)
 		case vpntypes.ProtocolWireGuard:
 			if mw.wireguardPanel != nil {
 				err = mw.wireguardPanel.DisconnectActive()
