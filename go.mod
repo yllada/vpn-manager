@@ -2,6 +2,12 @@ module github.com/yllada/vpn-manager
 
 go 1.26.4
 
+// Vendored fyne.io/systray with a minimal additive patch: upstream hardcodes
+// the StatusNotifierItem IconName/IconThemePath properties to non-writable, so
+// there is no way to request a crisp themed (vector) tray icon. The fork adds
+// SetIconName/SetIconThemePath. See third_party/systray/systray_unix.go.
+replace fyne.io/systray => ./third_party/systray
+
 require (
 	fyne.io/systray v1.12.2
 	github.com/diamondburned/gotk4-adwaita/pkg v0.0.0-20250703085740-f81761ef0e0d

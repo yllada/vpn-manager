@@ -130,10 +130,27 @@ func (t *TrayIndicator) Run() {
 	systray.Run(t.onReady, t.onExit)
 }
 
+// applyIcon sets the tray icon by theme name (so hosts that support IconName —
+// KDE, XApp/Cinnamon, GNOME AppIndicator, XFCE — render a crisp vector) and, as
+// a fallback, the raster pixmap (for hosts that only read IconPixmap). Both are
+// set per the StatusNotifierItem spec, so no host is left without an icon.
+func (t *TrayIndicator) applyIcon(name string, pixmap []byte) {
+	systray.SetIconName(name)
+	systray.SetIcon(pixmap)
+}
+
 // onReady is called when the systray is ready.
 func (t *TrayIndicator) onReady() {
+	// Expose the app's themed icons to the host so IconName resolves to a
+	// vector, regardless of whether the app is installed or run from a tree.
+	if base, err := trayicons.ExtractIconTheme(); err != nil {
+		logger.LogWarn("Tray: could not extract themed icons, falling back to pixmap: %v", err)
+	} else {
+		systray.SetIconThemePath(base)
+	}
+
 	// Set disconnected state initially
-	systray.SetIcon(getDisconnectedIcon())
+	t.applyIcon(trayicons.IconNameDisconnected, getDisconnectedIcon())
 	systray.SetTitle("VPN Manager")
 	systray.SetTooltip("VPN Manager - Not Connected")
 
@@ -320,7 +337,7 @@ func (t *TrayIndicator) SetConnected(profileName string) {
 
 	// Systray calls are thread-safe (fyne.io/systray uses channels internally),
 	// so we can call them outside the mutex without race conditions
-	systray.SetIcon(getConnectedIcon())
+	t.applyIcon(trayicons.IconNameConnected, getConnectedIcon())
 	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connected: %s", profileName))
 
 	if t.statusItem != nil {
@@ -348,7 +365,7 @@ func (t *TrayIndicator) SetDisconnected() {
 
 	// Systray calls are thread-safe (fyne.io/systray uses channels internally),
 	// so we can call them outside the mutex without race conditions
-	systray.SetIcon(getDisconnectedIcon())
+	t.applyIcon(trayicons.IconNameDisconnected, getDisconnectedIcon())
 	systray.SetTooltip("VPN Manager - Not Connected")
 
 	if t.statusItem != nil {
@@ -368,7 +385,7 @@ func (t *TrayIndicator) SetDisconnected() {
 // SetConnecting updates the tray to show connecting (pending) state.
 func (t *TrayIndicator) SetConnecting(profileName string) {
 	// Systray calls are thread-safe (fyne.io/systray uses channels internally).
-	systray.SetIcon(getConnectingIcon())
+	t.applyIcon(trayicons.IconNameConnecting, getConnectingIcon())
 	systray.SetTooltip(fmt.Sprintf("VPN Manager - Connecting to %s...", profileName))
 
 	if t.statusItem != nil {
@@ -387,7 +404,7 @@ func (t *TrayIndicator) SetError(profileName string) {
 	t.stateMu.Unlock()
 
 	// Systray calls are thread-safe (fyne.io/systray uses channels internally).
-	systray.SetIcon(getErrorIcon())
+	t.applyIcon(trayicons.IconNameError, getErrorIcon())
 	systray.SetTooltip(fmt.Sprintf("⚠ VPN error: %s", profileName))
 
 	if t.statusItem != nil {
