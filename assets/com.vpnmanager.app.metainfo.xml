@@ -71,6 +71,17 @@
   <content_rating type="oars-1.1" />
   
   <releases>
+    <release version="2.4.0" date="2026-07-09">
+      <description>
+        <p>New features and improvements:</p>
+        <ul>
+          <li>Add any VPN type (OpenVPN, WireGuard, Tailscale) from the + button</li>
+          <li>Automatic switching so only one VPN protocol is ever active at once</li>
+          <li>Connecting and error states in the tray icon</li>
+          <li>Crisp themed tray icons that stay sharp on any panel</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.9.0" date="2026-03-26">
       <description>
         <p>New features and improvements:</p>

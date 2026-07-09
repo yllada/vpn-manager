@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-07-09
+### Added
+- **Add any VPN type from the + button** — The header **+** (and Ctrl+N) used to open an OpenVPN-only file picker, so WireGuard and Tailscale were undiscoverable from it. It now opens a chooser: OpenVPN and WireGuard go to their import dialogs, and Tailscale switches to its (login-based) tab. Unavailable protocols degrade to an informative message instead of a broken action.
+- **One VPN at a time — automatic protocol switching** — Connecting a VPN while another protocol was already active used to leave two tunnels fighting over the routing table with no single indicator. The app now tears the other protocol down first: switching away from an active protocol asks for confirmation, and the new connection proceeds **only if** the previous one actually disconnected, so two VPNs can never be live at once. This is built on a new cross-protocol connection registry — the app finally has a single source of truth across OpenVPN, WireGuard and Tailscale (previously only OpenVPN was tracked, so the tray and connection list could not see WireGuard).
+- **Connecting and error states in the tray** — The tray icon previously showed only connected vs disconnected. It now also has a distinct **connecting** (amber) and **error** (red) state, so a mid-connect or a failed connection is visible at a glance. All three protocols report their state across the connect lifecycle; WireGuard drives the tray for the first time.
+
+### Changed
+- **The tray icon is now crisp on every panel** — It looked fuzzy and broken next to the panel's own icons because it was a small fixed-size bitmap the panel had to rescale. It is now published as a **themed vector icon** (the StatusNotifierItem `IconName` the desktop renders itself at the right size), so it stays sharp at any panel size or scale, on light or dark panels — the same mechanism the shell's own icons use. Connected is green, disconnected grey, connecting amber, error red. Verified on Cinnamon; the same applies on KDE, XFCE and GNOME (with the AppIndicator extension). A raster icon is still sent alongside as a fallback for hosts that don't support themed names, so no desktop is left without an icon.
+- **Lower background load from the Tailscale panel** — Its 5-second status refresh forked three `tailscale` processes per tick — two of them running `tailscale status --json` for the very same data. It now forks one and caches the version (which only changes on a package upgrade).
+
+### Security
+- **Tailscale auth key no longer exposed on the process command line** — The client login path passed the auth key as a CLI argument, where it was readable by any local process via `/proc/<pid>/cmdline` (the same class of leak as the nmcli password fixed earlier). The client now writes the key to a private `0600` file and hands Tailscale a `--auth-key=file:` reference, removed after use.
+- **State directory tightened to `0700`** — `/var/lib/vpn-manager` holds root-only state (kill-switch and DNS-restore data) but was world-readable at `0755`. It is now `0700`, set both when the daemon creates it and via the systemd unit's `StateDirectoryMode`.
+
 ## [2.3.3] - 2026-07-08
 
 ### Fixed
