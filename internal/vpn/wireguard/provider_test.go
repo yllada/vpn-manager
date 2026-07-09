@@ -56,7 +56,9 @@ func TestProviderSupportsFeature(t *testing.T) {
 	}{
 		{vpntypes.FeatureKillSwitch, true},
 		{vpntypes.FeatureAutoConnect, true},
-		{vpntypes.FeatureSplitTunnel, true},
+		// Split tunneling is not advertised: the GUI offers no working control and
+		// routing is defined solely by AllowedIPs in the .conf file.
+		{vpntypes.FeatureSplitTunnel, false},
 		{vpntypes.FeatureExitNode, false},
 		{vpntypes.FeatureMFA, false},
 	}

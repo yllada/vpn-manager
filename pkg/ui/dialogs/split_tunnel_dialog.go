@@ -24,20 +24,10 @@ type SplitTunnelDialog struct {
 	enabledRow  *adw.SwitchRow
 	modeRow     *adw.ComboRow
 	modeIDs     []string
-	dnsRow      *adw.SwitchRow
 	routesGroup *adw.PreferencesGroup
 	routeRows   []*adw.ActionRow // Track dynamic route rows for cleanup
 	quickAddRow *adw.ActionRow   // Track the Quick Add row for proper ordering
 	routes      []string
-
-	// Per-app tunneling
-	appsEnabledRow  *adw.SwitchRow
-	appModeRow      *adw.ComboRow
-	appModeIDs      []string
-	appsGroup       *adw.PreferencesGroup
-	appRows         []*adw.ActionRow // Track dynamic app rows for cleanup
-	apps            []string
-	appOptionsGroup *adw.PreferencesGroup
 
 	// System integration
 	useNMRow *adw.SwitchRow
@@ -49,17 +39,11 @@ func NewSplitTunnelDialog(host ports.PanelHost, profile *profile.Profile) *Split
 		host:    host,
 		profile: profile,
 		routes:  make([]string, 0),
-		apps:    make([]string, 0),
 	}
 
 	// Copy existing routes
 	if profile.SplitTunnelRoutes != nil {
 		std.routes = append(std.routes, profile.SplitTunnelRoutes...)
-	}
-
-	// Copy existing apps
-	if profile.SplitTunnelApps != nil {
-		std.apps = append(std.apps, profile.SplitTunnelApps...)
 	}
 
 	std.build()
@@ -162,13 +146,6 @@ func (std *SplitTunnelDialog) build() {
 	std.modeRow.SetSelected(FindModeIndex(std.profile.SplitTunnelMode, std.modeIDs))
 	modeGroup.Add(std.modeRow)
 
-	// DNS option row
-	std.dnsRow = adw.NewSwitchRow()
-	std.dnsRow.SetTitle("Use VPN DNS")
-	std.dnsRow.SetSubtitle("Route DNS queries through VPN server")
-	std.dnsRow.SetActive(std.profile.SplitTunnelDNS)
-	modeGroup.Add(std.dnsRow)
-
 	std.prefsPage.Add(modeGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
@@ -215,54 +192,6 @@ func (std *SplitTunnelDialog) build() {
 	std.prefsPage.Add(std.routesGroup)
 
 	// ═══════════════════════════════════════════════════════════════════
-	// PER-APP TUNNELING SECTION
-	// ═══════════════════════════════════════════════════════════════════
-	appSection := adw.NewPreferencesGroup()
-	appSection.SetTitle("Per-Application Routing")
-
-	// Enable per-app tunneling
-	std.appsEnabledRow = adw.NewSwitchRow()
-	std.appsEnabledRow.SetTitle("Enable App Routing")
-	std.appsEnabledRow.SetSubtitle("Route specific applications through VPN")
-	std.appsEnabledRow.SetActive(std.profile.SplitTunnelAppsEnabled)
-	appSection.Add(std.appsEnabledRow)
-
-	std.prefsPage.Add(appSection)
-
-	// App options group (mode)
-	std.appOptionsGroup = adw.NewPreferencesGroup()
-
-	// App mode combo row
-	std.appModeIDs = []string{"include", "exclude"}
-	appModeLabels := []string{"Only selected apps", "All except selected"}
-	appModeModel := gtk.NewStringList(appModeLabels)
-
-	std.appModeRow = adw.NewComboRow()
-	std.appModeRow.SetTitle("App Routing Mode")
-	std.appModeRow.SetSubtitle("Choose which apps use VPN")
-	std.appModeRow.SetModel(appModeModel)
-	std.appModeRow.SetSelected(FindModeIndex(std.profile.SplitTunnelAppMode, std.appModeIDs))
-	std.appOptionsGroup.Add(std.appModeRow)
-
-	std.prefsPage.Add(std.appOptionsGroup)
-
-	// Apps list group
-	std.appsGroup = adw.NewPreferencesGroup()
-	std.appsGroup.SetTitle("Applications")
-
-	// Add app button as header suffix
-	addAppBtn := components.NewIconButton("list-add-symbolic", "Add Application")
-	addAppBtn.SetVAlign(gtk.AlignCenter)
-	addAppBtn.ConnectClicked(func() {
-		ShowAppSelector(std.dialog, std.addApp)
-	})
-	std.appsGroup.SetHeaderSuffix(addAppBtn)
-
-	std.refreshAppsList()
-
-	std.prefsPage.Add(std.appsGroup)
-
-	// ═══════════════════════════════════════════════════════════════════
 	// SYSTEM INTEGRATION SECTION
 	// ═══════════════════════════════════════════════════════════════════
 	nmAvailable := std.host.VPNManager().NetworkManagerAvailable()
@@ -282,30 +211,17 @@ func (std *SplitTunnelDialog) build() {
 		std.prefsPage.Add(sysGroup)
 	}
 
-	// Toggle options visibility based on enabled switches
+	// Toggle options visibility based on enabled switch
 	std.enabledRow.ConnectStateFlagsChanged(func(_ gtk.StateFlags) {
 		enabled := std.enabledRow.Active()
 		modeGroup.SetSensitive(enabled)
 		std.routesGroup.SetSensitive(enabled)
-		appSection.SetSensitive(enabled)
-		std.appOptionsGroup.SetSensitive(enabled && std.appsEnabledRow.Active())
-		std.appsGroup.SetSensitive(enabled && std.appsEnabledRow.Active())
-	})
-
-	std.appsEnabledRow.ConnectStateFlagsChanged(func(_ gtk.StateFlags) {
-		enabled := std.enabledRow.Active() && std.appsEnabledRow.Active()
-		std.appOptionsGroup.SetSensitive(enabled)
-		std.appsGroup.SetSensitive(enabled)
 	})
 
 	// Initial sensitivity
 	splitEnabled := std.enabledRow.Active()
 	modeGroup.SetSensitive(splitEnabled)
 	std.routesGroup.SetSensitive(splitEnabled)
-	appSection.SetSensitive(splitEnabled)
-	appsEnabled := splitEnabled && std.appsEnabledRow.Active()
-	std.appOptionsGroup.SetSensitive(appsEnabled)
-	std.appsGroup.SetSensitive(appsEnabled)
 
 	scrolled.SetChild(std.prefsPage)
 	toolbarView.SetContent(scrolled)
@@ -444,81 +360,6 @@ func (std *SplitTunnelDialog) refreshRoutesList() {
 	logger.LogDebug("ui", "Routes list refreshed, %d rows added", len(std.routeRows))
 }
 
-// refreshAppsList updates the apps list display by updating in-place.
-// This maintains the group's position in the PreferencesPage.
-func (std *SplitTunnelDialog) refreshAppsList() {
-	// Remove old dynamic app rows
-	for _, row := range std.appRows {
-		std.appsGroup.Remove(row)
-	}
-	std.appRows = nil
-
-	// Add app rows for each app
-	if len(std.apps) == 0 {
-		emptyRow := adw.NewActionRow()
-		emptyRow.SetTitle("No applications configured")
-		emptyRow.SetSubtitle("Click + to add an application")
-		std.appsGroup.Add(emptyRow)
-		std.appRows = append(std.appRows, emptyRow)
-	} else {
-		for _, app := range std.apps {
-			appCopy := app
-			row := std.createAppRow(appCopy)
-			std.appsGroup.Add(row)
-			std.appRows = append(std.appRows, row)
-		}
-	}
-}
-
-// createAppRow creates an AdwActionRow for an application.
-func (std *SplitTunnelDialog) createAppRow(executable string) *adw.ActionRow {
-	row := adw.NewActionRow()
-
-	// App name (executable basename)
-	parts := strings.Split(executable, "/")
-	name := parts[len(parts)-1]
-	row.SetTitle(name)
-	row.SetSubtitle(executable)
-
-	// App icon
-	icon := gtk.NewImage()
-	icon.SetFromIconName("application-x-executable-symbolic")
-	icon.SetPixelSize(24)
-	row.AddPrefix(icon)
-
-	// Delete button
-	deleteBtn := components.NewIconButton("edit-delete-symbolic", "Remove application")
-	deleteBtn.SetVAlign(gtk.AlignCenter)
-	deleteBtn.ConnectClicked(func() {
-		std.showRemoveAppConfirmation(executable)
-	})
-	row.AddSuffix(deleteBtn)
-
-	return row
-}
-
-// addApp adds an application to the list.
-func (std *SplitTunnelDialog) addApp(executable string) {
-	if AddAppToSlice(&std.apps, executable) {
-		std.refreshAppsList()
-	}
-}
-
-// showRemoveAppConfirmation shows a confirmation dialog before removing an application.
-func (std *SplitTunnelDialog) showRemoveAppConfirmation(executable string) {
-	// Get app name from executable path
-	name := GetAppName(executable)
-	components.ShowRemoveConfirmation(std.dialog, "Remove Application", name, func() {
-		std.removeApp(executable)
-	})
-}
-
-// removeApp removes an application from the list.
-func (std *SplitTunnelDialog) removeApp(executable string) {
-	std.apps = RemoveAppFromSlice(std.apps, executable)
-	std.refreshAppsList()
-}
-
 // saveSettings saves the profile configuration including authentication and split tunnel settings.
 func (std *SplitTunnelDialog) saveSettings() {
 	// Save authentication settings
@@ -537,22 +378,7 @@ func (std *SplitTunnelDialog) saveSettings() {
 		std.profile.SplitTunnelMode = std.modeIDs[modeIdx]
 	}
 
-	std.profile.SplitTunnelDNS = std.dnsRow.Active()
 	std.profile.SplitTunnelRoutes = std.routes
-
-	// Save per-app tunneling settings
-	if std.appsEnabledRow != nil {
-		std.profile.SplitTunnelAppsEnabled = std.appsEnabledRow.Active()
-
-		if std.appModeRow != nil {
-			appModeIdx := std.appModeRow.Selected()
-			if int(appModeIdx) < len(std.appModeIDs) {
-				std.profile.SplitTunnelAppMode = std.appModeIDs[appModeIdx]
-			}
-		}
-
-		std.profile.SplitTunnelApps = std.apps
-	}
 
 	// Save NetworkManager setting
 	if std.useNMRow != nil {

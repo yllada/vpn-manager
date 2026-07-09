@@ -595,7 +595,9 @@ func (p *Provider) SupportsFeature(feature vpntypes.ProviderFeature) bool {
 	case vpntypes.FeatureAutoConnect:
 		return true
 	case vpntypes.FeatureSplitTunnel:
-		return true // WireGuard supports split tunneling via AllowedIPs
+		// The GUI offers no working split-tunnel control for WireGuard; routing is
+		// defined solely by AllowedIPs in the .conf file, so do not advertise this.
+		return false
 	default:
 		return false
 	}

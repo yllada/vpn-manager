@@ -18,7 +18,6 @@ import (
 	"github.com/yllada/vpn-manager/internal/resilience"
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
 	"github.com/yllada/vpn-manager/internal/vpn/security"
-	"github.com/yllada/vpn-manager/internal/vpn/tunnel"
 	vpntypes "github.com/yllada/vpn-manager/internal/vpn/types"
 )
 
@@ -360,26 +359,6 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 	if m.ipv6Protection != nil {
 		if err := m.ipv6Protection.Enable(tunIface, false); err != nil {
 			logger.LogWarn("ipv6", "failed to enable: %v", err)
-		}
-	}
-
-	// Per-App Tunneling
-	if m.appTunnel != nil && conn.Profile.SplitTunnelAppsEnabled && len(conn.Profile.SplitTunnelApps) > 0 {
-		gateway := m.getDefaultGateway()
-		if conn.Profile.SplitTunnelAppMode != "" {
-			m.appTunnel.SetMode(tunnel.AppTunnelMode(conn.Profile.SplitTunnelAppMode))
-		}
-		if conn.Profile.SplitTunnelDNS {
-			vpnDNS := []string{DefaultVPNGatewayDNS}
-			systemDNS := m.detectSystemDNS()
-			m.appTunnel.SetSplitDNS(true, vpnDNS, systemDNS)
-			logger.LogDebug("apptunnel", "Split DNS enabled (vpnDNS: %v, systemDNS: %s)", vpnDNS, systemDNS)
-		}
-		if err := m.appTunnel.Enable(tunIface, gateway); err != nil {
-			logger.LogWarn("apptunnel", "failed to enable: %v", err)
-		} else {
-			logger.LogDebug("apptunnel", "Enabled for %d apps (mode: %s, splitDNS: %v)",
-				len(conn.Profile.SplitTunnelApps), conn.Profile.SplitTunnelAppMode, conn.Profile.SplitTunnelDNS)
 		}
 	}
 
