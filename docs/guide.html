@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VPN Manager guide — every option explained: what it is, what it's for, how it works, and when to use it.">
+  <meta name="author" content="Yadian Llada Lopez">
+  <meta name="theme-color" content="#0f172a" id="theme-color-meta">
+
+  <title>Guide — VPN Manager</title>
+
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="canonical" href="https://yllada.github.io/vpn-manager/guide.html">
+
+  <!-- Precompiled Tailwind CSS (regenerate with ./build-css.sh) -->
+  <link rel="stylesheet" href="tailwind.css">
+
+  <!-- Theme initialization (prevent flash) -->
+  <script>
+    (function() {
+      document.documentElement.classList.add('js');
+      const stored = localStorage.getItem('vpn-manager-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (stored === 'dark' || (!stored && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-50 antialiased transition-colors duration-300">
+
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-gnome focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:font-medium">
+    Skip to main content
+  </a>
+
+  <!-- Header/Navigation -->
+  <header class="fixed top-0 left-0 right-0 z-40 glass border-b border-slate-200 dark:border-slate-700/50 transition-colors duration-300">
+    <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" aria-label="Main navigation">
+      <a href="index.html" class="flex items-center gap-3 group" aria-label="VPN Manager Home">
+        <img src="assets/vpn-manager.svg" alt="" class="w-10 h-10 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6" aria-hidden="true">
+        <span class="font-bold text-xl hidden sm:block bg-gradient-to-r from-gnome to-gnome-dark bg-clip-text text-transparent">VPN Manager</span>
+      </a>
+
+      <div class="flex items-center gap-4">
+        <a href="index.html" class="text-slate-600 dark:text-slate-400 hover:text-gnome dark:hover:text-gnome transition-colors text-sm font-medium inline-flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+          </svg>
+          <span class="hidden sm:inline">Home</span>
+        </a>
+
+        <!-- Theme Toggle -->
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" role="switch" aria-checked="false">
+          <div class="theme-toggle-circle">
+            <svg class="theme-toggle-icon sun-icon" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+            </svg>
+            <svg class="theme-toggle-icon moon-icon" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+            </svg>
+          </div>
+        </button>
+
+        <a href="https://github.com/yllada/vpn-manager" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-gnome dark:hover:text-gnome transition-colors" aria-label="View on GitHub">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/>
+          </svg>
+          <span class="hidden sm:inline text-sm font-medium">GitHub</span>
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main-content" class="pt-16">
+
+    <!-- Intro -->
+    <section class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-10 text-center">
+      <span class="inline-block px-4 py-1.5 text-sm font-semibold text-gnome bg-gnome/10 rounded-full mb-4">Guide</span>
+      <h1 class="text-4xl sm:text-5xl font-black tracking-tight mb-4">Every option, explained</h1>
+      <p class="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+        What each setting is, what it's for, how it works, and when to turn it on — in plain language, no networking degree required.
+      </p>
+    </section>
+
+    <!-- Table of contents -->
+    <nav class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-10" aria-label="Sections">
+      <div class="flex flex-wrap justify-center gap-3">
+        <a href="#general" class="px-4 py-2 rounded-full glass-card text-sm font-medium hover:text-gnome transition-colors">General</a>
+        <a href="#trust" class="px-4 py-2 rounded-full glass-card text-sm font-medium hover:text-gnome transition-colors">Network Trust</a>
+        <a href="#tailscale" class="px-4 py-2 rounded-full glass-card text-sm font-medium hover:text-gnome transition-colors">Tailscale</a>
+        <a href="#security" class="px-4 py-2 rounded-full glass-card text-sm font-medium hover:text-gnome transition-colors">Security</a>
+        <a href="#openvpn" class="px-4 py-2 rounded-full glass-card text-sm font-medium hover:text-gnome transition-colors">OpenVPN profile</a>
+        <a href="#wireguard" class="px-4 py-2 rounded-full glass-card text-sm font-medium hover:text-gnome transition-colors">WireGuard profile</a>
+      </div>
+    </nav>
+
+    <!-- ===================== GENERAL ===================== -->
+    <section id="general" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-20">
+      <div class="mb-8">
+        <h2 class="text-2xl sm:text-3xl font-bold mb-2">General</h2>
+        <p class="text-slate-500 dark:text-slate-400">App behaviour, startup, and appearance. <span class="text-slate-400 dark:text-slate-500">Preferences → General</span></p>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Start with System</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Launches VPN Manager automatically when you log in.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Having it ready without opening it by hand.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Adds a desktop autostart entry for your session.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">If you use a VPN daily.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Minimize to Tray</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Closing the window keeps the app running in the system tray instead of quitting.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Staying connected and reachable.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Intercepts the window close; if no system tray is detected, the window just closes.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">Leave on if your desktop has a tray.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Auto-reconnect</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Re-establishes the VPN automatically if the connection drops.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Staying protected through network blips.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">A health check watches the tunnel and reconnects on failure.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On for laptops or unstable networks.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Connection Alerts</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Desktop notifications when the VPN connects or disconnects.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Knowing your protection state at a glance.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Sends a system notification on state changes.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On unless you find them noisy.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Theme</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">App appearance — System, Light, or Dark.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Matching your desktop.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Applies immediately.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">Anytime.</dd></div>
+          </dl>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ===================== NETWORK TRUST ===================== -->
+    <section id="trust" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-20">
+      <div class="mb-8">
+        <h2 class="text-2xl sm:text-3xl font-bold mb-2">Network Trust</h2>
+        <p class="text-slate-500 dark:text-slate-400">Manage the VPN automatically based on the network you're on. <span class="text-slate-400 dark:text-slate-500">Preferences → Network Trust</span></p>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Enable Network Trust</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Automatically manages the VPN based on the network you're on.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Connecting on untrusted Wi-Fi and relaxing at home, hands-free.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Watches network changes and applies your rules.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On if you move between trusted and untrusted networks.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">New Wi-Fi networks</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">What to do when you join a network you haven't set a rule for — Ask, Auto-connect VPN, or Do nothing.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">A sensible default for unknown networks.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Applied by the trust engine when the network changes.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">"Ask" if cautious; "Auto-connect" for maximum protection.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Cut internet if the VPN fails</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">On an untrusted network, blocks all traffic if the VPN can't connect.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Never leaking on untrusted Wi-Fi.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Engages the kill switch when a connect attempt fails on an untrusted network.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On for strong privacy.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Trust Wired Networks</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Treats ethernet connections as trusted by default.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Not forcing the VPN on a wired home LAN.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Ethernet is auto-trusted unless a rule overrides it.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On if your wired network is safe.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Manage Rules</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Per-network (Wi-Fi SSID) trust rules.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Fine control — trust home, distrust cafés.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Opens a rules editor.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">To override the default action for specific networks.</dd></div>
+          </dl>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ===================== TAILSCALE ===================== -->
+    <section id="tailscale" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-20">
+      <div class="mb-8">
+        <h2 class="text-2xl sm:text-3xl font-bold mb-2">Tailscale</h2>
+        <p class="text-slate-500 dark:text-slate-400">Settings for the Tailscale mesh VPN. <span class="text-slate-400 dark:text-slate-500">Preferences → VPN Providers</span></p>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Accept Routes</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Accept subnet routes advertised by other Tailscale nodes.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Reaching subnets behind other machines.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Enables Tailscale's accept-routes.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On if you use subnet routers.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Accept DNS</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Use your Tailscale network's DNS (MagicDNS).</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Resolving machines by name across your tailnet.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Applies Tailscale's DNS settings.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On for MagicDNS.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Enable LAN Gateway</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Share your Tailscale connection with other devices on your local network.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Getting non-Tailscale devices (TV, console) onto the VPN.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Sets this machine up as a gateway (needs the administrator password).</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">To bridge LAN devices through your exit node.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Advertise Exit Node</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Offer this machine as an exit node for your other Tailscale devices.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Routing other devices' internet through this machine.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Advertises exit-node capability (must be approved in the Tailscale admin console).</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">To make this a VPN exit for your tailnet.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Shields Up</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Block all incoming connections.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Hardening this machine on the tailnet.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Enables Tailscale's shields-up.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">If nothing should connect <em>to</em> this device.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Tailscale SSH</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Enable Tailscale-managed SSH.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">SSH into this machine using Tailscale identity.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Applied on the next connect.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">If you use Tailscale SSH.</dd></div>
+          </dl>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ===================== SECURITY ===================== -->
+    <section id="security" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-20">
+      <div class="mb-8">
+        <h2 class="text-2xl sm:text-3xl font-bold mb-2">Security</h2>
+        <p class="text-slate-500 dark:text-slate-400">Leak protection and the kill switch. <span class="text-slate-400 dark:text-slate-500">Preferences → Security</span></p>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Kill Switch Mode</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Blocks traffic to prevent leaks — Off, On Disconnect, or Always On.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Never leaking outside the tunnel.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300"><strong>On Disconnect</strong> is a network lock — it stays out of the way while the tunnel is healthy and blocks everything only if it drops unexpectedly (split-tunnel friendly). <strong>Always On</strong> is full lockdown — only VPN traffic for the whole session. A disconnect you request yourself never trips the lock.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">"On Disconnect" for most people; "Always On" for maximum strictness.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Allow LAN Access</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Permits local-network traffic while the kill switch is active.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Still reaching your printer or NAS with the kill switch on.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Allows private LAN ranges through the block.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On if you need local devices.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">DNS Mode</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Which DNS servers to use on the VPN — System, Cloudflare, Google, or Custom.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Preventing DNS leaks or choosing a resolver.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">System is passthrough (keeps whatever DNS the VPN/system provides — good for split-tunnel and corporate names); Cloudflare/Google/Custom force that resolver via the daemon.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">System unless you want a specific resolver.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Custom DNS Servers</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Your own DNS server addresses (used when DNS Mode is Custom).</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">A specific or private resolver.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Validated and applied.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">With Custom mode.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Block apps' own encrypted DNS</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Stops browsers and apps doing their own DNS-over-HTTPS/TLS and bypassing your VPN's DNS.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Making sure DNS actually goes through the VPN.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Blocks known DoH provider endpoints and the DoT port (853).</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">On for consistent DNS routing (can break apps that insist on their own DNS).</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">IPv6 leaks</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">How IPv6 is handled — Automatic, Always block, or Allow.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Preventing IPv6 leaks on IPv4-only tunnels.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Automatic blocks IPv6 only when the VPN can't carry it; Always block disables IPv6 while connected; Allow leaves it untouched.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">Automatic (recommended).</dd></div>
+          </dl>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ===================== OPENVPN PROFILE ===================== -->
+    <section id="openvpn" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-20">
+      <div class="mb-8">
+        <h2 class="text-2xl sm:text-3xl font-bold mb-2">OpenVPN profile settings</h2>
+        <p class="text-slate-500 dark:text-slate-400">Per-profile options, opened from a profile's settings. <span class="text-slate-400 dark:text-slate-500">OpenVPN tab → profile → Settings</span></p>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Two-Factor Authentication (OTP)</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Prompts for a one-time code each time you connect.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">OpenVPN servers protected by 2FA.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Asks for the code and passes it at connect.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">If your server requires OTP.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Enable Split Tunneling</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Route only some traffic through the VPN.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Keeping part of your traffic off the tunnel.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Turns on the route rules below.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">To keep specific apps or sites off the VPN.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">Traffic Mode</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Include (only the listed networks use the VPN) or Exclude (everything uses the VPN except the listed networks).</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Choosing the split direction.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Applied through OpenVPN's own routing at connect time.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">Include to send only a few things through the VPN; Exclude to send everything except a few.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6">
+          <h3 class="font-semibold text-lg mb-4">IPs and Networks</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">The list of networks (IP or CIDR) the split rule applies to.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Defining exactly what to include or exclude.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Each entry is validated and passed to OpenVPN as a route.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">With split tunneling enabled.</dd></div>
+          </dl>
+        </article>
+
+        <article class="glass-card rounded-xl p-6 md:col-span-2">
+          <h3 class="font-semibold text-lg mb-4">Use NetworkManager</h3>
+          <dl class="space-y-2.5 text-sm">
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">What</dt><dd class="text-slate-600 dark:text-slate-300">Manage this connection through NetworkManager instead of launching OpenVPN directly.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">For</dt><dd class="text-slate-600 dark:text-slate-300">Integrating with the system's network stack.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">How</dt><dd class="text-slate-600 dark:text-slate-300">Switches the connection backend.</dd></div>
+            <div class="flex gap-3"><dt class="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gnome pt-0.5">When</dt><dd class="text-slate-600 dark:text-slate-300">If you prefer NetworkManager integration (only shown when NM is available).</dd></div>
+          </dl>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ===================== WIREGUARD PROFILE ===================== -->
+    <section id="wireguard" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 scroll-mt-20">
+      <div class="mb-8">
+        <h2 class="text-2xl sm:text-3xl font-bold mb-2">WireGuard profile settings</h2>
+        <p class="text-slate-500 dark:text-slate-400">How WireGuard routing works in this app.</p>
+      </div>
+      <article class="glass-card rounded-xl p-6">
+        <p class="text-slate-600 dark:text-slate-300 mb-4">
+          WireGuard routing is defined by the <code class="text-gnome bg-gnome/10 px-1.5 py-0.5 rounded font-mono text-sm">AllowedIPs</code> field in the profile's <code class="text-gnome bg-gnome/10 px-1.5 py-0.5 rounded font-mono text-sm">.conf</code> file — not in the app. What goes through the tunnel is exactly the CIDRs listed there:
+        </p>
+        <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-4 list-disc list-inside">
+          <li><code class="text-gnome bg-gnome/10 px-1.5 py-0.5 rounded font-mono text-xs">AllowedIPs = 0.0.0.0/0, ::/0</code> — send all traffic through the tunnel.</li>
+          <li>Specific CIDRs (e.g. <code class="text-gnome bg-gnome/10 px-1.5 py-0.5 rounded font-mono text-xs">10.0.0.0/8</code>) — split tunnel: only those networks go through the tunnel.</li>
+        </ul>
+        <p class="text-slate-600 dark:text-slate-300">
+          To change it, edit <code class="text-gnome bg-gnome/10 px-1.5 py-0.5 rounded font-mono text-sm">AllowedIPs</code> in the <code class="text-gnome bg-gnome/10 px-1.5 py-0.5 rounded font-mono text-sm">.conf</code> and reconnect. The app's WireGuard settings view is read-only and shows the profile name, interface, and config-file path for reference.
+        </p>
+      </article>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
+      <a href="index.html" class="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-gnome to-gnome-dark text-white font-semibold rounded-xl shadow-lg shadow-gnome/30 hover:scale-105 transition-transform duration-300">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+        </svg>
+        Back to home
+      </a>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-200 dark:border-slate-800 py-12 transition-colors duration-300">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div class="flex items-center gap-4">
+          <img src="assets/vpn-manager.svg" alt="" class="w-10 h-10" aria-hidden="true">
+          <div>
+            <p class="font-bold text-lg">VPN Manager</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Made by <a href="https://github.com/yllada" target="_blank" rel="noopener noreferrer" class="text-gnome hover:underline font-medium">Yadian Llada Lopez</a></p>
+          </div>
+        </div>
+        <nav class="flex flex-wrap items-center justify-center gap-6 text-sm" aria-label="Footer navigation">
+          <a href="index.html" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Home</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Changelog</a>
+          <a href="https://github.com/yllada/vpn-manager/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer" class="text-slate-500 dark:text-slate-400 hover:text-gnome transition-colors">Security</a>
+        </nav>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Minimal theme toggle (self-contained; the landing's app.js is not needed here) -->
+  <script>
+    (function() {
+      const btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      const root = document.documentElement;
+      const meta = document.getElementById('theme-color-meta');
+      const sync = () => {
+        const dark = root.classList.contains('dark');
+        btn.setAttribute('aria-checked', dark ? 'true' : 'false');
+        if (meta) meta.setAttribute('content', dark ? '#0f172a' : '#f8fafc');
+      };
+      sync();
+      btn.addEventListener('click', () => {
+        const dark = root.classList.toggle('dark');
+        localStorage.setItem('vpn-manager-theme', dark ? 'dark' : 'light');
+        sync();
+      });
+    })();
+  </script>
+</body>
+</html>
