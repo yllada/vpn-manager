@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-07-09
+### Fixed
+- **OpenVPN split tunneling now works in "exclude" mode** — Exclude mode (send the listed networks around the tunnel, everything else through it) was applied by running `ip route` from the unprivileged GUI, which lacks the needed privileges and failed silently. It is now handled by the daemon through OpenVPN's own routing (`net_gateway`), with the pulled default route kept through the tunnel — mirroring how include mode already works.
+
+### Changed
+- **Simpler, more honest Security preferences.** Removed the **Block WebRTC** toggle: it only blocked STUN/TURN ports, which does not stop the real browser IP leak (and breaks legitimate video-call apps) — and with the VPN plus kill switch that traffic already goes through the tunnel. Merged **Block DNS-over-HTTPS** and **Block DNS-over-TLS** into one **Block apps' own encrypted DNS** switch (same concern, one decision). Reduced the IPv6 control from four options to three — **Automatic / Always block / Allow** (the old "Disable" was identical to "Block"). Plainer wording across the Network Trust and Security pages.
+- **WireGuard profile settings are now a read-only info view.** The old settings dialog offered split-tunnel/mode/DNS/route/per-app controls that were never applied — WireGuard routing is defined entirely by the `AllowedIPs` field in the profile's `.conf`. It now shows the profile name, interface, and config path, and explains that routing is controlled by `AllowedIPs`.
+
+### Removed
+- **OpenVPN Per-Application Routing.** It built cgroup/firewall plumbing but never placed any process in the cgroup, so it captured no traffic — a setting that did nothing. Removed it along with the **Use VPN DNS** row, whose only effect ran through that dead path. Everything verified working stays: OTP, split tunneling with IP routes (include/exclude), and Use NetworkManager.
+
+### Added
+- **"Every option, explained" guide** on the website — a plain-language reference for every setting in the app (what it is, what it's for, how it works, and when to use it), doubling as light onboarding.
+
 ## [2.4.0] - 2026-07-09
 ### Added
 - **Add any VPN type from the + button** — The header **+** (and Ctrl+N) used to open an OpenVPN-only file picker, so WireGuard and Tailscale were undiscoverable from it. It now opens a chooser: OpenVPN and WireGuard go to their import dialogs, and Tailscale switches to its (login-based) tab. Unavailable protocols degrade to an informative message instead of a broken action.
