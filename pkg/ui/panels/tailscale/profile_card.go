@@ -183,11 +183,12 @@ func (tp *TailscalePanel) onConnectClicked() {
 			// has been disconnected, and RETURNS the connect error so the host can
 			// refuse to leave Tailscale half-up if the switch failed.
 			glib.IdleAdd(func() {
-				// Re-enable the button before handing off: ConnectExclusive may reject
-				// an in-flight connect or the user may cancel the switch dialog, and
-				// the callback re-manages sensitivity itself — so we must not leave it
-				// stuck disabled from the click-time SetSensitive(false).
-				tp.connectBtn.SetSensitive(true)
+				// Keep the button DISABLED (from the click-time SetSensitive(false))
+				// through the mutual-exclusion window (disconnect-others + confirm
+				// dialog) so repeated clicks don't spam the "connection in progress"
+				// toast. The connect callback re-enables it on completion; if the gate
+				// rejects the connect or the user cancels the switch, the periodic
+				// status render (renderStatus) restores the correct state within a tick.
 				tp.host.ConnectExclusive(vpntypes.ProtocolTailscale, vpntypes.ProtocolTailscale, "Tailscale", func() error {
 					glib.IdleAdd(func() {
 						tp.connectBtn.SetSensitive(false)
