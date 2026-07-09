@@ -52,15 +52,13 @@ type PreferencesDialog struct {
 	trustDefaultActionIDs []string
 
 	// Security settings
-	killSwitchModeRow *adw.ComboRow
-	killSwitchLANRow  *adw.SwitchRow
-	dnsRow            *adw.ComboRow
-	customDNSRow      *adw.EntryRow
-	blockDoHRow       *adw.SwitchRow
-	blockDoTRow       *adw.SwitchRow
-	ipv6Row           *adw.ComboRow
-	blockWebRTCRow    *adw.SwitchRow
-	daemonBanner      *adw.PreferencesGroup
+	killSwitchModeRow    *adw.ComboRow
+	killSwitchLANRow     *adw.SwitchRow
+	dnsRow               *adw.ComboRow
+	customDNSRow         *adw.EntryRow
+	blockEncryptedDNSRow *adw.SwitchRow
+	ipv6Row              *adw.ComboRow
+	daemonBanner         *adw.PreferencesGroup
 
 	// Security combo box ID mappings
 	killSwitchModeIDs []string
@@ -238,8 +236,8 @@ func (pd *PreferencesDialog) buildNetworkTrustPage() *adw.PreferencesPage {
 	trustActionModel := gtk.NewStringList(trustActionLabels)
 
 	pd.trustDefaultActionRow = adw.NewComboRow()
-	pd.trustDefaultActionRow.SetTitle("Unknown Networks")
-	pd.trustDefaultActionRow.SetSubtitle("Action when connecting to a network without a trust rule")
+	pd.trustDefaultActionRow.SetTitle("New Wi-Fi networks")
+	pd.trustDefaultActionRow.SetSubtitle("What to do when you join a network you haven't set a rule for")
 	pd.trustDefaultActionRow.SetModel(trustActionModel)
 	if trustCfg != nil {
 		pd.trustDefaultActionRow.SetSelected(pd.findTrustActionIndex(string(trustCfg.DefaultAction)))
@@ -248,8 +246,8 @@ func (pd *PreferencesDialog) buildNetworkTrustPage() *adw.PreferencesPage {
 
 	// Block on failure row
 	pd.trustBlockOnFailRow = adw.NewSwitchRow()
-	pd.trustBlockOnFailRow.SetTitle("Block on VPN Failure")
-	pd.trustBlockOnFailRow.SetSubtitle("Activate kill switch if VPN fails on untrusted network")
+	pd.trustBlockOnFailRow.SetTitle("Cut internet if the VPN fails")
+	pd.trustBlockOnFailRow.SetSubtitle("On an untrusted network, block traffic if the VPN can't connect")
 	if trustCfg != nil {
 		pd.trustBlockOnFailRow.SetActive(trustCfg.BlockOnUntrustedFailure)
 	}
@@ -458,19 +456,14 @@ func (pd *PreferencesDialog) buildSecurityPage() *adw.PreferencesPage {
 	// Set initial visibility for custom DNS entry
 	pd.updateCustomDNSVisibility()
 
-	// Block DoH switch row
-	pd.blockDoHRow = adw.NewSwitchRow()
-	pd.blockDoHRow.SetTitle("Block DNS-over-HTTPS")
-	pd.blockDoHRow.SetSubtitle("Prevent browsers from bypassing system DNS settings")
-	pd.blockDoHRow.SetActive(pd.config.Security.BlockDoH)
-	dnsGroup.Add(pd.blockDoHRow)
-
-	// Block DoT switch row
-	pd.blockDoTRow = adw.NewSwitchRow()
-	pd.blockDoTRow.SetTitle("Block DNS-over-TLS")
-	pd.blockDoTRow.SetSubtitle("Prevent apps from bypassing system DNS settings")
-	pd.blockDoTRow.SetActive(pd.config.Security.BlockDoT)
-	dnsGroup.Add(pd.blockDoTRow)
+	// Block encrypted-DNS bypass. One switch drives both DoH and DoT blocking:
+	// to a user these are the same concern — stop apps and browsers from doing
+	// their own encrypted DNS and slipping past the VPN's resolver.
+	pd.blockEncryptedDNSRow = adw.NewSwitchRow()
+	pd.blockEncryptedDNSRow.SetTitle("Block apps' own encrypted DNS")
+	pd.blockEncryptedDNSRow.SetSubtitle("Stops browsers and apps bypassing your VPN's DNS (DoH and DoT)")
+	pd.blockEncryptedDNSRow.SetActive(pd.config.Security.BlockDoH || pd.config.Security.BlockDoT)
+	dnsGroup.Add(pd.blockEncryptedDNSRow)
 
 	page.Add(dnsGroup)
 
@@ -481,24 +474,19 @@ func (pd *PreferencesDialog) buildSecurityPage() *adw.PreferencesPage {
 	ipv6Group.SetTitle("IPv6 Protection")
 	ipv6Group.SetDescription("Prevent IPv6 leaks when using IPv4-only VPNs")
 
-	// IPv6 Mode combo row
-	pd.ipv6IDs = []string{"allow", "block", "disable", "auto"}
-	ipv6Labels := []string{"Allow", "Block", "Disable", "Auto"}
+	// IPv6 Mode combo row. Three plain choices instead of the old four: the
+	// runtime only has auto/block/allow (the old "Disable" collapsed to "Block"),
+	// so the extra option added confusion without changing behaviour.
+	pd.ipv6IDs = []string{"auto", "block", "allow"}
+	ipv6Labels := []string{"Automatic (recommended)", "Always block", "Allow"}
 	ipv6Model := gtk.NewStringList(ipv6Labels)
 
 	pd.ipv6Row = adw.NewComboRow()
-	pd.ipv6Row.SetTitle("IPv6 Mode")
-	pd.ipv6Row.SetSubtitle("Control IPv6 traffic behavior")
+	pd.ipv6Row.SetTitle("IPv6 leaks")
+	pd.ipv6Row.SetSubtitle("Automatic blocks IPv6 only when the VPN can't carry it")
 	pd.ipv6Row.SetModel(ipv6Model)
 	pd.ipv6Row.SetSelected(pd.findIPv6ModeIndex(pd.config.Security.IPv6Mode))
 	ipv6Group.Add(pd.ipv6Row)
-
-	// Block WebRTC switch row
-	pd.blockWebRTCRow = adw.NewSwitchRow()
-	pd.blockWebRTCRow.SetTitle("Block WebRTC")
-	pd.blockWebRTCRow.SetSubtitle("Prevent WebRTC from leaking your real IP address")
-	pd.blockWebRTCRow.SetActive(pd.config.Security.BlockWebRTC)
-	ipv6Group.Add(pd.blockWebRTCRow)
 
 	page.Add(ipv6Group)
 
@@ -530,6 +518,14 @@ func (pd *PreferencesDialog) findDNSModeIndex(modeID string) uint {
 
 // findIPv6ModeIndex returns the index of an IPv6 mode ID, or 0 if not found.
 func (pd *PreferencesDialog) findIPv6ModeIndex(modeID string) uint {
+	// Legacy configs stored "disable" (the combo dropped that redundant option).
+	// It collapses to "block" at the runtime layer, so map it to the "block"
+	// entry here too. Without this it would fall through to index 0 ("Automatic")
+	// and any incidental save would silently downgrade a user's "always block"
+	// choice to conditional blocking — an IPv6-leak regression.
+	if modeID == "disable" {
+		modeID = "block"
+	}
 	for i, id := range pd.ipv6IDs {
 		if id == modeID {
 			return uint(i)
@@ -775,19 +771,13 @@ func (pd *PreferencesDialog) setSecurityControlsEnabled(enabled bool) {
 	if pd.customDNSRow != nil {
 		pd.customDNSRow.SetSensitive(enabled)
 	}
-	if pd.blockDoHRow != nil {
-		pd.blockDoHRow.SetSensitive(enabled)
-	}
-	if pd.blockDoTRow != nil {
-		pd.blockDoTRow.SetSensitive(enabled)
+	if pd.blockEncryptedDNSRow != nil {
+		pd.blockEncryptedDNSRow.SetSensitive(enabled)
 	}
 
 	// IPv6 Protection controls
 	if pd.ipv6Row != nil {
 		pd.ipv6Row.SetSensitive(enabled)
-	}
-	if pd.blockWebRTCRow != nil {
-		pd.blockWebRTCRow.SetSensitive(enabled)
 	}
 }
 
@@ -854,8 +844,10 @@ func (pd *PreferencesDialog) saveSecuritySettings() {
 		pd.config.Security.CustomDNS = []string{}
 	}
 
-	pd.config.Security.BlockDoH = pd.blockDoHRow.Active()
-	pd.config.Security.BlockDoT = pd.blockDoTRow.Active()
+	// One UI switch drives both DoH and DoT blocking.
+	blockEncryptedDNS := pd.blockEncryptedDNSRow.Active()
+	pd.config.Security.BlockDoH = blockEncryptedDNS
+	pd.config.Security.BlockDoT = blockEncryptedDNS
 
 	// ─────────────────────────────────────────────────────────────────────
 	// IPv6 PROTECTION SETTINGS
@@ -864,7 +856,6 @@ func (pd *PreferencesDialog) saveSecuritySettings() {
 	if int(ipv6Idx) < len(pd.ipv6IDs) {
 		pd.config.Security.IPv6Mode = pd.ipv6IDs[ipv6Idx]
 	}
-	pd.config.Security.BlockWebRTC = pd.blockWebRTCRow.Active()
 
 	// Apply DNS and IPv6 settings to the runtime so the change takes effect
 	// immediately, not just on the next app start. Placed after the config
@@ -872,8 +863,7 @@ func (pd *PreferencesDialog) saveSecuritySettings() {
 	pd.mainWindow.app.vpnManager.ApplyDNSConfig(
 		pd.config.Security.DNSMode, pd.config.Security.CustomDNS,
 		pd.config.Security.BlockDoH, pd.config.Security.BlockDoT)
-	pd.mainWindow.app.vpnManager.ApplyIPv6Config(
-		pd.config.Security.IPv6Mode, pd.config.Security.BlockWebRTC)
+	pd.mainWindow.app.vpnManager.ApplyIPv6Config(pd.config.Security.IPv6Mode)
 }
 
 // Show displays the preferences dialog.

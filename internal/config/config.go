@@ -109,10 +109,13 @@ type SecurityConfig struct {
 	BlockDoH bool `yaml:"block_doh"`
 	// BlockDoT blocks DNS-over-TLS.
 	BlockDoT bool `yaml:"block_dot"`
-	// IPv6Mode: "allow", "block", "disable", or "auto".
+	// IPv6Mode: "auto", "block", or "allow". The legacy value "disable" still
+	// loads and is treated as "block".
 	IPv6Mode string `yaml:"ipv6_mode"`
-	// BlockWebRTC blocks WebRTC to prevent IP leaks.
-	BlockWebRTC bool `yaml:"block_webrtc"`
+	// Deprecated: WebRTC port-blocking was removed (it did not stop the real
+	// browser leak and broke real-time apps). The key still loads from older
+	// configs but is ignored.
+	BlockWebRTC bool `yaml:"block_webrtc,omitempty"`
 }
 
 // Config represents the application configuration.

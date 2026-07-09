@@ -76,7 +76,7 @@ func NewApplication(appID, version string, startMinimized bool) (*Application, e
 	// stays Off regardless of what the user configured.
 	vpnManager.ApplyKillSwitchConfig(cfg.Security.KillSwitchMode, cfg.Security.KillSwitchLAN)
 	vpnManager.ApplyDNSConfig(cfg.Security.DNSMode, cfg.Security.CustomDNS, cfg.Security.BlockDoH, cfg.Security.BlockDoT)
-	vpnManager.ApplyIPv6Config(cfg.Security.IPv6Mode, cfg.Security.BlockWebRTC)
+	vpnManager.ApplyIPv6Config(cfg.Security.IPv6Mode)
 
 	// Connect activation signal
 	gtkApp.ConnectActivate(application.onActivate)

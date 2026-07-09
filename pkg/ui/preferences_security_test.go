@@ -19,12 +19,10 @@ func TestPreferencesDialogHasSecurityFields(t *testing.T) {
 	// Verify DNS Protection fields exist
 	_ = pd.dnsRow
 	_ = pd.customDNSRow
-	_ = pd.blockDoHRow
-	_ = pd.blockDoTRow
+	_ = pd.blockEncryptedDNSRow
 
 	// Verify IPv6 Protection fields exist
 	_ = pd.ipv6Row
-	_ = pd.blockWebRTCRow
 
 	// Verify daemon status banner field exists (changed from Banner to PreferencesGroup)
 	_ = pd.daemonBanner
@@ -52,17 +50,11 @@ func TestSecurityFieldsAreNilBeforeInit(t *testing.T) {
 	if pd.customDNSRow != nil {
 		t.Error("customDNSRow should be nil before initialization")
 	}
-	if pd.blockDoHRow != nil {
-		t.Error("blockDoHRow should be nil before initialization")
-	}
-	if pd.blockDoTRow != nil {
-		t.Error("blockDoTRow should be nil before initialization")
+	if pd.blockEncryptedDNSRow != nil {
+		t.Error("blockEncryptedDNSRow should be nil before initialization")
 	}
 	if pd.ipv6Row != nil {
 		t.Error("ipv6Row should be nil before initialization")
-	}
-	if pd.blockWebRTCRow != nil {
-		t.Error("blockWebRTCRow should be nil before initialization")
 	}
 	if pd.daemonBanner != nil {
 		t.Error("daemonBanner should be nil before initialization")
@@ -112,7 +104,7 @@ func TestSecurityPageIDMappingsInitialized(t *testing.T) {
 		{
 			name:     "ipv6IDs",
 			getIDs:   func(pd *PreferencesDialog) []string { return pd.ipv6IDs },
-			expected: []string{"allow", "block", "disable", "auto"},
+			expected: []string{"auto", "block", "allow"},
 		},
 	}
 
@@ -129,7 +121,7 @@ func TestSecurityPageIDMappingsInitialized(t *testing.T) {
 			case "dnsIDs":
 				pd.dnsIDs = []string{"system", "cloudflare", "google", "custom"}
 			case "ipv6IDs":
-				pd.ipv6IDs = []string{"allow", "block", "disable", "auto"}
+				pd.ipv6IDs = []string{"auto", "block", "allow"}
 			}
 
 			got := tt.getIDs(pd)

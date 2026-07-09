@@ -75,7 +75,7 @@ func TestSaveSecuritySettingsUpdatesConfig(t *testing.T) {
 		config:            config.DefaultConfig(),
 		killSwitchModeIDs: []string{"off", "on-disconnect", "always-on"},
 		dnsIDs:            []string{"system", "cloudflare", "google", "custom"},
-		ipv6IDs:           []string{"allow", "block", "disable", "auto"},
+		ipv6IDs:           []string{"auto", "block", "allow"},
 	}
 
 	// Simulate: User selected "always-on" (index 2)
@@ -120,6 +120,35 @@ func TestFindKillSwitchModeIndexReturnsCorrectIndex(t *testing.T) {
 			gotIdx := pd.findKillSwitchModeIndex(tt.mode)
 			if gotIdx != tt.wantIdx {
 				t.Errorf("findKillSwitchModeIndex(%q) = %d, want %d", tt.mode, gotIdx, tt.wantIdx)
+			}
+		})
+	}
+}
+
+// TestFindIPv6ModeIndex pins the IPv6 combo pre-selection, including the
+// regression guard: a legacy config value "disable" (dropped from the combo)
+// must resolve to the "block" entry, NOT fall through to index 0 ("Automatic").
+// Falling through would silently downgrade a user's explicit "always block" to
+// conditional blocking on the next save — an IPv6-leak regression.
+func TestFindIPv6ModeIndex(t *testing.T) {
+	pd := &PreferencesDialog{ipv6IDs: []string{"auto", "block", "allow"}}
+
+	tests := []struct {
+		mode    string
+		wantIdx uint
+	}{
+		{"auto", 0},
+		{"block", 1},
+		{"allow", 2},
+		{"disable", 1}, // legacy value → maps to "block", never index 0
+		{"", 0},        // unknown falls back to first entry
+		{"garbage", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			if got := pd.findIPv6ModeIndex(tt.mode); got != tt.wantIdx {
+				t.Errorf("findIPv6ModeIndex(%q) = %d, want %d", tt.mode, got, tt.wantIdx)
 			}
 		})
 	}

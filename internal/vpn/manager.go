@@ -367,11 +367,15 @@ var reapplyDNSAsync = func(dp *security.DNSProtection, tunIface string, servers 
 // user's choice is silently ignored on connect. Call this at startup and
 // whenever the setting changes. Takes primitives so the vpn package need not
 // import internal/config.
-func (m *Manager) ApplyIPv6Config(mode string, blockWebRTC bool) {
+func (m *Manager) ApplyIPv6Config(mode string) {
 	if m.ipv6Protection == nil {
 		return
 	}
-	m.ipv6Protection.SetConfig(security.ParseIPv6Config(mode, blockWebRTC))
+	// WebRTC port-blocking was removed from the product: blocking STUN/TURN
+	// ports did not stop the real browser IP leak (host candidates), broke
+	// legitimate real-time apps, and is redundant with the tunnel + kill switch.
+	// Always disabled now.
+	m.ipv6Protection.SetConfig(security.ParseIPv6Config(mode, false))
 }
 
 // AppTunnel returns the per-app tunnel manager.

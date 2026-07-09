@@ -39,15 +39,16 @@ func TestParseIPv6Config(t *testing.T) {
 	}
 }
 
-// TestDefaultIPv6ConfigBlocks pins the safe default: block IPv6 outright and
-// block WebRTC, preventing leaks unless the user opts out.
+// TestDefaultIPv6ConfigBlocks pins the safe default: block IPv6 outright to
+// prevent leaks. WebRTC port-blocking was removed from the product, so the
+// default must leave it off.
 func TestDefaultIPv6ConfigBlocks(t *testing.T) {
 	cfg := DefaultIPv6Config()
 	if cfg.Mode != IPv6ModeBlock {
 		t.Errorf("default Mode = %q, want %q", cfg.Mode, IPv6ModeBlock)
 	}
-	if !cfg.BlockWebRTC {
-		t.Error("default BlockWebRTC = false, want true")
+	if cfg.BlockWebRTC {
+		t.Error("default BlockWebRTC = true, want false (WebRTC blocking removed)")
 	}
 }
 

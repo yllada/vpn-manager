@@ -200,18 +200,19 @@ func TestApplyDNSConfigNoReapplyWhenDisconnected(t *testing.T) {
 func TestApplyIPv6Config(t *testing.T) {
 	m := &Manager{ipv6Protection: security.NewIPv6Protection()}
 
-	m.ApplyIPv6Config("allow", false)
+	m.ApplyIPv6Config("allow")
 	if got := m.ipv6Protection.GetConfig(); got.Mode != security.IPv6ModeAllow || got.BlockWebRTC {
 		t.Errorf("after allow: config = %+v, want Mode=allow BlockWebRTC=false", got)
 	}
 
-	m.ApplyIPv6Config("disable", true)
-	if got := m.ipv6Protection.GetConfig(); got.Mode != security.IPv6ModeBlock || !got.BlockWebRTC {
-		t.Errorf("after disable: config = %+v, want Mode=block BlockWebRTC=true", got)
+	// Legacy "disable" collapses to block; WebRTC blocking is always off now.
+	m.ApplyIPv6Config("disable")
+	if got := m.ipv6Protection.GetConfig(); got.Mode != security.IPv6ModeBlock || got.BlockWebRTC {
+		t.Errorf("after disable: config = %+v, want Mode=block BlockWebRTC=false", got)
 	}
 
 	// A nil IPv6 protection must be a safe no-op, not a panic.
-	(&Manager{}).ApplyIPv6Config("block", true)
+	(&Manager{}).ApplyIPv6Config("block")
 }
 
 func TestNewManager(t *testing.T) {

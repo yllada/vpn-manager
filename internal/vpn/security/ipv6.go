@@ -41,10 +41,13 @@ type IPv6Config struct {
 }
 
 // DefaultIPv6Config returns safe defaults (block IPv6 to prevent leaks).
+// BlockWebRTC is always false: WebRTC port-blocking was removed from the product
+// (it did not stop the real browser leak and broke real-time apps). The field is
+// retained only for the daemon wire protocol and is never enabled.
 func DefaultIPv6Config() IPv6Config {
 	return IPv6Config{
 		Mode:        IPv6ModeBlock,
-		BlockWebRTC: true,
+		BlockWebRTC: false,
 	}
 }
 
