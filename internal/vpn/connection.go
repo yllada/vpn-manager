@@ -383,11 +383,13 @@ func (m *Manager) enablePostConnectionFeatures(conn *Connection) {
 		}
 	}
 
-	// Split Tunnel Routes (for NM or exclude mode)
-	// In "include" mode with direct OpenVPN, routes are configured via --route options
-	// For NetworkManager or "exclude" mode, we need to apply routes manually
+	// Split Tunnel Routes for the NetworkManager backend only.
+	// With direct OpenVPN both modes are handled by the daemon via OpenVPN's own
+	// --route options (include: routes into the tunnel; exclude: routes around it
+	// via net_gateway), so nothing is applied here. The NetworkManager backend
+	// does not go through those args, so its routes are still applied separately.
 	if conn.Profile.SplitTunnelEnabled && len(conn.Profile.SplitTunnelRoutes) > 0 {
-		if conn.Profile.UseNetworkManager || conn.Profile.SplitTunnelMode == "exclude" {
+		if conn.Profile.UseNetworkManager {
 			resilience.SafeGoWithName("vpn-split-tunnel-routes", func() {
 				m.applySplitTunnelRoutes(conn)
 			})

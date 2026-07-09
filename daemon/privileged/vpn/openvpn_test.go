@@ -538,13 +538,17 @@ func TestBuildOpenVPNArgsSplitTunnel(t *testing.T) {
 			rejectedRoute: "not-a-route",
 		},
 		{
-			name: "exclude mode adds no routing overrides",
+			name: "exclude mode routes around the tunnel via net_gateway, no default override",
 			params: OpenVPNConnectParams{
 				SplitTunnelEnable: true,
 				SplitTunnelMode:   "exclude",
-				SplitTunnelRoutes: []string{"10.0.0.0/8"},
+				SplitTunnelRoutes: []string{"10.0.0.0/8", "", "not-a-route"},
 			},
-			wantRouting: false,
+			wantRouting: false, // keeps the pulled default; no route-nopull/pull-filter
+			wantRoutes: [][]string{
+				{"--route", "10.0.0.0", "255.0.0.0", "net_gateway"},
+			},
+			rejectedRoute: "not-a-route",
 		},
 		{
 			name: "split tunnel disabled adds no routing overrides",

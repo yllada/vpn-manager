@@ -467,19 +467,38 @@ func buildOpenVPNArgs(stagedConfig, credFile string, params OpenVPNConnectParams
 		args = append(args, "--auth-user-pass", credFile)
 	}
 
-	// Split tunneling configuration
-	if params.SplitTunnelEnable && params.SplitTunnelMode == "include" {
-		args = append(args, "--route-nopull")
-		args = append(args, "--pull-filter", "ignore", "redirect-gateway")
-
-		for _, route := range params.SplitTunnelRoutes {
-			route = strings.TrimSpace(route)
-			if route == "" {
-				continue
+	// Split tunneling configuration. Both modes are handled here, in OpenVPN's
+	// own privileged route setup, rather than shelling out to `ip route` from the
+	// unprivileged GUI (which silently failed).
+	if params.SplitTunnelEnable {
+		switch params.SplitTunnelMode {
+		case "include":
+			// Drop the pulled default route; only the listed networks go through
+			// the tunnel.
+			args = append(args, "--route-nopull")
+			args = append(args, "--pull-filter", "ignore", "redirect-gateway")
+			for _, route := range params.SplitTunnelRoutes {
+				route = strings.TrimSpace(route)
+				if route == "" {
+					continue
+				}
+				network, netmask := parseRouteForOpenVPN(route)
+				if network != "" {
+					args = append(args, "--route", network, netmask)
+				}
 			}
-			network, netmask := parseRouteForOpenVPN(route)
-			if network != "" {
-				args = append(args, "--route", network, netmask)
+		case "exclude":
+			// Keep the tunnel as the default route, but send the listed networks
+			// around it via the pre-VPN gateway (OpenVPN's net_gateway keyword).
+			for _, route := range params.SplitTunnelRoutes {
+				route = strings.TrimSpace(route)
+				if route == "" {
+					continue
+				}
+				network, netmask := parseRouteForOpenVPN(route)
+				if network != "" {
+					args = append(args, "--route", network, netmask, "net_gateway")
+				}
 			}
 		}
 	}
