@@ -1,0 +1,10 @@
+name: "vpn-manager CodeQL config"
+
+# Do not scan vendored third-party code. third_party/systray is a fork of
+# fyne.io/systray carried in-tree only so we can add SetIconName/SetIconThemePath
+# (see the replace directive in go.mod). Its generated DBus bindings
+# (internal/generated/notifier/status_notifier_item.go) trip code-quality
+# queries such as "Redundant check for negative value" — those are upstream's
+# generated code, not our source, so they are noise here.
+paths-ignore:
+  - third_party
