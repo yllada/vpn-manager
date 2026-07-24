@@ -1,396 +1,459 @@
 /**
  * VPN Manager Landing Page Styles
- * 
+ *
+ * Design system: "GNOME native credibility" — flat Adwaita-inspired
+ * surfaces, one committed blue, typography-driven hierarchy.
+ *
  * Structure:
- * 1. Base & Reset
- * 2. Scrollbar
- * 3. Animated Backgrounds
- * 4. Gradient Text
- * 5. Glass Morphism
- * 6. Gradient Border Cards
- * 7. Glow Effects
- * 8. Buttons
- * 9. Icon Animations
- * 10. Scroll Reveal
- * 11. Installation Tabs
- * 12. FAQ Accordion
- * 13. Theme Toggle
- * 14. Code Blocks
- * 15. Screenshot Showcase
- * 16. Feature Cards Grid
- * 17. Reduced Motion
- * 18. Noise Overlay
+ * 1. Tokens
+ * 2. Base & Reset
+ * 3. Scrollbar
+ * 4. Surfaces (glass compat classes, solid restyle)
+ * 5. Buttons
+ * 6. Header
+ * 7. Hero
+ * 8. Highlights strip
+ * 9. Feature ledger
+ * 10. Checklist
+ * 11. Comparison table
+ * 12. Steps
+ * 13. Installation tabs & terminal
+ * 14. FAQ accordion
+ * 15. Blue band (open source section)
+ * 16. Theme toggle
+ * 17. Screenshot showcase
+ * 18. Scroll reveal
  * 19. Floating CTA
- * 20. Typing Cursor
- * 21. Comparison Table
- * 22. Header Scroll Effect
- * 23. How It Works Connector
+ * 20. Reduced motion
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ===== 1. BASE & RESET ===== */
+/* ===== 1. TOKENS ===== */
+:root {
+  /* GNOME palette (Adwaita named colors) */
+  --blue-2: #62a0ea;
+  --blue-3: #3584e4;
+  --blue-4: #1c71d8;
+  --blue-5: #1a5fb4;
+
+  --ink: #1e1e24;
+  --ink-muted: #57575f;
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --border: #e6e6ea;
+
+  --accent-text: var(--blue-4);   /* 4.6:1 on white — link-safe */
+  --accent-bg: var(--blue-4);
+  --band: var(--blue-5);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+  --ink: #ffffff;
+  --ink-muted: #b3b3bb;
+  --bg: #1e1e22;
+  --surface: #28282d;
+  --border: #3a3a41;
+
+  --accent-text: var(--blue-2);   /* 5.9:1 on dark bg */
+  --accent-bg: var(--blue-4);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ===== 2. BASE & RESET ===== */
 html {
   scroll-behavior: smooth;
 }
 
-*:focus-visible {
-  outline: 2px solid #3584e4;
-  outline-offset: 2px;
+body {
+  font-feature-settings: 'cv05', 'cv11';
+  letter-spacing: -0.011em;
 }
 
-/* ===== 2. SCROLLBAR ===== */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--blue-3);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: rgba(53, 132, 228, 0.25);
+}
+
+/* ===== 3. SCROLLBAR ===== */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.dark ::-webkit-scrollbar-track {
-  background: #1e293b;
-}
-
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 5px;
-  border: 2px solid #1e293b;
+  background: var(--bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #94a3b8;
+  background: #c8c8ce;
   border-radius: 5px;
-  border: 2px solid #f1f5f9;
+  border: 2px solid var(--bg);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4a4a52;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: #a8a8b0;
 }
 
-/* ===== 3. ANIMATED BACKGROUNDS ===== */
-
-/* Mesh Gradient Blobs */
-.mesh-gradient {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  z-index: 0;
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #5a5a63;
 }
 
-.blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.6;
-  mix-blend-mode: screen;
-}
-
-.dark .blob {
-  opacity: 0.4;
-  mix-blend-mode: screen;
-}
-
-.blob-1 {
-  width: 600px;
-  height: 600px;
-  background: linear-gradient(135deg, #3584e4 0%, #1c71d8 100%);
-  top: -200px;
-  left: -100px;
-  animation: blob 7s infinite;
-}
-
-.blob-2 {
-  width: 500px;
-  height: 500px;
-  background: linear-gradient(135deg, #62a0ea 0%, #3584e4 100%);
-  top: 50%;
-  right: -150px;
-  animation: blob 7s infinite 2s;
-}
-
-.blob-3 {
-  width: 400px;
-  height: 400px;
-  background: linear-gradient(135deg, #1c71d8 0%, #0d47a1 100%);
-  bottom: -100px;
-  left: 30%;
-  animation: blob 10s infinite 4s;
-}
-
-/* Grid overlay with glow */
-.grid-overlay {
-  position: absolute;
-  inset: 0;
-  background-image: 
-    linear-gradient(rgba(53, 132, 228, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(53, 132, 228, 0.03) 1px, transparent 1px);
-  background-size: 60px 60px;
-  animation: gridPulse 4s ease-in-out infinite;
-}
-
-.dark .grid-overlay {
-  background-image: 
-    linear-gradient(rgba(53, 132, 228, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(53, 132, 228, 0.05) 1px, transparent 1px);
-}
-
-/* Traveling glow effect on grid */
-.grid-glow {
-  position: absolute;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, rgba(53, 132, 228, 0.3) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-/* Floating security icons */
-.floating-icons {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.floating-icon {
-  position: absolute;
-  opacity: 0.05;
-  animation: securityFloat 20s linear infinite;
-}
-
-.dark .floating-icon {
-  opacity: 0.03;
-}
-
-.floating-icon:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 25s; }
-.floating-icon:nth-child(2) { left: 25%; animation-delay: 5s; animation-duration: 20s; }
-.floating-icon:nth-child(3) { left: 40%; animation-delay: 10s; animation-duration: 30s; }
-.floating-icon:nth-child(4) { left: 55%; animation-delay: 3s; animation-duration: 22s; }
-.floating-icon:nth-child(5) { left: 70%; animation-delay: 8s; animation-duration: 28s; }
-.floating-icon:nth-child(6) { left: 85%; animation-delay: 12s; animation-duration: 24s; }
-
-/* ===== 4. GRADIENT TEXT ===== */
-.gradient-text {
-  background: linear-gradient(135deg, #3584e4 0%, #1c71d8 50%, #62a0ea 100%);
-  background-size: 200% 200%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: gradientShift 8s ease-in-out infinite;
-}
-
-/* ===== 5. GLASS MORPHISM ===== */
+/* ===== 4. SURFACES =====
+   .glass / .glass-card are kept for guide.html compatibility,
+   restyled as solid Adwaita surfaces (no blur, no transparency games). */
 .glass {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(250, 250, 250, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .dark .glass {
-  background: rgba(30, 41, 59, 0.8);
+  background: rgba(30, 30, 34, 0.92);
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(203, 213, 225, 0.5);
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 
-.dark .glass-card {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.5);
+.surface-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
-/* ===== 6. GRADIENT BORDER CARDS ===== */
-.gradient-border {
-  position: relative;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(203, 213, 225, 0.5);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.dark .gradient-border {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.5);
-}
-
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, #3584e4, #1c71d8, #62a0ea, #3584e4);
-  background-size: 300% 300%;
-  z-index: -1;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-  animation: gradientShift 4s ease-in-out infinite;
-}
-
-.gradient-border:hover::before {
-  opacity: 1;
-}
-
-.gradient-border:hover {
-  border-color: transparent;
-  transform: translateY(-5px);
-  box-shadow: 0 20px 40px rgba(53, 132, 228, 0.2);
-}
-
-.dark .gradient-border:hover {
-  box-shadow: 0 20px 40px rgba(53, 132, 228, 0.15);
-}
-
-/* ===== 7. GLOW EFFECTS ===== */
-.glow-hover {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glow-hover:hover {
-  box-shadow: 
-    0 0 20px rgba(53, 132, 228, 0.3),
-    0 0 40px rgba(53, 132, 228, 0.2),
-    0 0 60px rgba(53, 132, 228, 0.1);
-}
-
-/* ===== 8. BUTTONS ===== */
+/* ===== 5. BUTTONS ===== */
 .btn-primary {
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.btn-primary::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transform: translateX(-100%);
-  transition: transform 0.5s ease;
-}
-
-.btn-primary:hover::before {
-  transform: translateX(100%);
+  background: var(--accent-bg);
+  color: #ffffff;
+  border-radius: 9999px;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.15s var(--ease-out), box-shadow 0.15s ease;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 15px 30px rgba(53, 132, 228, 0.4);
+  background: var(--blue-5);
+  box-shadow: var(--shadow-md);
+}
+
+.dark .btn-primary:hover {
+  background: var(--blue-3);
 }
 
 .btn-primary:active {
-  transform: translateY(-1px) scale(1);
+  transform: scale(0.98);
 }
 
 .btn-secondary {
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .btn-secondary:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
+  border-color: #c8c8ce;
 }
 
 .dark .btn-secondary:hover {
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #4a4a52;
 }
 
-/* ===== 9. ICON ANIMATIONS ===== */
-.icon-bounce:hover svg {
-  animation: bounceSubtle 0.6s ease-in-out;
+/* Inverted buttons for the blue band */
+.btn-on-blue {
+  background: #ffffff;
+  color: var(--blue-5);
+  border-radius: 9999px;
+  font-weight: 600;
+  transition: transform 0.15s var(--ease-out), box-shadow 0.15s ease;
 }
 
-.icon-rotate:hover svg {
-  transform: rotate(15deg);
-  transition: transform 0.3s ease;
+.btn-on-blue:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
-.icon-scale:hover svg {
-  transform: scale(1.2);
-  transition: transform 0.3s ease;
+.btn-on-blue:active {
+  transform: scale(0.98);
 }
 
-/* ===== 10. SCROLL REVEAL ===== */
-/* Scroll reveals hide their target until IntersectionObserver adds .visible.
-   If JS never runs, the observer never fires, so gate the hidden state on the
-   .js class (set by the head script) — no JS means the content stays visible
-   instead of shipping blank. */
-html:not(.js) .reveal,
-html:not(.js) .reveal-left,
-html:not(.js) .reveal-right,
-html:not(.js) .reveal-scale,
-html:not(.js) .stagger-children > * {
-  opacity: 1 !important;
-  transform: none !important;
-  transition: none !important;
+.btn-outline-on-blue {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 9999px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.reveal {
-  opacity: 0;
-  transform: translateY(40px);
-  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+.btn-outline-on-blue:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.7);
 }
 
-.reveal.visible {
-  opacity: 1;
-  transform: translateY(0);
+/* ===== 6. HEADER ===== */
+header.scrolled {
+  box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
-.reveal-left {
-  opacity: 0;
-  transform: translateX(-40px);
-  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+.dark header.scrolled {
+  box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
-.reveal-left.visible {
-  opacity: 1;
-  transform: translateX(0);
+/* ===== 7. HERO ===== */
+.hero-title {
+  font-size: clamp(2.5rem, 1.4rem + 5vw, 4.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  font-weight: 800;
 }
 
-.reveal-right {
-  opacity: 0;
-  transform: translateX(40px);
-  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+.hero-lead {
+  max-width: 44rem;
+  text-wrap: pretty;
 }
 
-.reveal-right.visible {
-  opacity: 1;
-  transform: translateX(0);
+/* Single quiet wash behind the hero — no blobs, no grid, no noise */
+.hero-wash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 90% 60% at 50% -10%, rgba(53, 132, 228, 0.09), transparent 70%);
+  pointer-events: none;
 }
 
-.reveal-scale {
-  opacity: 0;
-  transform: scale(0.9);
-  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+.dark .hero-wash {
+  background: radial-gradient(ellipse 90% 60% at 50% -10%, rgba(53, 132, 228, 0.14), transparent 70%);
 }
 
-.reveal-scale.visible {
-  opacity: 1;
-  transform: scale(1);
+/* App-window frame around the screenshot (Adwaita-style) */
+.app-frame {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
 }
 
-/* Staggered children */
-.stagger-children > * {
-  opacity: 0;
-  transform: translateY(30px);
-  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+/* ===== 8. HIGHLIGHTS STRIP ===== */
+.highlights {
+  display: grid;
+  grid-template-columns: 1fr;
+  border-top: 1px solid var(--border);
 }
 
-.stagger-children.visible > *:nth-child(1) { transition-delay: 0.1s; opacity: 1; transform: translateY(0); }
-.stagger-children.visible > *:nth-child(2) { transition-delay: 0.2s; opacity: 1; transform: translateY(0); }
-.stagger-children.visible > *:nth-child(3) { transition-delay: 0.3s; opacity: 1; transform: translateY(0); }
-.stagger-children.visible > *:nth-child(4) { transition-delay: 0.4s; opacity: 1; transform: translateY(0); }
-.stagger-children.visible > *:nth-child(5) { transition-delay: 0.5s; opacity: 1; transform: translateY(0); }
-.stagger-children.visible > *:nth-child(6) { transition-delay: 0.6s; opacity: 1; transform: translateY(0); }
+.highlight {
+  padding: 1.5rem 0.5rem 1.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
 
-/* ===== 11. INSTALLATION TABS ===== */
+@media (min-width: 640px) {
+  .highlights {
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: 3rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .highlights {
+    grid-template-columns: repeat(4, 1fr);
+    column-gap: 2.5rem;
+  }
+
+  .highlight {
+    border-bottom: none;
+    padding: 2rem 0;
+  }
+
+  .highlights {
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.highlight-icon {
+  color: var(--accent-text);
+}
+
+/* ===== 9. FEATURE LEDGER ===== */
+.ledger {
+  border-top: 1px solid var(--border);
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem 3rem;
+  padding: 1.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (min-width: 768px) {
+  .ledger-row {
+    grid-template-columns: minmax(200px, 280px) 1fr;
+  }
+}
+
+.ledger-row h3 {
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+
+/* ===== 10. CHECKLIST ===== */
+.check-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.25rem 3rem;
+}
+
+@media (min-width: 768px) {
+  .check-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.check-item {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.check-item svg {
+  color: var(--accent-text);
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+}
+
+/* ===== 11. COMPARISON TABLE ===== */
+#comparison .surface-card {
+  overflow: hidden;
+}
+
+#comparison table {
+  background: var(--surface);
+}
+
+#comparison th:first-child,
+#comparison td:first-child {
+  text-align: left;
+}
+
+#comparison tr:last-child td {
+  border-bottom: none;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+}
+
+.mark-yes {
+  background: rgba(46, 194, 126, 0.14);
+  color: #1b7a4b;
+}
+
+.dark .mark-yes {
+  color: #57e389;
+}
+
+.mark-partial {
+  background: rgba(229, 165, 10, 0.16);
+  color: #916000;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.dark .mark-partial {
+  color: #f8e45c;
+}
+
+.mark-no {
+  background: rgba(0, 0, 0, 0.05);
+  color: #8a8a92;
+}
+
+.dark .mark-no {
+  background: rgba(255, 255, 255, 0.07);
+  color: #77777f;
+}
+
+/* ===== 12. STEPS ===== */
+.step {
+  position: relative;
+  padding-top: 1.25rem;
+}
+
+.step-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 3rem;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+/* Hairline that ties the sequence together on desktop */
+@media (min-width: 768px) {
+  .steps-track {
+    position: relative;
+  }
+
+  .steps-track::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .step::before {
+    content: '';
+    position: absolute;
+    top: -3px;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: var(--blue-3);
+  }
+}
+
+/* ===== 13. INSTALLATION TABS & TERMINAL ===== */
 .tab-panel {
   display: none;
 }
@@ -401,46 +464,143 @@ html:not(.js) .stagger-children > * {
 #tab-arch:checked ~ #panel-arch,
 #tab-source:checked ~ #panel-source {
   display: block;
-  animation: fadeIn 0.4s ease-out;
+  animation: fadeIn 0.25s ease-out;
 }
 
-/* Active tab styles */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.tab-label {
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-label:hover {
+  color: var(--ink);
+  border-color: #c8c8ce;
+}
+
+.dark .tab-label:hover {
+  border-color: #4a4a52;
+}
+
 #tab-apt:checked ~ div label[for="tab-apt"],
 #tab-ubuntu:checked ~ div label[for="tab-ubuntu"],
 #tab-fedora:checked ~ div label[for="tab-fedora"],
 #tab-arch:checked ~ div label[for="tab-arch"],
 #tab-source:checked ~ div label[for="tab-source"] {
-  background-color: #3584e4;
-  color: white;
-  transform: scale(1.05);
+  background: var(--accent-bg);
+  border-color: var(--accent-bg);
+  color: #ffffff;
 }
 
-/* ===== 12. FAQ ACCORDION ===== */
-details summary::-webkit-details-marker {
+/* A terminal is dark in both themes — that's what a terminal looks like. */
+.terminal {
+  background: #17171b;
+  border: 1px solid #2e2e35;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 1rem;
+  background: #1f1f24;
+  border-bottom: 1px solid #2e2e35;
+}
+
+.terminal-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: #9d9da6;
+}
+
+.terminal pre {
+  padding: 1.25rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.terminal code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: #d6d6de;
+}
+
+.t-comment { color: #85858f; }
+.t-cmd { color: #7cb2f2; }
+.t-str { color: #8ad0a2; }
+
+.copy-btn {
+  color: #9d9da6;
+  padding: 0.375rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.copy-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ===== 14. FAQ ACCORDION ===== */
+details.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+
+details.faq-item summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.375rem 0.25rem;
+}
+
+details.faq-item summary::-webkit-details-marker {
   display: none;
 }
 
-details summary::marker {
-  display: none;
-  content: '';
+details.faq-item summary:hover h3 {
+  color: var(--accent-text);
 }
 
-details[open] > summary {
-  border-bottom: 1px solid rgba(203, 213, 225, 0.3);
+details.faq-item summary h3 {
+  transition: color 0.15s ease;
 }
 
-.dark details[open] > summary {
-  border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+details.faq-item .faq-chevron {
+  flex-shrink: 0;
+  transition: transform 0.25s var(--ease-out);
+  color: var(--ink-muted);
 }
 
-details[open] > div {
-  animation: faqSlideDown 0.3s ease-out;
+details.faq-item[open] .faq-chevron {
+  transform: rotate(180deg);
+}
+
+details.faq-item > div {
+  padding: 0 0.25rem 1.5rem;
+  animation: faqSlideDown 0.25s ease-out;
 }
 
 @keyframes faqSlideDown {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
@@ -448,135 +608,148 @@ details[open] > div {
   }
 }
 
-/* ===== 13. THEME TOGGLE ===== */
+/* Legacy summary marker reset (guide.html) */
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ===== 15. BLUE BAND ===== */
+.band {
+  background: var(--band);
+  color: #ffffff;
+}
+
+.band ::selection {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.band-muted {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.band-stat {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: clamp(1.75rem, 1rem + 2.5vw, 2.5rem);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.band-stat-label {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.875rem;
+  margin-top: 0.375rem;
+}
+
+.band .contributor-ring {
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  transition: border-color 0.15s ease, transform 0.2s var(--ease-out);
+}
+
+.band a:hover .contributor-ring {
+  border-color: #ffffff;
+  transform: translateY(-2px);
+}
+
+/* ===== 16. THEME TOGGLE ===== */
 .theme-toggle {
   position: relative;
-  width: 56px;
-  height: 28px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  width: 52px;
+  height: 26px;
+  border-radius: 13px;
+  background: #d0d0d6;
   cursor: pointer;
-  transition: all 0.4s ease;
-  overflow: hidden;
+  transition: background 0.25s ease;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  background: #c0c0c8;
 }
 
 .dark .theme-toggle {
-  background: linear-gradient(135deg, #1e293b, #334155);
+  background: #3a3a41;
+}
+
+.dark .theme-toggle:hover {
+  background: #46464e;
 }
 
 .theme-toggle-circle {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.25s var(--ease-out);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .dark .theme-toggle-circle {
-  transform: translateX(28px);
-  background: #0f172a;
+  transform: translateX(26px);
+  background: #1e1e22;
 }
 
 .theme-toggle-icon {
-  width: 14px;
-  height: 14px;
-  transition: all 0.4s ease;
+  width: 13px;
+  height: 13px;
+  transition: opacity 0.2s ease, transform 0.25s var(--ease-out);
 }
 
 .sun-icon {
-  color: #f59e0b;
+  color: #e5a50a;
 }
 
 .dark .sun-icon {
   opacity: 0;
-  transform: rotate(180deg) scale(0);
+  transform: scale(0);
 }
 
 .moon-icon {
   position: absolute;
-  color: #fbbf24;
+  color: #62a0ea;
   opacity: 0;
-  transform: rotate(-180deg) scale(0);
+  transform: scale(0);
 }
 
 .dark .moon-icon {
   opacity: 1;
-  transform: rotate(0deg) scale(1);
+  transform: scale(1);
 }
 
-/* ===== 13. CODE BLOCKS ===== */
-.code-block {
-  position: relative;
-  overflow: hidden;
-}
-
-.code-block::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(53, 132, 228, 0.1), transparent);
-  animation: shimmer 3s infinite;
-}
-
-/* ===== 14. SCREENSHOT SHOWCASE ===== */
-.screenshot-container {
-  position: relative;
-  transform-style: preserve-3d;
-  perspective: 1000px;
-}
-
-.screenshot-container:hover .screenshot-image {
-  transform: rotateY(-2deg) rotateX(2deg) scale(1.02);
-}
-
-/* Screenshot carousel tabs */
+/* ===== 17. SCREENSHOT SHOWCASE ===== */
 .screenshot-tab {
-  background: rgba(255, 255, 255, 0.6);
-  color: #64748b;
-  border: 1px solid rgba(203, 213, 225, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.dark .screenshot-tab {
-  background: rgba(30, 41, 59, 0.6);
-  color: #94a3b8;
-  border: 1px solid rgba(71, 85, 105, 0.5);
+  background: var(--surface);
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
 .screenshot-tab:hover {
-  background: rgba(53, 132, 228, 0.1);
-  color: #3584e4;
-  border-color: rgba(53, 132, 228, 0.3);
+  color: var(--ink);
+  border-color: #c8c8ce;
+}
+
+.dark .screenshot-tab:hover {
+  border-color: #4a4a52;
 }
 
 .screenshot-tab.active {
-  background: linear-gradient(135deg, #3584e4 0%, #1c71d8 100%);
-  color: white;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(53, 132, 228, 0.4);
-  transform: scale(1.05);
+  background: var(--accent-bg);
+  color: #ffffff;
+  border-color: var(--accent-bg);
 }
 
-.dark .screenshot-tab.active {
-  box-shadow: 0 4px 12px rgba(53, 132, 228, 0.3);
-}
-
-/* Screenshot images */
 .screenshot-img {
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out;
+  transition: opacity 0.4s ease-in-out, visibility 0.4s ease-in-out;
   position: absolute;
   top: 0;
   left: 0;
@@ -590,162 +763,72 @@ details[open] > div {
   position: relative;
 }
 
-/* Ensure container has height from the active image */
 .screenshot-image {
   position: relative;
-  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Progress indicator for auto-rotation */
-.screenshot-progress {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #3584e4, #62a0ea);
-  border-radius: 0 0 0 1rem;
-  transition: width 0.1s linear;
+/* ===== 18. SCROLL REVEAL =====
+   Reveals hide their target until IntersectionObserver adds .visible.
+   If JS never runs the observer never fires, so gate the hidden state
+   on the .js class (set by the head script) — no JS means the content
+   stays visible instead of shipping blank. */
+html:not(.js) .reveal,
+html:not(.js) .stagger-children > * {
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
 }
 
-/* Pause on hover indicator */
-.screenshot-container:hover .screenshot-progress {
-  opacity: 0.5;
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out);
 }
 
-/* ===== 15. FEATURE CARDS GRID ===== */
-.feature-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(1, 1fr);
-  gap: 1rem;
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
-@media (min-width: 768px) {
-  .feature-cards-grid {
-    grid-template-columns: repeat(3, 1fr);
-    grid-auto-rows: 1fr;
-  }
-  
-  .feature-cards-grid > .feature-column {
-    display: grid;
-    grid-template-rows: auto 1fr;
-    gap: 1.5rem;
-  }
-  
-  .feature-cards-grid .cards-container {
-    display: grid;
-    grid-auto-rows: minmax(140px, auto);
-    gap: 1rem;
-    align-content: start;
-  }
+.stagger-children > * {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.45s var(--ease-out), transform 0.45s var(--ease-out);
 }
 
-/* ===== 16. REDUCED MOTION ===== */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-  
-  .reveal, .reveal-left, .reveal-right, .reveal-scale {
-    opacity: 1;
-    transform: none;
-  }
-  
-  .stagger-children > * {
-    opacity: 1;
-    transform: none;
-  }
-}
+.stagger-children.visible > *:nth-child(1) { transition-delay: 0.05s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(2) { transition-delay: 0.12s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(3) { transition-delay: 0.19s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(4) { transition-delay: 0.26s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(5) { transition-delay: 0.33s; opacity: 1; transform: translateY(0); }
+.stagger-children.visible > *:nth-child(6) { transition-delay: 0.4s; opacity: 1; transform: translateY(0); }
 
-/* ===== 17. NOISE OVERLAY ===== */
-.noise-overlay {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.02;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-}
-
-/* ===== 18. FLOATING CTA ===== */
+/* ===== 19. FLOATING CTA ===== */
 #floating-cta.visible {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
 }
 
-#floating-cta a {
-  animation: pulse-ring 2s ease-out infinite;
-}
-
-@keyframes pulse-ring {
-  0% {
-    box-shadow: 0 0 0 0 rgba(53, 132, 228, 0.4), 0 10px 25px rgba(53, 132, 228, 0.4);
+/* ===== 20. REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-  70% {
-    box-shadow: 0 0 0 10px rgba(53, 132, 228, 0), 0 10px 25px rgba(53, 132, 228, 0.4);
+
+  html {
+    scroll-behavior: auto;
   }
-  100% {
-    box-shadow: 0 0 0 0 rgba(53, 132, 228, 0), 0 10px 25px rgba(53, 132, 228, 0.4);
+
+  .reveal {
+    opacity: 1;
+    transform: none;
   }
-}
 
-/* ===== 19. TYPING CURSOR ===== */
-#typing-cursor {
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* ===== 20. COMPARISON TABLE ===== */
-#comparison table {
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 1rem;
-  overflow: hidden;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(203, 213, 225, 0.5);
-}
-
-.dark #comparison table {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(71, 85, 105, 0.5);
-}
-
-#comparison th:first-child,
-#comparison td:first-child {
-  text-align: left;
-}
-
-#comparison tr:last-child td {
-  border-bottom: none;
-}
-
-/* ===== 21. HEADER SCROLL EFFECT ===== */
-header.scrolled {
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-}
-
-.dark header.scrolled {
-  background: rgba(15, 23, 42, 0.95);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-/* ===== 22. HOW IT WORKS CONNECTOR ANIMATION ===== */
-#how-it-works .stagger-children.visible [aria-hidden="true"] {
-  animation: connectorGrow 0.5s ease-out forwards;
-  animation-delay: 0.3s;
-  transform-origin: left;
-  transform: scaleX(0);
-}
-
-@keyframes connectorGrow {
-  to {
-    transform: scaleX(1);
+  .stagger-children > * {
+    opacity: 1;
+    transform: none;
   }
 }

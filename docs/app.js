@@ -8,11 +8,9 @@
  * 4. Dynamic Version & Install Commands
  * 5. GitHub Stats
  * 6. Screenshot Carousel
- * 7. Typing Effect
- * 8. Parallax Mouse Effect
- * 9. Floating CTA
- * 10. Header Scroll Effect
- * 11. Contributors
+ * 7. Floating CTA
+ * 8. Header Scroll Effect
+ * 9. Contributors
  */
 
 (function() {
@@ -31,11 +29,11 @@
     function setTheme(isDark) {
       if (isDark) {
         html.classList.add('dark');
-        if (metaThemeColor) metaThemeColor.content = '#0f172a';
+        if (metaThemeColor) metaThemeColor.content = '#1e1e22';
         toggle.setAttribute('aria-checked', 'true');
       } else {
         html.classList.remove('dark');
-        if (metaThemeColor) metaThemeColor.content = '#f8fafc';
+        if (metaThemeColor) metaThemeColor.content = '#fafafa';
         toggle.setAttribute('aria-checked', 'false');
       }
       localStorage.setItem('vpn-manager-theme', isDark ? 'dark' : 'light');
@@ -82,7 +80,7 @@
     }, observerOptions);
     
     // Observe all reveal elements
-    document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale, .stagger-children').forEach(el => {
+    document.querySelectorAll('.reveal, .stagger-children').forEach(el => {
       observer.observe(el);
     });
   }
@@ -164,36 +162,36 @@
       const tarAsset = findAsset(assets, '.tar.gz');
       
       return {
-        ubuntu: debAsset 
-          ? `<span class="text-slate-500 dark:text-slate-400"># Download and install VPN Manager ${version}</span>
-<span class="text-gnome">wget</span> ${debAsset.browser_download_url}
-<span class="text-gnome">sudo</span> dpkg -i ${debAsset.name}
+        ubuntu: debAsset
+          ? `<span class="t-comment"># Download and install VPN Manager ${version}</span>
+<span class="t-cmd">wget</span> ${debAsset.browser_download_url}
+<span class="t-cmd">sudo</span> dpkg -i ${debAsset.name}
 
-<span class="text-slate-500 dark:text-slate-400"># Run</span>
+<span class="t-comment"># Run</span>
 vpn-manager`
           : generateTarballCommand(tarAsset, version),
-          
+
         fedora: rpmAsset
-          ? `<span class="text-slate-500 dark:text-slate-400"># Download and install VPN Manager ${version}</span>
-<span class="text-gnome">wget</span> ${rpmAsset.browser_download_url}
-<span class="text-gnome">sudo</span> dnf install ./${rpmAsset.name}
+          ? `<span class="t-comment"># Download and install VPN Manager ${version}</span>
+<span class="t-cmd">wget</span> ${rpmAsset.browser_download_url}
+<span class="t-cmd">sudo</span> dnf install ./${rpmAsset.name}
 
-<span class="text-slate-500 dark:text-slate-400"># Run</span>
+<span class="t-comment"># Run</span>
 vpn-manager`
           : generateTarballCommand(tarAsset, version),
-          
+
         arch: generateTarballCommand(tarAsset, version)
       };
     }
-    
-    function generateTarballCommand(tarAsset, version) {
-      if (!tarAsset) return '<span class="text-slate-500 dark:text-slate-400"># No release available, build from source</span>';
-      return `<span class="text-slate-500 dark:text-slate-400"># Download and install VPN Manager ${version}</span>
-<span class="text-gnome">wget</span> ${tarAsset.browser_download_url}
-<span class="text-gnome">tar</span> xzf ${tarAsset.name}
-<span class="text-gnome">sudo</span> mv vpn-manager /usr/local/bin/
 
-<span class="text-slate-500 dark:text-slate-400"># Run</span>
+    function generateTarballCommand(tarAsset, version) {
+      if (!tarAsset) return '<span class="t-comment"># No release available, build from source</span>';
+      return `<span class="t-comment"># Download and install VPN Manager ${version}</span>
+<span class="t-cmd">wget</span> ${tarAsset.browser_download_url}
+<span class="t-cmd">tar</span> xzf ${tarAsset.name}
+<span class="t-cmd">sudo</span> mv vpn-manager /usr/local/bin/
+
+<span class="t-comment"># Run</span>
 vpn-manager`;
     }
 
@@ -384,11 +382,9 @@ vpn-manager`;
     function showScreenshot(screenshotName) {
       // Update tabs
       tabs.forEach(tab => {
-        if (tab.dataset.screenshot === screenshotName) {
-          tab.classList.add('active');
-        } else {
-          tab.classList.remove('active');
-        }
+        const isActive = tab.dataset.screenshot === screenshotName;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
       });
       
       // Update images
@@ -469,104 +465,7 @@ vpn-manager`;
     });
   }
 
-  // ===== 7. TYPING EFFECT =====
-  function initTypingEffect() {
-    const textElement = document.getElementById('typing-text');
-    const cursorElement = document.getElementById('typing-cursor');
-    
-    if (!textElement) return;
-    
-    const words = ['OpenVPN', 'WireGuard', 'Tailscale'];
-    let wordIndex = 0;
-    let charIndex = 0;
-    let isDeleting = false;
-    let isPaused = false;
-    
-    const TYPING_SPEED = 100;
-    const DELETING_SPEED = 60;
-    const PAUSE_AFTER_WORD = 2000;
-    const PAUSE_BEFORE_TYPING = 500;
-    
-    function type() {
-      const currentWord = words[wordIndex];
-      
-      if (isPaused) {
-        setTimeout(type, 100);
-        return;
-      }
-      
-      if (isDeleting) {
-        // Deleting characters
-        charIndex--;
-        textElement.textContent = currentWord.substring(0, charIndex);
-        
-        if (charIndex === 0) {
-          isDeleting = false;
-          wordIndex = (wordIndex + 1) % words.length;
-          setTimeout(type, PAUSE_BEFORE_TYPING);
-        } else {
-          setTimeout(type, DELETING_SPEED);
-        }
-      } else {
-        // Typing characters
-        charIndex++;
-        textElement.textContent = currentWord.substring(0, charIndex);
-        
-        if (charIndex === currentWord.length) {
-          isDeleting = true;
-          setTimeout(type, PAUSE_AFTER_WORD);
-        } else {
-          setTimeout(type, TYPING_SPEED);
-        }
-      }
-    }
-    
-    // Start typing after initial animation delay
-    setTimeout(() => {
-      type();
-    }, 1500);
-    
-    // Pause when page is not visible
-    document.addEventListener('visibilitychange', () => {
-      isPaused = document.hidden;
-    });
-  }
-
-  // ===== 8. PARALLAX MOUSE EFFECT =====
-  function initParallax() {
-    const blobs = document.querySelectorAll('.blob');
-    if (!blobs.length) return;
-
-    // Only run parallax on desktop with no reduced motion preference
-    if (!window.matchMedia('(min-width: 768px)').matches || 
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      return;
-    }
-
-    let mouseX = 0, mouseY = 0;
-    let currentX = 0, currentY = 0;
-    
-    document.addEventListener('mousemove', (e) => {
-      mouseX = (e.clientX / window.innerWidth - 0.5) * 30;
-      mouseY = (e.clientY / window.innerHeight - 0.5) * 30;
-    });
-    
-    function animate() {
-      currentX += (mouseX - currentX) * 0.05;
-      currentY += (mouseY - currentY) * 0.05;
-      
-      blobs.forEach((blob, i) => {
-        const factor = (i + 1) * 0.5;
-        blob.style.transform = `translate(${currentX * factor}px, ${currentY * factor}px)`;
-      });
-      
-      requestAnimationFrame(animate);
-    }
-    
-    animate();
-  }
-
-  // ===== 9. FLOATING CTA =====
+  // ===== 7. FLOATING CTA =====
   function initFloatingCTA() {
     const floatingCTA = document.getElementById('floating-cta');
     const heroSection = document.querySelector('#hero-heading');
@@ -602,7 +501,7 @@ vpn-manager`;
     checkScroll();
   }
 
-  // ===== 10. HEADER SCROLL EFFECT =====
+  // ===== 8. HEADER SCROLL EFFECT =====
   function initHeaderScroll() {
     const header = document.querySelector('header');
     if (!header) return;
@@ -629,7 +528,7 @@ vpn-manager`;
     checkScroll();
   }
 
-  // ===== 11. CONTRIBUTORS =====
+  // ===== 9. CONTRIBUTORS =====
   function initContributors() {
     const grid = document.getElementById('contributors-grid');
     if (!grid) return;
@@ -670,26 +569,21 @@ vpn-manager`;
       const contributors = await fetchContributors();
       
       if (!contributors || contributors.length === 0) {
-        grid.innerHTML = '<p class="text-slate-500 dark:text-slate-400 text-sm">Could not load contributors</p>';
+        grid.innerHTML = '<p class="band-muted text-sm">Could not load contributors</p>';
         return;
       }
 
       grid.innerHTML = contributors.map(contributor => `
-        <a href="${contributor.html_url}" 
-           target="_blank" 
-           rel="noopener noreferrer" 
-           class="group relative" 
+        <a href="${contributor.html_url}"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="group"
            title="${contributor.login} (${contributor.contributions} contributions)">
-          <div class="relative">
-            <img src="${contributor.avatar_url}" 
-                 alt="${contributor.login}" 
-                 class="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-slate-200 dark:border-slate-700 group-hover:border-gnome transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-gnome/20"
-                 loading="lazy">
-            <div class="absolute -bottom-1 -right-1 bg-gnome text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              ${contributor.contributions}
-            </div>
-          </div>
-          <p class="text-xs text-center mt-2 text-slate-600 dark:text-slate-400 group-hover:text-gnome transition-colors truncate max-w-[64px] sm:max-w-[72px]">
+          <img src="${contributor.avatar_url}"
+               alt="${contributor.login}"
+               class="contributor-ring w-14 h-14 rounded-full"
+               loading="lazy">
+          <p class="text-xs text-center mt-2 band-muted group-hover:text-white transition-colors truncate max-w-[64px]">
             ${contributor.login}
           </p>
         </a>
@@ -706,8 +600,6 @@ vpn-manager`;
     initDynamicVersion();
     initGitHubStats();
     initScreenshotCarousel();
-    initTypingEffect();
-    initParallax();
     initFloatingCTA();
     initHeaderScroll();
     initContributors();
