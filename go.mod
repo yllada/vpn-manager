@@ -11,14 +11,14 @@ replace fyne.io/systray => ./third_party/systray
 require (
 	fyne.io/systray v1.12.2
 	github.com/diamondburned/gotk4-adwaita/pkg v0.0.0-20250703085740-f81761ef0e0d
-	github.com/diamondburned/gotk4/pkg v0.3.2-0.20250703063411-16654385f59a
+	github.com/diamondburned/gotk4/pkg v0.4.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.54.0
+	modernc.org/sqlite v1.55.0
 )
 
 require (
