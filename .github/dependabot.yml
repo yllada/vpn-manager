@@ -21,6 +21,16 @@ updates:
     
     # Limit open PRs to avoid overwhelming the maintainers
     open-pull-requests-limit: 5
+
+    # gotk4 v0.4+ binds glib 2.82+ symbols (g_get_monotonic_time_ns, ...).
+    # GitHub Actions runners (ubuntu-24.04, glib 2.80) cannot compile it, and
+    # the resulting binaries refuse to start on any distro with glib < 2.82.
+    # Keep gotk4 on v0.3.x — the version gotk4-adwaita itself requires — until
+    # the runner image ships glib 2.82+.
+    ignore:
+      - dependency: "github.com/diamondburned/gotk4/pkg"
+        update-types: ["version", "prerelease", "change"]
+        versions: ["0.4"]
     
     # Commit message format (conventional commits)
     commit-message:
