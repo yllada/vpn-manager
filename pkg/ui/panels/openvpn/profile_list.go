@@ -55,11 +55,12 @@ type ProfileRow struct {
 	deleteBtn   *gtk.Button
 	spinner     *gtk.Spinner
 	// Detail rows inside expander (visible when expanded)
-	uptimeRow  *adw.ActionRow
-	latencyRow *adw.ActionRow
-	trafficRow *adw.ActionRow
-	// Track last status to avoid duplicate notifications
-	lastStatus vpn.ConnectionStatus
+	uptimeRow      *adw.ActionRow
+	latencyRow     *adw.ActionRow
+	trafficRow     *adw.ActionRow
+	profileInfoRow *adw.ActionRow
+	trafficGraph   *components.LiveTrafficGraph
+	lastStatus     vpn.ConnectionStatus
 }
 
 // NewProfileList creates a new VPN profile list.
@@ -200,6 +201,14 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	// ─────────────────────────────────────────────────────────────────────
 	// EXPANDED CONTENT - Detail rows (visible when expanded)
 	// ─────────────────────────────────────────────────────────────────────
+	// EXPANDED CONTENT - Detail rows (visible when expanded)
+	// ─────────────────────────────────────────────────────────────────────
+	// Live traffic graph (macOS style). Replaces the detail rows while
+	// connected; hidden until the first connection.
+	trafficGraph := components.NewLiveTrafficGraph()
+	trafficGraph.Box.SetVisible(false)
+	w.ExpanderRow.AddRow(trafficGraph.Box)
+
 	uptimeRow := components.NewDetailRow("appointment-symbolic", "Uptime", "--")
 	w.ExpanderRow.AddRow(uptimeRow)
 
@@ -214,23 +223,26 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	if !profile.LastUsed.IsZero() {
 		infoText = fmt.Sprintf("Last used: %s", profile.LastUsed.Format("01/02/2006 15:04"))
 	}
-	w.ExpanderRow.AddRow(components.NewDetailRow("document-properties-symbolic", "Profile Info", infoText))
+	profileInfoRow := components.NewDetailRow("document-properties-symbolic", "Profile Info", infoText)
+	w.ExpanderRow.AddRow(profileInfoRow)
 
 	// Add to list
 	pl.listBox.Append(w.ExpanderRow)
 
 	// Store reference
 	pl.rows[profile.ID] = &ProfileRow{
-		profile:     profile,
-		expanderRow: w.ExpanderRow,
-		connectBtn:  w.ConnectBtn,
-		configBtn:   w.ConfigBtn,
-		diagBtn:     w.DiagBtn,
-		deleteBtn:   w.DeleteBtn,
-		spinner:     w.Spinner,
-		uptimeRow:   uptimeRow,
-		latencyRow:  latencyRow,
-		trafficRow:  trafficRow,
+		profile:        profile,
+		expanderRow:    w.ExpanderRow,
+		connectBtn:     w.ConnectBtn,
+		configBtn:      w.ConfigBtn,
+		diagBtn:        w.DiagBtn,
+		deleteBtn:      w.DeleteBtn,
+		spinner:        w.Spinner,
+		uptimeRow:      uptimeRow,
+		latencyRow:     latencyRow,
+		trafficRow:     trafficRow,
+		profileInfoRow: profileInfoRow,
+		trafficGraph:   trafficGraph,
 	}
 
 	// Update status if connected
@@ -689,6 +701,16 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 		row.uptimeRow.SetSubtitle("--")
 		row.latencyRow.SetSubtitle("--")
 		row.trafficRow.SetSubtitle("↑ 0 B  ↓ 0 B")
+		if row.trafficGraph != nil {
+			row.trafficGraph.Clear()
+			// Back to the detail-row layout: show the text rows, hide the graph
+			if statusChanged {
+				for _, detailRow := range []*adw.ActionRow{row.uptimeRow, row.latencyRow, row.trafficRow, row.profileInfoRow} {
+					detailRow.SetVisible(true)
+				}
+				row.trafficGraph.Box.SetVisible(false)
+			}
+		}
 
 	case vpn.StatusConnecting:
 		row.deleteBtn.SetSensitive(false)
@@ -699,13 +721,21 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 
 	case vpn.StatusConnected:
 		row.deleteBtn.SetSensitive(false)
-		// Auto-expand to show connection details
+		// Auto-expand to show the live traffic graph
 		row.expanderRow.SetExpanded(true)
 		// Start statistics update
 		pl.startStatsUpdate(profileID)
 		// Successful connection notification - only if status changed
 		if statusChanged && pl.host.GetConfig().ShowNotifications {
 			notify.Connected(row.profile.Name)
+		}
+		// Connected layout: show the graph in place of the detail rows, once.
+		if statusChanged && row.trafficGraph != nil {
+			for _, detailRow := range []*adw.ActionRow{row.uptimeRow, row.latencyRow, row.trafficRow, row.profileInfoRow} {
+				detailRow.SetVisible(false)
+			}
+			row.trafficGraph.Box.SetVisible(true)
+			row.trafficGraph.Clear()
 		}
 
 	case vpn.StatusError:
@@ -780,7 +810,7 @@ func (pl *ProfileList) startStatsUpdate(profileID string) {
 	pl.statsUpdating = true
 
 	resilience.SafeGoWithName("openvpn-stats-update", func() {
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
 		for {
@@ -836,4 +866,8 @@ func (pl *ProfileList) updateStats(profileID string) {
 	// Update TX/RX statistics from interface
 	conn.UpdateStats()
 	row.trafficRow.SetSubtitle(fmt.Sprintf("↑ %s  ↓ %s", components.FormatBytes(conn.BytesSent), components.FormatBytes(conn.BytesRecv)))
+	// Feed the live sparkline with the cumulative counters
+	if row.trafficGraph != nil {
+		row.trafficGraph.Push(conn.BytesRecv, conn.BytesSent)
+	}
 }

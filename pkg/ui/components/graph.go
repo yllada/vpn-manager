@@ -247,7 +247,6 @@ func (bg *BandwidthGraph) draw(cr *cairo.Context, width, height int) {
 	}
 	cr.Stroke()
 
-	// Vertical grid lines (every 10 samples)
 	sampleCount := len(dlData)
 	if sampleCount == 0 {
 		// Draw empty state text
@@ -255,19 +254,26 @@ func (bg *BandwidthGraph) draw(cr *cairo.Context, width, height int) {
 		return
 	}
 
+	// Right-align the trace to the buffer capacity so the newest sample
+	// sits at the right edge and older ones scroll left; the grid stays
+	// full width.
+	step := w / float64(bg.downloadData.size)
+	offset := w - step*float64(sampleCount)
+
 	// Draw upload line (behind download)
 	if len(ulData) > 1 {
-		bg.drawLine(cr, ulData, w, h, maxVal, bg.uploadColor)
+		bg.drawLine(cr, ulData, w, h, maxVal, bg.uploadColor, offset, step)
 	}
 
 	// Draw download line (in front)
 	if len(dlData) > 1 {
-		bg.drawLine(cr, dlData, w, h, maxVal, bg.downloadColor)
+		bg.drawLine(cr, dlData, w, h, maxVal, bg.downloadColor, offset, step)
 	}
 }
 
-// drawLine draws a single data series as a smooth line.
-func (bg *BandwidthGraph) drawLine(cr *cairo.Context, data []float64, w, h, maxVal float64, color [4]float64) {
+// drawLine draws a single data series as a smooth line. The trace starts at
+// xStart with a fixed step so it stays right-aligned as new samples arrive.
+func (bg *BandwidthGraph) drawLine(cr *cairo.Context, data []float64, w, h, maxVal float64, color [4]float64, xStart, step float64) {
 	if len(data) < 2 {
 		return
 	}
@@ -277,17 +283,14 @@ func (bg *BandwidthGraph) drawLine(cr *cairo.Context, data []float64, w, h, maxV
 	cr.SetLineCap(cairo.LineCapRound)
 	cr.SetLineJoin(cairo.LineJoinRound)
 
-	// Calculate step size
-	step := w / float64(len(data)-1)
-
 	// Start path
-	x := 0.0
+	x := xStart
 	y := h - (data[0]/maxVal)*h
 	cr.MoveTo(x, y)
 
 	// Draw smooth curve using bezier approximation
 	for i := 1; i < len(data); i++ {
-		x2 := float64(i) * step
+		x2 := xStart + float64(i)*step
 		y2 := h - (data[i]/maxVal)*h
 
 		// Simple smooth curve - control points at 1/3 and 2/3
@@ -308,12 +311,12 @@ func (bg *BandwidthGraph) drawLine(cr *cairo.Context, data []float64, w, h, maxV
 	cr.SetSourceRGBA(color[0], color[1], color[2], 0.15)
 
 	// Redraw path for fill
-	x = 0.0
+	x = xStart
 	y = h - (data[0]/maxVal)*h
 	cr.MoveTo(x, y)
 
 	for i := 1; i < len(data); i++ {
-		x2 := float64(i) * step
+		x2 := xStart + float64(i)*step
 		y2 := h - (data[i]/maxVal)*h
 
 		x1 := x + step/2
@@ -328,8 +331,8 @@ func (bg *BandwidthGraph) drawLine(cr *cairo.Context, data []float64, w, h, maxV
 	}
 
 	// Close path at bottom
-	cr.LineTo(w, h)
-	cr.LineTo(0, h)
+	cr.LineTo(x, h)
+	cr.LineTo(xStart, h)
 	cr.ClosePath()
 	cr.Fill()
 }
