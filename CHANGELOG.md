@@ -5,6 +5,13 @@ All notable changes to VPN Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-10-28
+### Added
+- **Live traffic graph on connected OpenVPN profiles.** While a profile is connected, the expanded row now shows a real-time RX/TX sparkline in the style of the macOS OpenVPN client: current download rate overlaid at the top-right, ↓/↑ chips below, and the line scrolling as new samples arrive (500 ms cadence, 30 s window). The static Uptime/Latency/Traffic/Profile Info rows return when the connection drops.
+
+### Fixed
+- **Pinned `gotk4` to v0.3.2 for GLib 2.80 compatibility.** `gotk4 v0.4.x` references GLib 2.82+ symbols (`g_get_monotonic_time_ns`, `g_log_get_always_fatal`, `g_markup_parse_context_get_offset`) that are absent on ubuntu-24.04 runners and most user systems, breaking both CI and local builds. Reverted to the version `gotk4-adwaita` already pins and added a dependabot ignore for `gotk4 0.4.x` until GLib 2.82 is viable.
+
 ## [Unreleased]
 
 ## [2.4.1] - 2026-07-09
