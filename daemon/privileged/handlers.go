@@ -364,6 +364,12 @@ func IPv6EnableHandler(state *daemon.State) daemon.HandlerFunc {
 			return nil, err
 		}
 
+		// Fail-closed: the mode is stored and reported in state, so an unrecognized
+		// value must be rejected at the boundary rather than persisted verbatim.
+		if err := validate.IPv6Mode(params.Mode); err != nil {
+			return nil, fmt.Errorf("mode: %w", err)
+		}
+
 		ctx.Logger.Printf("Enabling IPv6 protection in mode: %s", params.Mode)
 
 		// Enable IPv6 blocking
