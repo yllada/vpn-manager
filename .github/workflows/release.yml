@@ -640,11 +640,12 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          
+
           # Trust the key using fingerprint
-          FINGERPRINT=$(gpg --list-keys --with-colons "VPN Manager APT Repository" | grep fpr | head -1 | cut -d: -f10)
+          FINGERPRINT=$(gpg --list-secret-keys --with-colons "VPN Manager APT Repository" | grep fpr | head -1 | cut -d: -f10)
           echo "${FINGERPRINT}:6:" | gpg --import-ownertrust
-          
+          echo "SECRET_FPR=$FINGERPRINT" >> "$GITHUB_ENV"
+
           echo "✅ GPG key imported and trusted (fingerprint: $FINGERPRINT)"
 
       - name: Update APT repository
