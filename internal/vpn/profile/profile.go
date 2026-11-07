@@ -43,6 +43,24 @@ var dangerousDirectives = []string{
 	"route-pre-down",        // Script before routes are removed
 }
 
+// containsDangerousDirective reports whether the config content contains any
+// OpenVPN directive that can execute arbitrary code (the same list Add uses).
+func containsDangerousDirective(content string) bool {
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") {
+			continue // skip comments
+		}
+		for _, d := range dangerousDirectives {
+			if strings.HasPrefix(trimmed, d) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Profile represents a VPN connection profile.
 // It contains all the necessary information to establish a VPN connection,
 // including the path to the OpenVPN configuration file and user credentials.
@@ -572,9 +590,14 @@ func (pm *ProfileManager) Import(filePath string) (int, error) {
 			continue // Skip this profile on error
 		}
 
-		// Create config file (I/O before lock)
+		// Create config file (I/O before lock). Reject any profile whose
+		// content contains a dangerous directive: Import must not be a way
+		// to sneak in an unvalidated .ovpn that Add would refuse.
 		configPath := filepath.Join(pm.configDir, fmt.Sprintf("%s.ovpn", profileID))
 		if ep.ConfigContent != "" {
+			if containsDangerousDirective(ep.ConfigContent) {
+				continue // Skip this profile on error
+			}
 			if err := atomicfile.Write(configPath, []byte(ep.ConfigContent), 0600); err != nil {
 				continue // Skip this profile on error
 			}
