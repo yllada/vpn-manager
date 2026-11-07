@@ -124,3 +124,6 @@ docs/*.tmp
 
 # CodeGraph local index
 .codegraph/
+
+# Local ODD task tracking (not for the repo)
+odd/
