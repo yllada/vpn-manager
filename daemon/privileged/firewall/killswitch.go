@@ -92,7 +92,7 @@ func validateKillSwitchParams(params KillSwitchParams) error {
 		}
 	}
 	for _, r := range params.LANRanges {
-		if err := validate.CIDRNotDefault(r); err != nil {
+		if err := validate.CIDRLanNetwork(r); err != nil {
 			return fmt.Errorf("lan_range %q: %w", r, err)
 		}
 	}
