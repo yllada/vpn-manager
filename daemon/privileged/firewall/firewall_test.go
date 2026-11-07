@@ -4,6 +4,8 @@ package firewall
 import (
 	"strings"
 	"testing"
+
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 )
 
 // =============================================================================
@@ -351,7 +353,7 @@ func TestIsValidInterfaceName(t *testing.T) {
 	}
 }
 
-func TestIsValidCIDR(t *testing.T) {
+func TestCIDRLanNetworkValidation(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -366,12 +368,15 @@ func TestIsValidCIDR(t *testing.T) {
 		{"invalid prefix", "192.168.0.0/33", false},
 		{"invalid ip", "256.0.0.0/24", false},
 		{"garbage", "not-a-cidr", false},
+		{"default route rejected", "0.0.0.0/0", false},
+		{"host bits rejected", "192.168.1.5/24", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isValidCIDR(tt.input); got != tt.want {
-				t.Errorf("isValidCIDR(%q) = %v, want %v", tt.input, got, tt.want)
+			got := validate.CIDRLanNetwork(tt.input) == nil
+			if got != tt.want {
+				t.Errorf("CIDRLanNetwork(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -409,5 +414,25 @@ func TestGetSysctl(t *testing.T) {
 	// Value should be "0" or "1"
 	if val != "0" && val != "1" {
 		t.Errorf("getSysctl(net.ipv4.ip_forward) = %q, expected 0 or 1", val)
+	}
+}
+
+func TestValidateKillSwitchParamsHostBits(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  KillSwitchParams
+		wantErr bool
+	}{
+		{"canonical range ok", KillSwitchParams{VPNInterface: "tun0", LANRanges: []string{"192.168.0.0/24"}}, false},
+		{"host bits rejected", KillSwitchParams{VPNInterface: "tun0", LANRanges: []string{"192.168.1.5/24"}}, true},
+		{"default route still rejected", KillSwitchParams{VPNInterface: "tun0", LANRanges: []string{"0.0.0.0/0"}}, true},
+		{"mixed ok+bad", KillSwitchParams{VPNInterface: "tun0", LANRanges: []string{"192.168.0.0/24", "10.1.2.3/8"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateKillSwitchParams(tt.params); (err != nil) != tt.wantErr {
+				t.Errorf("validateKillSwitchParams(%+v) err=%v, wantErr=%v", tt.params, err, tt.wantErr)
+			}
+		})
 	}
 }

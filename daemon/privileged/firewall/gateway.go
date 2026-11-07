@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/yllada/vpn-manager/daemon/privileged/validate"
 )
 
 // =============================================================================
@@ -43,8 +45,8 @@ func EnableLANGateway(params LANGatewayParams) error {
 	if !isValidInterfaceName(params.WiFiInterface) {
 		return fmt.Errorf("invalid WiFi interface name: %s", params.WiFiInterface)
 	}
-	if !isValidCIDR(params.LANNetwork) {
-		return fmt.Errorf("invalid LAN network CIDR: %s", params.LANNetwork)
+	if err := validate.CIDRLanNetwork(params.LANNetwork); err != nil {
+		return fmt.Errorf("lan_network: %w", err)
 	}
 
 	// Check if Tailscale interface exists
@@ -99,8 +101,8 @@ func DisableLANGateway(params LANGatewayParams) error {
 	if !isValidInterfaceName(params.WiFiInterface) {
 		return fmt.Errorf("invalid WiFi interface name: %s", params.WiFiInterface)
 	}
-	if !isValidCIDR(params.LANNetwork) {
-		return fmt.Errorf("invalid LAN network CIDR: %s", params.LANNetwork)
+	if err := validate.CIDRLanNetwork(params.LANNetwork); err != nil {
+		return fmt.Errorf("lan_network: %w", err)
 	}
 
 	// Remove all rules (ignore errors for idempotency)
@@ -139,9 +141,9 @@ func DetectLANGatewayConfig() (*LANGatewayParams, error) {
 		return nil, fmt.Errorf("failed to detect LAN network: %w", err)
 	}
 
-	// Validate CIDR format
-	if !isValidCIDR(lanNetwork) {
-		return nil, fmt.Errorf("detected network CIDR contains invalid characters: %s", lanNetwork)
+	// Validate CIDR (detected values are already canonical, but re-check at the boundary)
+	if err := validate.CIDRLanNetwork(lanNetwork); err != nil {
+		return nil, fmt.Errorf("detected network CIDR rejected: %w", err)
 	}
 
 	return &LANGatewayParams{
@@ -233,11 +235,3 @@ func isValidInterfaceName(name string) bool {
 	return true
 }
 
-// isValidCIDR validates CIDR notation.
-func isValidCIDR(cidr string) bool {
-	if cidr == "" {
-		return false
-	}
-	_, _, err := net.ParseCIDR(cidr)
-	return err == nil
-}

@@ -281,3 +281,51 @@ func TestDNSMode(t *testing.T) {
 		})
 	}
 }
+
+func TestCIDRLanNetwork(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"canonical lan", "192.168.0.0/24", false},
+		{"canonical class b", "172.16.0.0/12", false},
+		{"host bits rejected", "192.168.1.5/24", true},
+		{"host bits rejected 2", "172.16.99.1/12", true},
+		{"default route rejected", "0.0.0.0/0", true},
+		{"v6 default rejected", "::/0", true},
+		{"empty rejected", "", true},
+		{"garbage rejected", "not-a-cidr", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := CIDRLanNetwork(tt.in); (err != nil) != tt.wantErr {
+				t.Errorf("CIDRLanNetwork(%q) err=%v, wantErr=%v", tt.in, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestIPv6Mode(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"block", "block", false},
+		{"allow", "allow", false},
+		{"auto", "auto", false},
+		{"route", "route", false},
+		{"empty is off", "", false},
+		{"unknown rejected", "webrtc", true},
+		{"case rejected", "Block", true},
+		{"leading dash rejected", "-x", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := IPv6Mode(tt.in); (err != nil) != tt.wantErr {
+				t.Errorf("IPv6Mode(%q) err=%v, wantErr=%v", tt.in, err, tt.wantErr)
+			}
+		})
+	}
+}
