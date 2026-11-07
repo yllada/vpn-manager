@@ -2,6 +2,8 @@
 package tailscale
 
 import (
+	"fmt"
+
 	"github.com/yllada/vpn-manager/daemon"
 )
 
@@ -27,6 +29,7 @@ func UpHandler(state *daemon.State) daemon.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
+		manager.upAllowOperator = ctx.UID == 0
 
 		result, err := manager.Up(ctx.Context, params)
 		if err != nil {
@@ -83,6 +86,7 @@ func SetHandler(state *daemon.State) daemon.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
+		manager.upAllowOperator = ctx.UID == 0
 
 		result, err := manager.Set(ctx.Context, params)
 		if err != nil {
@@ -167,6 +171,12 @@ func SetOperatorHandler(state *daemon.State) daemon.HandlerFunc {
 		}
 		if err := ctx.UnmarshalParams(&params); err != nil {
 			return nil, err
+		}
+
+		// Only the root caller may name an operator: it grants passwordless
+		// tailnet admin access, so a non-root user must never be able to do it.
+		if ctx.UID != 0 {
+			return nil, fmt.Errorf("setting the tailscale operator requires the root caller")
 		}
 
 		ctx.Logger.Printf("Setting tailscale operator to: %s", params.Username)

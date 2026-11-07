@@ -29,6 +29,11 @@ var tailscalePaths = []string{
 // Manager handles Tailscale CLI operations with root privileges.
 type Manager struct {
 	binaryPath string
+
+	// upAllowOperator is set by the handler to true only when the calling
+	// socket peer is root (uid 0). A non-root caller may not name an operator,
+	// so Up/Set reject the field for them.
+	upAllowOperator bool
 }
 
 // writeAuthKeyFile writes a Tailscale auth key to a root-only temp file and returns
@@ -164,6 +169,10 @@ type UpResult struct {
 
 // Up runs tailscale up with the given options.
 func (m *Manager) Up(ctx context.Context, params UpParams) (*UpResult, error) {
+	if params.Operator != "" && !m.upAllowOperator {
+		return nil, fmt.Errorf("operator may only be set by the root caller")
+	}
+
 	args := []string{"up"}
 
 	if params.ExitNode != "" {
@@ -286,6 +295,9 @@ type SetResult struct {
 
 // Set runs tailscale set with the given options.
 func (m *Manager) Set(ctx context.Context, params SetParams) (*SetResult, error) {
+	if params.Operator != nil && *params.Operator != "" && !m.upAllowOperator {
+		return nil, fmt.Errorf("operator may only be set by the root caller")
+	}
 	args := []string{"set"}
 
 	if params.ShieldsUp != nil {
@@ -457,7 +469,9 @@ func (m *Manager) Logout(ctx context.Context) error {
 // SET OPERATOR
 // =============================================================================
 
-// SetOperator configures the operator user for passwordless access.
+// SetOperator configures the operator user for passwordless access. Granting an
+// operator is a tailnet-admin privilege, so the handler only calls this for the
+// root socket peer (uid 0); a non-root caller is rejected before it reaches here.
 func (m *Manager) SetOperator(ctx context.Context, username string) error {
 	if username == "" {
 		return fmt.Errorf("username is required")
