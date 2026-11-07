@@ -18,7 +18,21 @@ const (
 
 	// DNSOverTLSPortStr is the DNS-over-TLS port as string.
 	DNSOverTLSPortStr = "853"
+
+	// DNSOverHTTPSPortStr is the port DoH uses (HTTPS). Only traffic to known
+	// DoH resolver IPs on this port is blocked, so ordinary HTTPS is unaffected.
+	DNSOverHTTPSPortStr = "443"
 )
+
+// doHProviderIPs are the well-known DoH resolver addresses the daemon blocks on
+// port 443. This mirrors the client's DNS provider set (Cloudflare, Google,
+// Quad9); blocking these specific IPs avoids the false-positive of dropping all
+// HTTPS traffic.
+var doHProviderIPs = []string{
+	"1.1.1.1", "1.0.0.1",    // Cloudflare
+	"8.8.8.8", "8.8.4.4",    // Google
+	"9.9.9.9", "149.112.112.112", // Quad9
+}
 
 // =============================================================================
 // DNS PROTECTION ENABLE
@@ -134,7 +148,41 @@ func UnblockDNSOverTLS() error {
 		_ = runCmd(args[0], args[1:]...) // Ignore errors
 	}
 
-	log.Printf("[firewall] DNS-over-TLS blocking removed")
+log.Printf("[firewall] DNS-over-TLS blocking removed")
+	return nil
+}
+
+// BlockDNSOverHTTPS blocks the well-known DoH resolver addresses on tcp/udp 443
+// using iptables. Unlike DoT (a single port), DoH rides on normal HTTPS, so the
+// rules target specific destination IPs to avoid dropping all web traffic.
+func BlockDNSOverHTTPS() error {
+	cmds := make([][]string, 0, len(doHProviderIPs)*2)
+	for _, ip := range doHProviderIPs {
+		cmds = append(cmds,
+			[]string{"iptables", "-A", "OUTPUT", "-d", ip, "-p", "tcp", "--dport", DNSOverHTTPSPortStr, "-j", "DROP"},
+			[]string{"iptables", "-A", "OUTPUT", "-d", ip, "-p", "udp", "--dport", DNSOverHTTPSPortStr, "-j", "DROP"},
+		)
+	}
+	for _, args := range cmds {
+		_ = runCmd(args[0], args[1:]...) // Ignore errors - rule might already exist
+	}
+	log.Printf("[firewall] DNS-over-HTTPS blocked for %d known providers", len(doHProviderIPs))
+	return nil
+}
+
+// UnblockDNSOverHTTPS removes the DNS-over-HTTPS blocking rules.
+func UnblockDNSOverHTTPS() error {
+	cmds := make([][]string, 0, len(doHProviderIPs)*2)
+	for _, ip := range doHProviderIPs {
+		cmds = append(cmds,
+			[]string{"iptables", "-D", "OUTPUT", "-d", ip, "-p", "tcp", "--dport", DNSOverHTTPSPortStr, "-j", "DROP"},
+			[]string{"iptables", "-D", "OUTPUT", "-d", ip, "-p", "udp", "--dport", DNSOverHTTPSPortStr, "-j", "DROP"},
+		)
+	}
+	for _, args := range cmds {
+		_ = runCmd(args[0], args[1:]...) // Ignore errors
+	}
+	log.Printf("[firewall] DNS-over-HTTPS blocking removed")
 	return nil
 }
 

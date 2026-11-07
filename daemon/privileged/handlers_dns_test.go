@@ -29,8 +29,8 @@ func (f *fakeResolver) Backend() dnsresolver.Backend         { return f.backend 
 
 // fwSpy records the firewall calls the DNS handlers make.
 type fwSpy struct {
-	enableDNS, disableDNS, blockDoT, unblockDoT int
-	enableErr                                   error
+	enableDNS, disableDNS, blockDoT, unblockDoT, blockDoH, unblockDoH int
+	enableErr                                                         error
 }
 
 // installDNSSeams swaps the DNS-handler seams (resolver + firewall) for the test
@@ -38,14 +38,17 @@ type fwSpy struct {
 func installDNSSeams(t *testing.T, r dnsResolverOps) *fwSpy {
 	t.Helper()
 	spy := &fwSpy{}
-	origR, origEn, origDis, origBlk, origUnblk := getDNSResolver, fwEnableDNS, fwDisableDNS, fwBlockDoT, fwUnblockDoT
+	origR, origEn, origDis, origBlk, origUnblk, origBlkDoH, origUnblkDoH := getDNSResolver, fwEnableDNS, fwDisableDNS, fwBlockDoT, fwUnblockDoT, fwBlockDoH, fwUnblockDoH
 	getDNSResolver = func() dnsResolverOps { return r }
 	fwEnableDNS = func(string) error { spy.enableDNS++; return spy.enableErr }
 	fwDisableDNS = func() error { spy.disableDNS++; return nil }
 	fwBlockDoT = func() error { spy.blockDoT++; return nil }
 	fwUnblockDoT = func() error { spy.unblockDoT++; return nil }
+	fwBlockDoH = func() error { spy.blockDoH++; return nil }
+	fwUnblockDoH = func() error { spy.unblockDoH++; return nil }
 	t.Cleanup(func() {
 		getDNSResolver, fwEnableDNS, fwDisableDNS, fwBlockDoT, fwUnblockDoT = origR, origEn, origDis, origBlk, origUnblk
+		fwBlockDoH, fwUnblockDoH = origBlkDoH, origUnblkDoH
 	})
 	return spy
 }
@@ -140,5 +143,46 @@ func TestDNSEnableHandlerSucceeds(t *testing.T) {
 	}
 	if spy.enableDNS == 0 {
 		t.Error("leak-block firewall was not applied")
+	}
+}
+
+// TestDNSEnableHandlerBlocksDoH pins that a block_doh request installs the
+// DoH firewall (the audit found the flag was accepted and stored but never
+// enforced); a DoT-only request must not install DoH rules.
+func TestDNSEnableHandlerBlocksDoH(t *testing.T) {
+	spy := installDNSSeams(t, &fakeResolver{backend: dnsresolver.BackendSystemdResolved})
+	state := daemon.NewState()
+	ctx := dnsCtx(t, state, DNSEnableParams{
+		VPNInterface: "tun0", Servers: []string{"1.1.1.1"},
+		Mode: "custom", BlockDoH: true,
+	})
+
+	if _, err := DNSEnableHandler(state)(ctx); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if spy.blockDoH == 0 {
+		t.Error("block_doh=true but DoH firewall was not installed")
+	}
+	if !state.GetDNSProtection().BlockDoH {
+		t.Error("state did not record BlockDoH")
+	}
+}
+
+func TestDNSEnableHandlerNoDoHWithoutFlag(t *testing.T) {
+	spy := installDNSSeams(t, &fakeResolver{backend: dnsresolver.BackendSystemdResolved})
+	state := daemon.NewState()
+	ctx := dnsCtx(t, state, DNSEnableParams{
+		VPNInterface: "tun0", Servers: []string{"1.1.1.1"},
+		Mode: "custom", BlockDoT: true,
+	})
+
+	if _, err := DNSEnableHandler(state)(ctx); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if spy.blockDoH != 0 {
+		t.Error("DoH firewall installed although block_doh was not requested")
+	}
+	if spy.blockDoT == 0 {
+		t.Error("DoT firewall not installed although block_dot was requested")
 	}
 }
