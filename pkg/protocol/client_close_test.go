@@ -17,14 +17,16 @@ func TestCodecCloseDuringRead(t *testing.T) {
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		codec.ReadResponse() // blocks: a is silent
+		_, _ = codec.ReadResponse() // blocks: a is silent
 	}()
 
 	// Give the reader a moment to block on a.
 	time.Sleep(50 * time.Millisecond)
 
 	done := make(chan error, 1)
-	go func() { done <- codec.Close() }()
+	go func() {
+		done <- codec.Close()
+	}()
 
 	select {
 	case err := <-done:
@@ -34,8 +36,12 @@ func TestCodecCloseDuringRead(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("deadlock: Close did not return while a read was in flight")
 	}
-	b.Close()
-	a.Close()
+	if err := b.Close(); err != nil {
+		t.Logf("close pipe b: %v", err)
+	}
+	if err := a.Close(); err != nil {
+		t.Logf("close pipe a: %v", err)
+	}
 	<-readDone
 }
 
@@ -47,7 +53,7 @@ func TestClientCloseDuringPendingCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	t.Cleanup(func() { sr.Close() })
+	t.Cleanup(func() { _ = sr.Close() })
 	go func() {
 		for {
 			conn, err := sr.Accept()
@@ -65,10 +71,16 @@ func TestClientCloseDuringPendingCall(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	go c.Call(context.Background(), "system.ping", nil, nil) // blocks
+	closed := make(chan struct{})
+	go func() {
+		_ = c.Call(context.Background(), "system.ping", nil, nil)
+		close(closed)
+	}()
 
 	done := make(chan error, 1)
-	go func() { done <- c.Close() }()
+	go func() {
+		done <- c.Close()
+	}()
 
 	select {
 	case err := <-done:
@@ -77,5 +89,12 @@ func TestClientCloseDuringPendingCall(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("deadlock: Client.Close did not return with a pending call")
+	}
+
+	// The pending call must terminate (the connection is closed).
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("pending Call did not terminate after Close")
 	}
 }

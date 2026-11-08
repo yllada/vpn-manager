@@ -295,6 +295,22 @@ func loadLocalStore() {
 	_ = json.Unmarshal(decrypted, &localStore)
 }
 
+// removeAfterRename removes the temp file; after a successful rename the
+// path no longer exists and the removal error is irrelevant.
+// closeTempBestEffort closes a temp file on an error path; a failed close is
+// only logged, since the caller already has a more important error to return.
+func closeTempBestEffort(f *os.File) {
+	if err := f.Close(); err != nil {
+		log.Printf("keyring: close temp: %v", err)
+	}
+}
+
+func removeAfterRename(name string) {
+	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		log.Printf("keyring: remove temp %s: %v", name, err)
+	}
+}
+
 func saveLocalStore() error {
 	localStoreMu.RLock()
 	data, err := json.Marshal(localStore)
@@ -323,18 +339,18 @@ func saveLocalStore() error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after a successful rename
+	defer removeAfterRename(tmpName)
 
 	if err := tmp.Chmod(0600); err != nil {
-		tmp.Close()
+		closeTempBestEffort(tmp)
 		return err
 	}
 	if _, err := tmp.Write(encrypted); err != nil {
-		tmp.Close()
+		closeTempBestEffort(tmp)
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		closeTempBestEffort(tmp)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
