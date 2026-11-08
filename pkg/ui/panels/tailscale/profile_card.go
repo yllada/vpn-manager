@@ -122,10 +122,20 @@ func (tp *TailscalePanel) createProfileCard() *gtk.ListBox {
 // EVENT HANDLERS
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ConnectNow is the exported entry point for the Hero profile picker: it
+// drives the exact same status-aware flow as the panel's connect button
+// (login prompt when needed, disconnect when already up). Must run on the
+// GTK main thread.
+func (tp *TailscalePanel) ConnectNow() {
+	if tp.provider == nil {
+		return
+	}
+	tp.onConnectClicked()
+}
+
 func (tp *TailscalePanel) onConnectClicked() {
 	tp.connectBtn.SetSensitive(false)
 	tp.host.SetStatus("Processing Tailscale connection...")
-
 	resilience.SafeGoWithName("tailscale-connect", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()

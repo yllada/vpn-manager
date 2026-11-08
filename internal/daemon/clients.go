@@ -688,3 +688,46 @@ func (c *TaildropClient) SendWithContext(ctx context.Context, filePath, target s
 
 	return CallDaemonWithContext(ctx, "taildrop.send", params, &result, nil)
 }
+
+// =============================================================================
+// SECURITY STATE (HERO / STATUS)
+// =============================================================================
+
+// KillSwitchStateSnapshot mirrors daemon.KillSwitchState so the UI can decode
+// the state.get response without importing the daemon server package.
+type KillSwitchStateSnapshot struct {
+	Enabled  bool   `json:"enabled"`
+	Mode     string `json:"mode"`
+	AllowLAN bool   `json:"allow_lan"`
+}
+
+// DNSProtectionStateSnapshot mirrors daemon.DNSProtectionState.
+type DNSProtectionStateSnapshot struct {
+	Enabled bool `json:"enabled"`
+}
+
+// IPv6ProtectionStateSnapshot mirrors daemon.IPv6ProtectionState.
+type IPv6ProtectionStateSnapshot struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SecurityStateSnapshot is the state.get response: live security features as
+// managed by the daemon.
+type SecurityStateSnapshot struct {
+	KillSwitch     KillSwitchStateSnapshot     `json:"kill_switch"`
+	DNSProtection  DNSProtectionStateSnapshot  `json:"dns_protection"`
+	IPv6Protection IPv6ProtectionStateSnapshot `json:"ipv6_protection"`
+}
+
+// StateClient reads the daemon's live state.
+type StateClient struct{}
+
+// Snapshot fetches the security state via state.get (public, non-privileged).
+func (c *StateClient) Snapshot(ctx context.Context) (*SecurityStateSnapshot, error) {
+	var result SecurityStateSnapshot
+	err := CallDaemonWithContext(ctx, "state.get", nil, &result, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

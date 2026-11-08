@@ -84,6 +84,10 @@ type TailscalePanel struct {
 	// touched inside the single coalesced status-fetch goroutine, so no lock needed.
 	cachedVersion string
 
+	// cachedTailscaleIP holds the node IP from the last status fetch so
+	// read-only consumers (the Hero) can show it without re-invoking the CLI.
+	cachedTailscaleIP string
+
 	// availabilityChecking coalesces concurrent checkAvailability calls: the
 	// availability probe shells out (tailscale version + status, up to 5s), so it
 	// runs off the GTK main thread; this guards against overlapping probes from
@@ -119,6 +123,14 @@ func NewTailscalePanel(host ports.PanelHost, provider *tailscalevpn.Provider) *T
 // GetWidget returns the panel widget.
 func (tp *TailscalePanel) GetWidget() gtk.Widgetter {
 	return tp.box
+}
+
+// ProviderReady reports whether the Tailscale binary was found at startup.
+// The Hero connect picker uses this to list Tailscale only when the provider
+// actually exists; the panel renders not-installed / daemon-stopped states
+// internally, but the picker should not offer a dead protocol.
+func (tp *TailscalePanel) ProviderReady() bool {
+	return tp.provider != nil
 }
 
 // RefreshStatus refreshes the Tailscale status from the provider.
@@ -204,6 +216,12 @@ func (tp *TailscalePanel) StopUpdates() {
 		}
 		tp.running = false
 	})
+}
+
+// NodeIP returns the cached Tailscale node IP (empty when unknown). Safe to
+// call on the GTK main thread; updated by renderStatus only.
+func (tp *TailscalePanel) NodeIP() string {
+	return tp.cachedTailscaleIP
 }
 
 // getLocalIP returns the local IP address of the default network interface.

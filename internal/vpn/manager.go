@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/errors"
 	"github.com/yllada/vpn-manager/internal/logger"
 	"github.com/yllada/vpn-manager/internal/resilience"
@@ -82,12 +83,12 @@ type Connection struct {
 // It maintains a registry of active connections and provides methods
 // to connect, disconnect, and query connection status.
 type Manager struct {
-	profileManager   *profile.ProfileManager
-	connections      map[string]*Connection
+	profileManager *profile.ProfileManager
+	connections    map[string]*Connection
 	// otherConns holds live WireGuard/Tailscale connections, which do not flow
 	// through Manager.Connect. Unified with connections by ActiveConnections().
-	otherConns    map[string]ActiveConnection
-	healthChecker *health.Checker
+	otherConns       map[string]ActiveConnection
+	healthChecker    *health.Checker
 	killSwitch       *security.KillSwitch
 	appTunnel        *tunnel.AppTunnel
 	providerRegistry *vpntypes.ProviderRegistry
@@ -473,6 +474,23 @@ func (m *Manager) StopTrustManagement() {
 	}
 
 	logger.LogDebug("trust", "Trust management stopped")
+}
+
+// SecurityState returns the daemon-managed security snapshot (kill switch,
+// DNS protection, IPv6 protection) used by the Hero status page, or nil when
+// the daemon is unavailable. Threat Firewall (Tier A.1) is not in the
+// snapshot yet; the UI renders it as "Soon".
+func (m *Manager) SecurityState() *daemon.SecurityStateSnapshot {
+	if !daemon.IsDaemonAvailable() {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	snap, err := (&daemon.StateClient{}).Snapshot(ctx)
+	if err != nil {
+		return nil
+	}
+	return snap
 }
 
 // TrustManager returns the trust manager instance.

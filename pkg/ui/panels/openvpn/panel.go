@@ -2,6 +2,7 @@
 package openvpn
 
 import (
+	"fmt"
 	"os/exec"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -38,7 +39,6 @@ type OpenVPNPanel struct {
 func (p *OpenVPNPanel) Cleanup() {
 	if p.profileList != nil {
 		p.profileList.StopMonitoring()
-		p.profileList.stopStatsUpdate()
 	}
 }
 
@@ -65,6 +65,22 @@ func (op *OpenVPNPanel) GetWidget() gtk.Widgetter {
 // GetProfileList returns the inner profile list.
 func (op *OpenVPNPanel) GetProfileList() *ProfileList {
 	return op.profileList
+}
+
+// ConnectProfile runs the standard connect flow for one profile (saved
+// credentials, OTP/password dialogs, status monitor). Callers pass a profile
+// ID; it resolves the profile and hands off to the profile list.
+// Returns an error only when the profile does not exist.
+func (op *OpenVPNPanel) ConnectProfile(profileID string) error {
+	if op.profileList == nil {
+		return fmt.Errorf("openvpn panel not ready")
+	}
+	profile, err := op.host.VPNManager().ProfileManager().Get(profileID)
+	if err != nil {
+		return fmt.Errorf("profile %s: %w", profileID, err)
+	}
+	op.profileList.onConnectClicked(profile)
+	return nil
 }
 
 // createLayout builds the OpenVPN panel UI on the shared panel scaffold.

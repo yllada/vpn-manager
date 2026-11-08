@@ -7,6 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/yllada/vpn-manager/internal/config"
+	"github.com/yllada/vpn-manager/internal/daemon"
 	"github.com/yllada/vpn-manager/internal/vpn"
 	"github.com/yllada/vpn-manager/internal/vpn/health"
 	"github.com/yllada/vpn-manager/internal/vpn/profile"
@@ -39,6 +40,9 @@ type VPNController interface {
 	ProfileManager() *profile.ProfileManager
 	HealthChecker() *health.Checker
 	TrustManager() *trust.TrustManager
+	// SecurityState returns the daemon-managed security snapshot (Hero)
+	// or nil when the daemon is unavailable.
+	SecurityState() *daemon.SecurityStateSnapshot
 	AvailableProviders() []vpntypes.VPNProvider
 	NetworkManagerAvailable() bool
 
