@@ -28,10 +28,10 @@ func (f *fakeHost) ShowError(title, message string) {
 	f.errorTitle = title
 	f.errorBody = message
 }
-func (f *fakeHost) ShowInfo(title, message string)                             {}
-func (f *fakeHost) IsDaemonAvailable() bool                                    { return true }
-func (f *fakeHost) RefreshDaemonStatus()                                       {}
-func (f *fakeHost) RefreshAllPanels()                                          {}
+func (f *fakeHost) ShowInfo(title, message string) {}
+func (f *fakeHost) IsDaemonAvailable() bool        { return true }
+func (f *fakeHost) RefreshDaemonStatus()           {}
+func (f *fakeHost) RefreshAllPanels()              {}
 func (f *fakeHost) ConnectExclusive(proto, id, name string, connect func() error) {
 	_ = connect()
 }

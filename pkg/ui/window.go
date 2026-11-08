@@ -23,6 +23,7 @@ import (
 	"github.com/yllada/vpn-manager/internal/vpn/wireguard"
 	"github.com/yllada/vpn-manager/pkg/ui/components"
 	"github.com/yllada/vpn-manager/pkg/ui/dialogs"
+	"github.com/yllada/vpn-manager/pkg/ui/panels/hero"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/openvpn"
 	"github.com/yllada/vpn-manager/pkg/ui/panels/stats"
 	tailscalepanel "github.com/yllada/vpn-manager/pkg/ui/panels/tailscale"
@@ -40,6 +41,7 @@ type MainWindow struct {
 	toastOverlay    *adw.ToastOverlay
 	headerBar       *adw.HeaderBar
 	daemonBanner    *components.DaemonStatusBanner
+	heroPanel       *hero.HeroPanel
 	openvpnPanel    *openvpn.OpenVPNPanel
 	tailscalePanel  *tailscalepanel.TailscalePanel
 	wireguardPanel  *wireguardpanel.WireGuardPanel
@@ -78,6 +80,9 @@ func (mw *MainWindow) pausePanelUpdates() {
 		return
 	}
 	mw.updatesPaused = true
+	if mw.heroPanel != nil {
+		mw.heroPanel.StopUpdates()
+	}
 	if mw.tailscalePanel != nil {
 		mw.tailscalePanel.StopUpdates()
 	}
@@ -96,6 +101,9 @@ func (mw *MainWindow) resumePanelUpdates() {
 		return
 	}
 	mw.updatesPaused = false
+	if mw.heroPanel != nil {
+		mw.heroPanel.StartUpdates()
+	}
 	if mw.tailscalePanel != nil {
 		mw.tailscalePanel.StartUpdates()
 	}
@@ -181,6 +189,7 @@ func (mw *MainWindow) createLayout() {
 		return dialogs.NewSplitTunnelDialog(host, profile)
 	}
 	mw.openvpnPanel = openvpn.NewOpenVPNPanel(mw, mw.onAddOpenVPNProfile, splitTunnelFactory)
+	mw.createHeroPage()
 	scrolledOpenVPN := gtk.NewScrolledWindow()
 	scrolledOpenVPN.SetVExpand(true)
 	scrolledOpenVPN.SetChild(mw.openvpnPanel.GetWidget())
@@ -229,6 +238,9 @@ func (mw *MainWindow) createLayout() {
 
 	contentBox.Append(mw.viewStack)
 
+	// The Hero is the landing page: open the app on the at-a-glance status.
+	mw.viewStack.SetVisibleChildName("hero")
+
 	// Status bar
 	mw.createStatusBar()
 	contentBox.Append(mw.statusBar)
@@ -252,6 +264,73 @@ func (mw *MainWindow) createLayout() {
 
 	// Load profiles
 	mw.openvpnPanel.LoadProfiles()
+}
+
+// createHeroPage builds the at-a-glance Status page and registers it as the
+// first tab. It must run after openvpnPanel exists: the Hero's one-tap
+// connect reuses the OpenVPN panel's full connect flow.
+func (mw *MainWindow) createHeroPage() {
+	cfg := hero.Config{
+		OpenVPNConnect: mw.openvpnPanel.ConnectProfile,
+		WireGuardConnect: func(profileID string) {
+			if mw.wireguardPanel != nil {
+				mw.wireguardPanel.ConnectProfile(profileID)
+			}
+		},
+		TailscaleConnect: func() {
+			if mw.tailscalePanel != nil && mw.tailscalePanel.ProviderReady() {
+				mw.tailscalePanel.ConnectNow()
+			}
+		},
+		WireGuardProfiles: func() ([]*wireguard.Profile, error) {
+			if mw.wireguardPanel != nil {
+				return mw.wireguardPanel.ListProfiles()
+			}
+			return nil, nil
+		},
+		WireGuardConnStats: func(profileID string) (rx, tx uint64, ip string) {
+			if mw.wireguardPanel != nil {
+				return mw.wireguardPanel.ConnStats(profileID)
+			}
+			return 0, 0, ""
+		},
+		TailscaleIP: func() string {
+			if mw.tailscalePanel != nil {
+				return mw.tailscalePanel.NodeIP()
+			}
+			return ""
+		},
+		StatsManager: mw.app.vpnManager.StatsManager(),
+		OnNoProfiles: func() {
+			mw.viewStack.SetVisibleChildName("openvpn")
+		},
+		TailscaleAvailable: func() bool {
+			return mw.tailscalePanel != nil && mw.tailscalePanel.ProviderReady()
+		},
+		ProtocolDisconnect: func(protocol, profileID string) error {
+			switch protocol {
+			case vpntypes.ProtocolWireGuard:
+				if mw.wireguardPanel != nil {
+					return mw.wireguardPanel.DisconnectActive()
+				}
+			case vpntypes.ProtocolTailscale:
+				if mw.tailscalePanel != nil {
+					return mw.tailscalePanel.DisconnectActive()
+				}
+			}
+			return nil
+		},
+	}
+	hp := hero.NewHeroPanel(mw, cfg)
+	mw.heroPanel = hp
+
+	scrolledHero := gtk.NewScrolledWindow()
+	scrolledHero.SetVExpand(true)
+	scrolledHero.SetChild(hp.GetWidget())
+	heroPage := mw.viewStack.AddTitledWithIcon(scrolledHero, "hero", "Status", "network-vpn-symbolic")
+	heroPage.SetUseUnderline(true)
+
+	hp.StartUpdates()
 }
 
 // createTailscalePage creates the Tailscale page.

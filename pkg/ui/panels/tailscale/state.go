@@ -232,8 +232,10 @@ func (tp *TailscalePanel) renderStatus(
 
 		if len(status.ConnectionInfo.TailscaleIPs) > 0 {
 			tp.ipRow.SetSubtitle(status.ConnectionInfo.TailscaleIPs[0])
+			tp.cachedTailscaleIP = status.ConnectionInfo.TailscaleIPs[0]
 		} else {
 			tp.ipRow.SetSubtitle("-")
+			tp.cachedTailscaleIP = ""
 		}
 
 		if status.ConnectionInfo.ExitNode != "" {
@@ -245,6 +247,7 @@ func (tp *TailscalePanel) renderStatus(
 	} else {
 		tp.profileExpanderRow.SetTitle("Tailscale")
 		tp.ipRow.SetSubtitle("-")
+		tp.cachedTailscaleIP = ""
 		tp.networkRow.SetSubtitle("None")
 	}
 

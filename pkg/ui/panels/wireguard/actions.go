@@ -59,6 +59,42 @@ func (wp *WireGuardPanel) onImportProfile() {
 	})
 }
 
+// ListProfiles returns the configured WireGuard profiles; the Hero picker
+// uses it to offer WireGuard connects alongside OpenVPN and Tailscale.
+func (wp *WireGuardPanel) ListProfiles() ([]*wireguard.Profile, error) {
+	if wp.provider == nil {
+		return nil, nil
+	}
+	return wp.provider.LoadProfiles()
+}
+
+// ConnStats reads a WireGuard tunnel's cumulative byte counters and IP
+// without blocking; it is the Hero's per-tick live source when a WireGuard
+// profile is active. Returns (0, 0, "") when the tunnel is not up.
+func (wp *WireGuardPanel) ConnStats(profileID string) (rx, tx uint64, ip string) {
+	if wp.provider == nil {
+		return 0, 0, ""
+	}
+	conn := wp.provider.GetConnection(profileID)
+	if conn == nil || conn.GetStatus() != wireguard.StatusConnected {
+		return 0, 0, ""
+	}
+	sent, recv, address := conn.GetStats()
+	return recv, sent, address
+}
+
+// ConnectProfile connects the named profile through the mutual-exclusion
+// gate and the provider, mirroring the panel's per-row connect button. Must
+// run on the GTK main thread.
+func (wp *WireGuardPanel) ConnectProfile(profileID string) {
+	row, ok := wp.rows[profileID]
+	if !ok {
+		logger.LogError("WireGuard: ConnectProfile for unknown profile %s", profileID)
+		return
+	}
+	wp.onConnectProfile(row)
+}
+
 // onConnectProfile handles connect/disconnect for a profile.
 func (wp *WireGuardPanel) onConnectProfile(row *WireGuardRow) {
 	conn := wp.provider.GetConnection(row.profile.ID())
