@@ -206,7 +206,7 @@ func (pl *ProfileList) addProfileRow(profile *profilepkg.Profile) {
 	// Live traffic graph (macOS style). Replaces the detail rows while
 	// connected; hidden until the first connection.
 	trafficGraph := components.NewLiveTrafficGraph()
-	trafficGraph.Box.SetVisible(false)
+	trafficGraph.SetVisible(false)
 	w.ExpanderRow.AddRow(trafficGraph.Box)
 
 	uptimeRow := components.NewDetailRow("appointment-symbolic", "Uptime", "--")
@@ -708,7 +708,7 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 				for _, detailRow := range []*adw.ActionRow{row.uptimeRow, row.latencyRow, row.trafficRow, row.profileInfoRow} {
 					detailRow.SetVisible(true)
 				}
-				row.trafficGraph.Box.SetVisible(false)
+				row.trafficGraph.SetVisible(false)
 			}
 		}
 
@@ -734,7 +734,7 @@ func (pl *ProfileList) UpdateRowStatus(profileID string, status vpn.ConnectionSt
 			for _, detailRow := range []*adw.ActionRow{row.uptimeRow, row.latencyRow, row.trafficRow, row.profileInfoRow} {
 				detailRow.SetVisible(false)
 			}
-			row.trafficGraph.Box.SetVisible(true)
+			row.trafficGraph.SetVisible(true)
 			row.trafficGraph.Clear()
 		}
 
