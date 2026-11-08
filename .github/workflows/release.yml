@@ -517,7 +517,14 @@ jobs:
             echo "cd ${{ env.APP_NAME }}-${{ env.VERSION }} && ./install.sh"
             echo '```'
             echo ""
-            echo "### Verify Checksums"
+            echo "### Verify GPG Signature (primary)"
+            echo '```bash'
+            echo "# Detached signatures ship as <artifact>.asc; verify before installing."
+            echo "wget https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb.asc"
+            echo "gpg --verify ${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb.asc ${{ env.APP_NAME }}_${{ env.VERSION }}_amd64.deb"
+            echo '```'
+            echo ""
+            echo "### Verify Checksums (secondary)"
             echo '```bash'
             echo "sha256sum -c checksums-sha256.txt"
             echo '```'
@@ -532,6 +539,35 @@ jobs:
           echo "📋 Generated release notes:"
           cat release-notes.md
 
+      - name: Import GPG release key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          if [[ -z "$FINGERPRINT" ]]; then
+            echo "::error::No GPG secret key available to sign release artifacts"
+            exit 1
+          fi
+          echo "RELEASE_GPG_FPR=$FINGERPRINT" >> "$GITHUB_ENV"
+          echo "✅ GPG key imported (fingerprint: $FINGERPRINT)"
+
+      - name: Sign release artifacts
+        run: |
+          cd artifacts
+          shopt -s nullglob
+          signed=0
+          for f in *.deb *.rpm *.tar.gz; do
+            gpg --batch --yes --local-user "$RELEASE_GPG_FPR" --armor --detach-sign -o "$f.asc" "$f"
+            echo "Signed: $f.asc"
+            signed=$((signed+1))
+          done
+          if [[ $signed -eq 0 ]]; then
+            echo "::error::No artifacts found to sign"
+            exit 1
+          fi
+          ls -la *.asc
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -544,6 +580,7 @@ jobs:
             artifacts/*.tar.gz
             artifacts/*.deb
             artifacts/*.rpm
+            artifacts/*.asc
             artifacts/checksums-sha256.txt
           fail_on_unmatched_files: true
           generate_release_notes: false
@@ -603,11 +640,12 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          
+
           # Trust the key using fingerprint
-          FINGERPRINT=$(gpg --list-keys --with-colons "VPN Manager APT Repository" | grep fpr | head -1 | cut -d: -f10)
+          FINGERPRINT=$(gpg --list-secret-keys --with-colons "VPN Manager APT Repository" | grep fpr | head -1 | cut -d: -f10)
           echo "${FINGERPRINT}:6:" | gpg --import-ownertrust
-          
+          echo "SECRET_FPR=$FINGERPRINT" >> "$GITHUB_ENV"
+
           echo "✅ GPG key imported and trusted (fingerprint: $FINGERPRINT)"
 
       - name: Update APT repository

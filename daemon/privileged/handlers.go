@@ -60,6 +60,8 @@ var (
 	fwDisableDNS   = firewall.DisableDNSFirewall
 	fwBlockDoT     = firewall.BlockDNSOverTLS
 	fwUnblockDoT   = firewall.UnblockDNSOverTLS
+	fwBlockDoH     = firewall.BlockDNSOverHTTPS
+	fwUnblockDoH   = firewall.UnblockDNSOverHTTPS
 )
 
 // initVPNManagers initializes the VPN managers as singletons.
@@ -261,6 +263,13 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 			}
 		}
 
+		// Block known DNS-over-HTTPS providers if requested
+		if params.BlockDoH {
+			if err := fwBlockDoH(); err != nil {
+				ctx.Logger.Printf("Warning: failed to block DoH: %v", err)
+			}
+		}
+
 		// Assign the actual DNS servers on the VPN link as root (was the polkit
 		// prompt culprit when the GUI ran resolvectl/nmcli itself). No-op for
 		// modes that assign nothing (off, or auto/custom with no servers).
@@ -274,6 +283,9 @@ func DNSEnableHandler(state *daemon.State) daemon.HandlerFunc {
 			_ = fwDisableDNS()
 			if params.BlockDoT {
 				_ = fwUnblockDoT()
+			}
+			if params.BlockDoH {
+				_ = fwUnblockDoH()
 			}
 			return nil, fmt.Errorf("resolver apply: %w", err)
 		}
@@ -306,6 +318,11 @@ func DNSDisableHandler(state *daemon.State) daemon.HandlerFunc {
 		// Unblock DoT
 		if err := fwUnblockDoT(); err != nil {
 			ctx.Logger.Printf("Warning: DoT unblock had errors: %v", err)
+		}
+
+		// Unblock DoH
+		if err := fwUnblockDoH(); err != nil {
+			ctx.Logger.Printf("Warning: DoH unblock had errors: %v", err)
 		}
 
 		// Restore the resolver to its pre-VPN configuration (reverts the DNS
@@ -362,6 +379,12 @@ func IPv6EnableHandler(state *daemon.State) daemon.HandlerFunc {
 		var params IPv6EnableParams
 		if err := ctx.UnmarshalParams(&params); err != nil {
 			return nil, err
+		}
+
+		// Fail-closed: the mode is stored and reported in state, so an unrecognized
+		// value must be rejected at the boundary rather than persisted verbatim.
+		if err := validate.IPv6Mode(params.Mode); err != nil {
+			return nil, fmt.Errorf("mode: %w", err)
 		}
 
 		ctx.Logger.Printf("Enabling IPv6 protection in mode: %s", params.Mode)

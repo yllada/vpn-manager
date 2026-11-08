@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 )
 
 // MaxMessageBytes is the maximum size of a single newline-delimited message the
@@ -39,12 +40,15 @@ func readLimitedLine(r *bufio.Reader, limit int) ([]byte, error) {
 type Codec struct {
 	conn io.ReadWriteCloser
 
-	// Separate mutexes for read and write to allow concurrent operations
+	// Separate mutexes for read and write to allow concurrent operations.
+	// Note: Close() must NOT take readMu — ReadResponse holds it across a
+	// blocking read, so closing both would deadlock. We instead close the
+	// connection (which unblocks the reader) and flip an atomic flag.
 	readMu  sync.Mutex
 	writeMu sync.Mutex
 
 	reader *bufio.Reader
-	closed bool
+	closed atomic.Bool
 }
 
 // NewCodec creates a new codec wrapping the given connection.
@@ -60,7 +64,7 @@ func (c *Codec) WriteRequest(req *Request) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	if c.closed {
+	if c.closed.Load() {
 		return ErrConnectionClosed
 	}
 
@@ -72,7 +76,7 @@ func (c *Codec) WriteResponse(resp *Response) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	if c.closed {
+	if c.closed.Load() {
 		return ErrConnectionClosed
 	}
 
@@ -103,7 +107,7 @@ func (c *Codec) ReadRequest() (*Request, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
-	if c.closed {
+	if c.closed.Load() {
 		return nil, ErrConnectionClosed
 	}
 
@@ -133,7 +137,7 @@ func (c *Codec) ReadResponse() (*Response, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
-	if c.closed {
+	if c.closed.Load() {
 		return nil, ErrConnectionClosed
 	}
 
@@ -159,25 +163,23 @@ func (c *Codec) ReadResponse() (*Response, error) {
 }
 
 // Close closes the underlying connection.
+//
+// Close is safe to call concurrently with an in-flight ReadResponse. It does
+// not take readMu (ReadResponse holds it while blocked in a read, so taking it
+// here would deadlock); instead it closes the connection, which unblocks the
+// pending read with an error, then flips the atomic closed flag.
 func (c *Codec) Close() error {
-	c.writeMu.Lock()
-	c.readMu.Lock()
-	defer c.writeMu.Unlock()
-	defer c.readMu.Unlock()
-
-	if c.closed {
-		return nil
+	if c.closed.Swap(true) {
+		return nil // already closed
 	}
-
-	c.closed = true
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return c.conn.Close()
 }
 
 // IsClosed returns true if the codec has been closed.
 func (c *Codec) IsClosed() bool {
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
-	return c.closed
+	return c.closed.Load()
 }
 
 // Encoder writes JSON-RPC messages to a writer.

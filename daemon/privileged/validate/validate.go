@@ -35,6 +35,7 @@ var (
 	ErrDefaultRoute       = errors.New("CIDR is a default route (0.0.0.0/0 or ::/0), which is not allowed here")
 	ErrInvalidIP          = errors.New("invalid IP address")
 	ErrInvalidDNSMode     = errors.New("invalid DNS protection mode")
+	ErrInvalidIPv6Mode    = errors.New("invalid IPv6 protection mode")
 	ErrInvalidConfigPath  = errors.New("invalid config path")
 	ErrDangerousDirective = errors.New("config file contains a directive that can execute code")
 	ErrUnsafeArg          = errors.New("value contains whitespace or a control character")
@@ -104,6 +105,28 @@ var dnsModes = map[string]bool{
 	"auto":   true,
 	"strict": true,
 	"custom": true,
+}
+
+// ipv6Modes is the allow-list of IPv6 protection modes the daemon accepts, mirroring
+// the client's IPv6Mode vocabulary (internal/vpn/security.IPv6Mode). The daemon
+// enforcement is unconditional-block today, but the mode is stored and reported
+// in state; an unrecognized value persisted verbatim is a state desync, so
+// reject it fail-closed at the boundary.
+var ipv6Modes = map[string]bool{
+	"":      true, // treated as "off"
+	"block": true,
+	"allow": true,
+	"auto":  true,
+	"route": true,
+}
+
+// IPv6Mode validates the IPv6 protection mode string against the allow-list.
+// Fail-closed: unknown modes are rejected rather than stored verbatim.
+func IPv6Mode(mode string) error {
+	if !ipv6Modes[mode] {
+		return fmt.Errorf("%w: %q", ErrInvalidIPv6Mode, mode)
+	}
+	return nil
 }
 
 // DNSMode validates the DNS protection mode string against the allow-list. It
@@ -180,9 +203,24 @@ func CIDRNotDefault(cidr string) error {
 		return err
 	}
 	_, ipnet, _ := net.ParseCIDR(cidr)
-	ones, _ := ipnet.Mask.Size()
-	if ones == 0 {
+	if ones, _ := ipnet.Mask.Size(); ones == 0 {
 		return fmt.Errorf("%w: %q", ErrDefaultRoute, cidr)
+	}
+	return nil
+}
+
+// CIDRLanNetwork validates a CIDR intended to name a single LAN network and
+// requires it to be canonical (no host bits set) and not a default route.
+// This is the strict gate for values that flow into firewall or routing rules
+// as network addresses: a host-bit value like "192.168.1.5/24" would only match
+// that one address, and a default route would match everything.
+func CIDRLanNetwork(cidr string) error {
+	if err := CIDRNotDefault(cidr); err != nil {
+		return err
+	}
+	ip, ipnet, _ := net.ParseCIDR(cidr)
+	if !ip.Equal(ipnet.IP) {
+		return fmt.Errorf("%w: %q has host bits set, use %q", ErrInvalidCIDR, cidr, ipnet.String())
 	}
 	return nil
 }

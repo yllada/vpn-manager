@@ -107,6 +107,20 @@ SHA256:
  $PACKAGES_GZ_SHA256 $PACKAGES_GZ_SIZE $COMPONENT/binary-$ARCH/Packages.gz
 EOF
 
+# Pin the apt trust root: the committed public key must belong to the exact
+# secret key we sign with, or an attacker who edits the repo could swap it.
+TRUST_ROOT="$REPO_DIR/gpg.key"
+if [[ -f "$TRUST_ROOT" ]]; then
+    gpg --batch --import "$TRUST_ROOT" >/dev/null
+    TRUST_FPR=$(gpg --list-public-keys --with-colons "$GPG_KEY_ID" 2>/dev/null | awk -F: '/^fpr/{print $10; exit}')
+    SECRET_FPR=$(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr/{print $10; exit}')
+    if [[ -z "$SECRET_FPR" || -z "$TRUST_FPR" || "$SECRET_FPR" != "$TRUST_FPR" ]]; then
+        log_error "gpg.key (fpr $TRUST_FPR) does not match the signing secret key (fpr $SECRET_FPR). Refusing to publish."
+        exit 1
+    fi
+    log_info "gpg.key pinned: matches signing key $SECRET_FPR"
+fi
+
 # Sign the Release file
 log_info "Signing Release file with GPG..."
 

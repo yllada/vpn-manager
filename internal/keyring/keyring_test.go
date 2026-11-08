@@ -539,3 +539,40 @@ func TestSpecialCharactersInProfileID(t *testing.T) {
 		})
 	}
 }
+
+func TestStore_FailsClosedOnSymlink(t *testing.T) {
+	cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	if err := Store("profile-a", "real-password"); err != nil {
+		t.Fatalf("initial Store: %v", err)
+	}
+	original, err := os.ReadFile(localStoreFile)
+	if err != nil || len(original) == 0 {
+		t.Fatalf("store file missing after Store: %v", err)
+	}
+
+	// Plant a symlink at the store path pointing outside the config dir.
+	if err := os.Remove(localStoreFile); err != nil {
+		t.Fatalf("remove store file: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "planted")
+	if err := os.Symlink(target, localStoreFile); err != nil {
+		t.Fatalf("plant symlink: %v", err)
+	}
+
+	// Fail closed: a symlink at the store path means tampering, so Store must
+	// error and must not write credentials where the link points.
+	if err := Store("profile-a", "new-password"); err == nil {
+		t.Fatalf("Store succeeded while localStoreFile is a symlink")
+	}
+	if _, err := os.Stat(target); err == nil {
+		t.Fatalf("symlink target %s was created (write followed the link)", target)
+	}
+
+	// The planted link must have been removed by the failed write, or still be
+	// a symlink: saveLocalStore must not have replaced it with a regular file.
+	if fi, err := os.Lstat(localStoreFile); err == nil && fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("saveLocalStore replaced the symlink with a regular file")
+	}
+}

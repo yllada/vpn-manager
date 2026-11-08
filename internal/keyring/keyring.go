@@ -295,6 +295,22 @@ func loadLocalStore() {
 	_ = json.Unmarshal(decrypted, &localStore)
 }
 
+// removeAfterRename removes the temp file; after a successful rename the
+// path no longer exists and the removal error is irrelevant.
+// closeTempBestEffort closes a temp file on an error path; a failed close is
+// only logged, since the caller already has a more important error to return.
+func closeTempBestEffort(f *os.File) {
+	if err := f.Close(); err != nil {
+		log.Printf("keyring: close temp: %v", err)
+	}
+}
+
+func removeAfterRename(name string) {
+	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		log.Printf("keyring: remove temp %s: %v", name, err)
+	}
+}
+
 func saveLocalStore() error {
 	localStoreMu.RLock()
 	data, err := json.Marshal(localStore)
@@ -308,7 +324,42 @@ func saveLocalStore() error {
 		return err
 	}
 
-	return os.WriteFile(localStoreFile, encrypted, 0600)
+	// Fail closed if the store path is a symlink: os.WriteFile would follow
+	// the link and write credentials wherever it points (e.g. out of the
+	// config dir). A symlink at this path means tampering.
+	if fi, err := os.Lstat(localStoreFile); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to write store: %s is a symlink", localStoreFile)
+	}
+
+	// Atomic write: temp file in the same directory, then rename over the
+	// target. A crash mid-write never leaves a truncated store.
+	dir := filepath.Dir(localStoreFile)
+	tmp, err := os.CreateTemp(dir, ".credentials-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer removeAfterRename(tmpName)
+
+	if err := tmp.Chmod(0600); err != nil {
+		closeTempBestEffort(tmp)
+		return err
+	}
+	if _, err := tmp.Write(encrypted); err != nil {
+		closeTempBestEffort(tmp)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		closeTempBestEffort(tmp)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, localStoreFile); err != nil {
+		return err
+	}
+	return nil
 }
 
 func encrypt(plaintext []byte) ([]byte, error) {

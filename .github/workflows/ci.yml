@@ -1,17 +1,21 @@
 # =============================================================================
 # VPN Manager - Continuous Integration
 # =============================================================================
-# Fast, single-job CI pipeline for Go + GTK4 projects.
+# Parallel CI pipeline for Go + GTK4 projects.
 #
-# Architecture Decision (based on GitHub Actions best practices):
-#   - Single job with sequential steps: lint → test → build
-#   - Why? One setup of Go+GTK instead of 3 parallel setups
-#   - Result: Faster total time, less resource usage
+# Architecture (2026-11 refactor):
+#   - Three parallel jobs: lint, test, build
+#   - Why? They share only setup, not work: lint no longer waits for the
+#     full test suite, build feedback arrives as fast as test feedback,
+#     and each job can fail independently without re-running the others.
+#   - A single shared setup-go-gtk action installs Go + GTK once per job.
 #
 # Optimizations:
-#   - APT package caching (~60s → ~5s)
+#   - APT package caching (~60s -> ~5s)
 #   - Go module caching (via setup-go)
-#   - golangci-lint binary install (not goinstall)
+#   - Go build cache keyed on go.sum only (warm across PRs and branches;
+#     the previous key included github.sha, which never matched and left
+#     every PR with a cold gotk4 compile)
 #   - Race detector only on PRs (10-20x slower)
 #   - only-new-issues on PRs (faster feedback)
 #
@@ -36,9 +40,9 @@ on:
       - 'LICENSE'
       - '.github/ISSUE_TEMPLATE/**'
 
-# Cancel in-progress runs for the same branch
+# Cancel in-progress runs for the same branch and job
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.job }}
   cancel-in-progress: true
 
 env:
@@ -51,10 +55,10 @@ permissions:
 
 jobs:
   # =============================================================================
-  # CI - Single job: lint → test → build
+  # Lint
   # =============================================================================
-  ci:
-    name: Lint → Test → Build
+  lint:
+    name: Lint
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -64,49 +68,48 @@ jobs:
       - name: Setup Go and GTK
         uses: ./.github/actions/setup-go-gtk
 
-      # -------------------------------------------------------------------------
-      # Pre-compilation warm-up (critical for CGO projects)
-      # -------------------------------------------------------------------------
-      # golangci-lint calls go/packages.Load() which must compile all deps.
-      # For gotk4, this takes 5-8 minutes on cold cache and causes timeouts.
-      # Running go build first warms the cache so lint starts with hot cache.
-      # -------------------------------------------------------------------------
+      # golangci-lint compiles the gotk4 closure; this warm-up is what
+      # makes the lint step cheap when the build cache is warm.
       - name: Warm up Go build cache
         run: |
-          echo "🔥 Pre-compiling dependencies (gotk4 CGO bindings)..."
+          echo "Pre-compiling dependencies (gotk4 CGO bindings)..."
           go build ./...
         env:
           CGO_ENABLED: 1
 
-      # -------------------------------------------------------------------------
-      # Lint
-      # -------------------------------------------------------------------------
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: binary
-          # 15m timeout: gotk4 CGO bindings may still need time on cold cache
-          # This matches the timeout in .golangci.yaml
           args: --timeout=15m
-          # On PRs: only report new issues (faster feedback)
           only-new-issues: ${{ github.event_name == 'pull_request' }}
-          # On PRs: don't pollute cache
-          skip-save-cache: ${{ github.event_name == 'pull_request' }}
+          skip-save-cache: false
 
-      # -------------------------------------------------------------------------
-      # Test
-      # -------------------------------------------------------------------------
+  # =============================================================================
+  # Test
+  # =============================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go and GTK
+        uses: ./.github/actions/setup-go-gtk
+
       - name: Verify dependencies
         run: go mod verify
 
       - name: Run tests
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "🔍 Running tests WITH race detector (PR)"
+            echo "Running tests WITH race detector (PR)"
             go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
           else
-            echo "⚡ Running tests WITHOUT race detector (push)"
+            echo "Running tests WITHOUT race detector (push)"
             go test -v -coverprofile=coverage.out -covermode=atomic ./...
           fi
         env:
@@ -114,7 +117,7 @@ jobs:
 
       - name: Display coverage summary
         run: |
-          echo "📊 Coverage Summary:"
+          echo "Coverage Summary:"
           go tool cover -func=coverage.out | tail -1
 
       - name: Upload coverage to Codecov
@@ -126,12 +129,23 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-      # -------------------------------------------------------------------------
-      # Build
-      # -------------------------------------------------------------------------
+  # =============================================================================
+  # Build
+  # =============================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go and GTK
+        uses: ./.github/actions/setup-go-gtk
+
       - name: Build GUI application
         run: |
-          CGO_ENABLED=1 go build -v -trimpath \
+          CGO_ENABLED=1 go build -trimpath \
             -ldflags="-s -w \
               -X main.appVersion=ci-${{ github.sha }} \
               -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
@@ -140,32 +154,20 @@ jobs:
 
       - name: Build daemon
         run: |
-          CGO_ENABLED=1 go build -v -trimpath \
+          CGO_ENABLED=0 go build -trimpath \
             -ldflags="-s -w" \
             -o vpn-managerd ./cmd/vpn-managerd
 
       - name: Verify binaries
         run: |
-          echo "📦 GUI Application:"
+          echo "GUI Application:"
           file vpn-manager
-          
-          # Check if binary runs (will exit 0 if --version works, non-zero if crash)
-          if ./vpn-manager --version 2>&1; then
-            echo "✅ Binary executes successfully"
-          else
-            EXIT_CODE=$?
-            echo "::warning::Binary exited with code $EXIT_CODE (version flag may not be implemented)"
-          fi
-          
-          echo ""
-          echo "📦 Daemon:"
-          file vpn-managerd
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: vpn-manager-ci-${{ github.sha }}
-          path: |
-            vpn-manager
-            vpn-managerd
-          retention-days: 7
+          # --version exits before GTK init, so it works headless and is a
+          # real smoke check: a broken CGO binary fails here.
+          ./vpn-manager --version || { echo "::error::GUI --version failed (broken binary?)"; exit 1; }
+
+          echo ""
+          echo "Daemon:"
+          file vpn-managerd
+          ./vpn-managerd --version || { echo "::error::Daemon --version failed (broken binary?)"; exit 1; }
