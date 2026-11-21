@@ -43,6 +43,10 @@ type OpenVPNProcess struct {
 	IPAddress   string
 	StartTime   time.Time
 	LastError   string
+	tunDevice   string          // explicit --dev tunX from the config, if named
+	ipSnapshot  map[string]string // tun->IPv4 before connect (dynamic "dev tun" detection)
+	tunReady    bool          // "Data Channel: cipher" seen (handshake complete)
+	tunReadyAt  time.Time     // when tunReady became true
 	stopChan    chan struct{}
 	stopOnce    sync.Once // Ensures stopChan is closed exactly once under concurrent Disconnect calls
 	outputLines []string
@@ -155,6 +159,10 @@ func (m *OpenVPNManager) Connect(_ context.Context, params OpenVPNConnectParams)
 		StartTime:  time.Now(),
 		stopChan:   make(chan struct{}),
 	}
+
+	// Learn the tun device before start (explicit tunX, or a pre-start snapshot
+	// for dynamic "dev tun") so the kernel-side connected fallback can find it.
+	setTunDeviceFields(proc)
 
 	// Setup output capture
 	stdout, err := cmd.StdoutPipe()
@@ -304,9 +312,185 @@ func (m *OpenVPNManager) ListConnections() []OpenVPNStatusResult {
 
 // monitorOutput monitors OpenVPN stdout/stderr for connection status.
 func (m *OpenVPNManager) monitorOutput(proc *OpenVPNProcess, stdout, stderr io.ReadCloser) {
+	// Start the kernel-side fallback FIRST: the stderr read below blocks this
+	// goroutine until OpenVPN exits, so anything after it would not run while
+	// the connection is alive.
+	go m.pollTunConnected(proc)
+
 	// Monitor both stdout and stderr
 	go m.readOutput(proc, stdout, "stdout")
 	m.readOutput(proc, stderr, "stderr")
+}
+
+// tunIPPollInterval is how often the kernel-side fallback probes the tun device.
+var tunIPPollInterval = 500 * time.Millisecond
+
+// tunIPPollTimeout bounds how long the fallback keeps probing before giving up.
+var tunIPPollTimeout = 120 * time.Second
+
+// tunDeviceRe matches a concrete "tun0" / "tun1" style device name.
+var tunDeviceRe = regexp.MustCompile(`^tun\d+$`)
+
+// tunIPs returns, for every tun device, the first non-loopback IPv4 currently
+// assigned (absent when none). The kernel is the source of truth for the
+// address the server pushed, independent of OpenVPN's log output.
+func tunIPs() (map[string]string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string)
+	for _, ifc := range ifaces {
+		if !strings.HasPrefix(ifc.Name, "tun") {
+			continue
+		}
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipn, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ip := ipn.IP; ip.To4() != nil && !ip.IsLoopback() {
+				out[ifc.Name] = ip.String()
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// tunDeviceIP returns the first non-loopback IPv4 on one named device.
+func tunDeviceIP(dev string) (string, error) {
+	ips, err := tunIPs()
+	if err != nil {
+		return "", err
+	}
+	if ip, ok := ips[dev]; ok && ip != "" {
+		return ip, nil
+	}
+	return "", fmt.Errorf("no IPv4 on %s", dev)
+}
+
+// tunIPsFn / tunIPFn are the kernel-read entry points, package-level vars so
+// tests can redirect them to deterministic fakes; production never reassigns.
+var (
+	tunIPsFn = tunIPs
+	tunIPFn  = tunDeviceIP
+)
+
+// pollTunConnected transitions the process to StatusConnected once the kernel
+// shows the tun device holding the server-assigned IP. It is gated on the
+// "Data Channel: cipher" log line (proc.tunReady), which OpenVPN only prints
+// after a complete successful handshake, and stops when an IP is found, the
+// process is disconnected (stopChan), or after a bounded timeout. The status
+// change is guarded so it can only move a still-connecting process without a
+// known IP to connected and never downgrade or overwrite a terminal or
+// log-derived state.
+func (m *OpenVPNManager) pollTunConnected(proc *OpenVPNProcess) {
+	ticker := time.NewTicker(tunIPPollInterval)
+	defer ticker.Stop()
+	deadline := time.After(tunIPPollTimeout)
+	for {
+		select {
+		case <-proc.stopChan:
+			return
+		case <-deadline:
+			return
+		case <-ticker.C:
+			proc.mu.RLock()
+			status, ready, readyAt, ip := proc.Status, proc.tunReady, proc.tunReadyAt, proc.IPAddress
+			proc.mu.RUnlock()
+			if status != StatusConnecting || ip != "" {
+				// Terminal state, or the IP is already known from log lines:
+				// never downgrade, never overwrite, stop polling.
+				return
+			}
+			if !ready {
+				// Handshake not complete: no tun IP can belong to this session yet.
+				continue
+			}
+			dev, addr := m.tunIPFor(proc, readyAt)
+			if dev == "" {
+				continue
+			}
+			proc.mu.Lock()
+			if proc.Status == StatusConnecting && proc.IPAddress == "" {
+				proc.Status = StatusConnected
+				proc.IPAddress = addr
+			}
+			proc.mu.Unlock()
+			m.logger.Printf("[openvpn] Profile %s connected (device %s ip %s)", proc.ProfileID, dev, addr)
+			return
+		}
+	}
+}
+
+// tunFallbackGrace is how long the fallback waits for a tun to show a
+// freshly-assigned IP after the data channel is ready before accepting any
+// tun IP. It covers persist-tun reconnects, where the same device keeps its
+// old address and the server hands back the very same IP ("gained an IP" would
+// never be observable).
+var tunFallbackGrace = 3 * time.Second
+
+// tunIPFor finds the tun IP belonging to this connection. For an explicit
+// --dev tunX it is that device's IP. For a dynamic "dev tun" it prefers a
+// device whose IP changed since the pre-connect snapshot (the fresh address);
+// after tunFallbackGrace it accepts any device holding an IP (persist-tun
+// same-device/same-address case).
+func (m *OpenVPNManager) tunIPFor(proc *OpenVPNProcess, readyAt time.Time) (string, string) {
+	if proc.tunDevice != "" {
+		if a, err := tunIPFn(proc.tunDevice); err == nil && a != "" {
+			return proc.tunDevice, a
+		}
+		return "", ""
+	}
+	ips, err := tunIPsFn()
+	if err != nil {
+		return "", ""
+	}
+	for name, a := range ips {
+		if a != "" && proc.ipSnapshot[name] != a {
+			return name, a // freshly assigned since connect
+		}
+	}
+	if time.Since(readyAt) >= tunFallbackGrace {
+		for name, a := range ips {
+			if a != "" {
+				return name, a // persist-tun: same device, same address
+			}
+		}
+	}
+	return "", ""
+}
+
+// setTunDeviceFields inspects a staged OpenVPN config to learn the --dev value.
+// A concrete "dev tunX" is recorded in proc.tunDevice; a dynamic "dev tun"
+// snapshots the current tun->IP state right before start, so the fallback can
+// later recognize a device that gained an IP for this connection. The daemon
+// runs as root so it can read the root-only staged copy directly.
+func setTunDeviceFields(proc *OpenVPNProcess) {
+	data, err := os.ReadFile(proc.ConfigPath)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == "dev" {
+			if f[1] != "tun" && tunDeviceRe.MatchString(f[1]) {
+				proc.tunDevice = f[1]
+			}
+			break
+		}
+	}
+	// Record the pre-connect tun->IP state in every case. For "dev tun" it is
+	// the only detection basis; for an explicit device it lets us ignore a
+	// residual address left by a previous persist-tun session on that device.
+	if ips, err := tunIPsFn(); err == nil {
+		proc.ipSnapshot = ips
+	}
 }
 
 func (m *OpenVPNManager) readOutput(proc *OpenVPNProcess, reader io.ReadCloser, source string) {
@@ -334,6 +518,23 @@ func (m *OpenVPNManager) parseOutputLine(proc *OpenVPNProcess, line string) {
 		proc.Status = StatusConnected
 		proc.mu.Unlock()
 		m.logger.Printf("[openvpn] Profile %s connected", proc.ProfileID)
+		return
+	}
+
+	// Some OpenVPN 2.7/DCO builds do not emit "Initialization Sequence
+	// Completed" to the captured stream even when the tunnel is fully up
+	// (observed live: the stream stops at the data channel line). That line
+	// is only printed after a complete successful handshake (auth incl. OTP),
+	// so it is a safe "handshake complete" signal: the kernel-side IP poller
+	// (pollTunConnected) then confirms the tunnel from there.
+	if strings.Contains(line, "Data Channel: cipher") {
+		proc.mu.Lock()
+		if proc.Status == StatusConnecting && !proc.tunReady {
+			proc.tunReady = true
+			proc.tunReadyAt = time.Now()
+		}
+		proc.mu.Unlock()
+		m.logger.Printf("[openvpn] Profile %s data channel ready", proc.ProfileID)
 		return
 	}
 
